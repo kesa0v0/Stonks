@@ -10,3 +10,5 @@ ccxt
 redis
 
 aio_pika
+
+websockets
