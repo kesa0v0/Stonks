@@ -34,23 +34,7 @@ services:
     networks:
       - proxy
 
-  # 4. 프론트엔드
-  frontend:
-    image: ghcr.io/kesa0v0/stonks-frontend:latest
-    container_name: stonks-frontend
-    restart: always
-    labels:
-      # Traefik 설정 (홈서버용)
-      - "traefik.enable=true"
-      - "traefik.http.routers.stonks-front.rule=Host(`stock.kesa.uk`)"
-      - "traefik.http.routers.stonks-front.entrypoints=websecure"
-      - "traefik.http.routers.stonks-front.tls=true"
-      - "traefik.http.routers.stonks-front.loadbalancer.server.port=80"
-
-      - "com.centurylinklabs.watchtower.scope=auto-update"
-    networks:
-      - proxy
 
 networks:
-  proxy:  # 중요: 기존에 만들어져 있는 네트워크 이름을 정확히 써야 함
+  proxy:
     external: true
