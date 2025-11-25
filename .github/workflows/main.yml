@@ -2,7 +2,7 @@ name: Build and Push (GitHub Flow)
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "master" ]
     # main에 푸시(Merge)될 때만 실행됩니다.
 
 env:
