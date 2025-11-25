@@ -1,0 +1,34 @@
+# backend/models/user.py
+import uuid
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Numeric
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+from backend.core.database import Base
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email = Column(String(100), unique=True, nullable=False, index=True)
+    hashed_password = Column(String(200), nullable=False)
+    nickname = Column(String(50), nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    wallet = relationship("Wallet", back_populates="user", uselist=False)
+    portfolios = relationship("Portfolio", back_populates="user")
+    orders = relationship("Order", back_populates="user")
+
+class Wallet(Base):
+    __tablename__ = "wallets"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, unique=True)
+    
+    # 원화(KRW) 잔고 (소수점 8자리까지 허용하여 정밀도 유지)
+    balance = Column(Numeric(20, 8), default=0, nullable=False)
+    last_updated = Column(DateTime(timezone=True), onupdate=func.now())
+
+    user = relationship("User", back_populates="wallet")
