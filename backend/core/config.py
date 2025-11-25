@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     RABBITMQ_USER: str = "guest"
     RABBITMQ_PASS: str = "guest"
 
+    DEBUG: bool = True
+
     class Config:
         # Pydantic은 운영체제 환경변수(Docker가 넣어준 값)를 1순위로 읽고,
         # 없으면 아래 파일(.env)을 찾습니다.

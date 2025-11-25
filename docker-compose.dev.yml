@@ -49,10 +49,30 @@ services:
       # JWT 시크릿 등은 개발용 임의 값
       - SECRET_KEY=dev_secret_key
       - ALGORITHM=HS256
+      - PYTHONUNBUFFERED=1
     depends_on:
       - postgres
       - redis
       - rabbitmq
+
+  # 5. 데이터 수집 워커 (Data Feeder)
+  worker_data:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: dev-worker-data
+    # [중요] API 서버와 달리, 얘는 백그라운드에서 python 파일을 직접 실행합니다.
+    command: python -m backend.worker.data_feeder
+    volumes:
+      - ./backend:/app/backend # 코드 수정 시 즉시 반영 (Hot Reload는 안 되지만 재시작하면 됨)
+    environment:
+      - DATABASE_URL=postgresql://devuser:devpass@postgres:5432/dev_db
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DEBUG=True
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - redis
 
 volumes:
   dev_postgres_data:
