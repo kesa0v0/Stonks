@@ -1,0 +1,45 @@
+services:
+  # 1. 백엔드 API
+  api:
+    image: ghcr.io/kesa0v0/stonks-backend:latest
+    container_name: stonks-api
+    restart: always
+    env_file: .env
+    networks:
+      - proxy
+
+  # 2. 시세 수집 워커
+  worker_data:
+    image: ghcr.io/kesa0v0/stonks-backend:latest
+    container_name: stonks-worker-data
+    restart: always
+    command: python -m backend.worker.data_feeder
+    env_file: .env
+    networks:
+      - proxy
+
+  # 3. 주문 체결 워커
+  worker_trade:
+    image: ghcr.io/kesa0v0/stonks-backend:latest
+    container_name: stonks-worker-trade
+    restart: always
+    command: python -m backend.worker.trade_consumer
+    env_file: .env
+    networks:
+      - proxy
+
+  # 4. 프론트엔드 (New!)
+  frontend:
+    image: ghcr.io/kesa0v0/stonks-frontend:latest
+    container_name: stonks-frontend
+    restart: always
+    labels:
+      # Traefik 설정 (홈서버용)
+      - "traefik.enable=true"
+      - "traefik.http.routers.stonks-front.rule=Host(`stock.kesa.uk`)"
+    networks:
+      - proxy
+
+networks:
+  proxy:  # 중요: 기존에 만들어져 있는 네트워크 이름을 정확히 써야 함
+    external: true

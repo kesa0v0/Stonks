@@ -1,0 +1,9 @@
+# .dockerignore
+__pycache__
+*.pyc
+.git
+.env
+.venv
+frontend/
+deploy/
+README.md
