@@ -8,3 +8,5 @@ pydantic-settings
 
 ccxt
 redis
+
+aio_pika

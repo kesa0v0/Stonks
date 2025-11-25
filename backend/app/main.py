@@ -1,9 +1,10 @@
 # backend/app/main.py
 from fastapi import FastAPI
 from backend.core.config import settings
+from backend.app.routers import order
 
 app = FastAPI(
-    title="Rich Server API",
+    title="Stonk Server API",
     description="Stock & Crypto Trading Simulation Platform",
     version="0.1.0"
 )
@@ -20,3 +21,6 @@ def read_root():
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+
+app.include_router(order.router)
