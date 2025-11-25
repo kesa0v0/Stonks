@@ -10,6 +10,7 @@ from backend.core.config import settings
 TARGET_TICKERS = {
     "BTC/KRW": "CRYPTO-COIN-BTC",
     "ETH/KRW": "CRYPTO-COIN-ETH",
+    "DOGE/KRW": "CRYPTO-COIN-DOGE",
 }
 
 async def fetch_and_publish():

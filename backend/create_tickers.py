@@ -20,6 +20,13 @@ INITIAL_TICKERS = [
         "market_type": MarketType.CRYPTO,
         "currency": Currency.KRW
     },
+    {
+        "id": "CRYPTO-COIN-DOGE",
+        "symbol": "DOGE/KRW",
+        "name": "Dogecoin",
+        "market_type": MarketType.CRYPTO,
+        "currency": Currency.KRW
+    },
     # 나중에 삼성전자 등도 여기에 추가하면 됩니다.
 ]
 
