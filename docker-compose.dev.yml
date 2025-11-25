@@ -8,9 +8,15 @@ services:
       - ./postgres-data:/var/lib/postgresql
     environment:
       - POSTGRES_USER=devuser
-      - POSTGRES_PASSWORD=devpassword
+      - POSTGRES_PASSWORD=devpass
+      - POSTGRES_DB=dev_db
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devuser -d dev_db"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
 
   # 2. 인메모리 캐시 DB
   redis:
@@ -19,6 +25,11 @@ services:
     restart: unless-stopped
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
 
     # 3. RabbitMQ (매니지먼트 플러그인 포함 버전)
   rabbitmq:
@@ -27,6 +38,11 @@ services:
     ports:
       - "5672:5672"   # 통신 포트
       - "15672:15672" # 관리자 웹 UI (http://localhost:15672)
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
 
   api:
     build:
@@ -73,6 +89,30 @@ services:
       - PYTHONUNBUFFERED=1
     depends_on:
       - redis
+
+# 6. 주문 체결 워커 (Trade Worker)
+  worker_trade:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: dev-worker-trade
+    command: python -m backend.worker.trade_consumer
+    volumes:
+      - ./backend:/app/backend
+    environment:
+      - DATABASE_URL=postgresql://devuser:devpass@postgres:5432/dev_db
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_USER=guest
+      - RABBITMQ_PASS=guest
+      - DEBUG=True
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
 
 volumes:
   dev_postgres_data:

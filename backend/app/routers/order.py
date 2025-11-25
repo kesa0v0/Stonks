@@ -35,7 +35,7 @@ async def create_order(order: OrderCreate):
     # TODO: Auth 구현 후 user_id 변경 필요
     message_body = {
         "order_id": order_id,
-        "user_id": "test-user-uuid-1234", 
+        "user_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6", 
         "ticker_id": order.ticker_id,
         "side": order.side,
         "quantity": float(order.quantity) # Decimal -> float 변환 (JSON 직렬화 위해)

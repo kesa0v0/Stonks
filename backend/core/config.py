@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     
-    # 3. 추가된 인프라 설정 (Redis, RabbitMQ) - 이 부분이 빠져 있었습니다!
+    # 3. 추가된 인프라 설정 (Redis, RabbitMQ)
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     
