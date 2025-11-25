@@ -16,7 +16,7 @@ r = redis.Redis(host=settings.REDIS_HOST, port=settings.REDIS_PORT, decode_respo
 # 테스트용 고정 유저 ID (나중에 Auth 붙이면 교체)
 TEST_USER_ID = "3fa85f64-5717-4562-b3fc-2c963f66afa6"
 
-@router.get("/", response_model=PortfolioResponse)
+@router.get("", response_model=PortfolioResponse)
 def get_my_portfolio(db: Session = Depends(get_db)):
     # 1. 지갑(현금) 조회
     wallet = db.query(Wallet).filter(Wallet.user_id == TEST_USER_ID).first()

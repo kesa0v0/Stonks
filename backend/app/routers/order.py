@@ -20,7 +20,7 @@ async def get_rabbitmq_channel():
         channel = await connection.channel()
         yield channel
 
-@router.post("/", response_model=OrderResponse)
+@router.post("", response_model=OrderResponse)
 async def create_order(order: OrderCreate):
     """
     주문 접수 API (Non-blocking)
