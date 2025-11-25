@@ -2,8 +2,13 @@
 import json
 import uuid
 import aio_pika
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException
-from backend.schemas.order import OrderCreate, OrderResponse
+from sqlalchemy.orm import Session
+
+from backend.core.database import get_db
+from backend.models import Order
+from backend.schemas.order import OrderCreate, OrderResponse, OrderListResponse
 from backend.core.config import settings
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -68,3 +73,16 @@ async def create_order(order: OrderCreate):
         "status": "ACCEPTED",
         "message": "Order has been queued for processing."
     }
+
+@router.get("", response_model=List[OrderListResponse])
+def get_order_history(db: Session = Depends(get_db)):
+    # 테스트 유저 ID (나중에 Auth로 교체)
+    user_uuid = uuid.UUID("3fa85f64-5717-4562-b3fc-2c963f66afa6")
+
+    orders = db.query(Order)\
+        .filter(Order.user_id == user_uuid)\
+        .order_by(Order.created_at.desc())\
+        .limit(20)\
+        .all()
+    
+    return orders
