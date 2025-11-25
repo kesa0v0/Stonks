@@ -1,6 +1,7 @@
 # backend/services/trade_service.py
 import json
 import redis
+import uuid
 from decimal import Decimal
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -23,7 +24,22 @@ def execute_trade(db: Session, user_id: str, order_id: str, ticker_id: str, side
     주문 실행 및 체결 로직 (Atomic Transaction)
     """
     quantity = Decimal(str(quantity))
+
+    # UUID 유효성 검사
+    try:
+        user_uuid = uuid.UUID(user_id)
+        order_uuid = uuid.UUID(order_id)
+    except ValueError:
+        print(f"❌ Invalid UUID format: user={user_id}, order={order_id}")
+        return False
     
+    # 거래 방향 유효성 검사
+    try:
+        trade_side = OrderSide(side) 
+    except ValueError:
+        print(f"❌ Invalid Side: {side}")
+        return False
+
     # 1. 현재가 조회 (시장가 거래 가정)
     current_price = get_current_price(ticker_id)
     if current_price is None:
@@ -32,20 +48,20 @@ def execute_trade(db: Session, user_id: str, order_id: str, ticker_id: str, side
 
     # 2. 유저 및 지갑 조회
     # (실제로는 없는 유저면 에러 처리해야 함. 여기선 테스트 유저 생성 로직이 필요할 수 있음)
-    wallet = db.query(Wallet).filter(Wallet.user_id == user_id).first()
+    wallet = db.query(Wallet).filter(Wallet.user_id == user_uuid).first()
     if not wallet:
         # 지갑이 없으면 자동 생성 (테스트 편의상)
-        wallet = Wallet(user_id=user_id, balance=100000000) # 초기자금 1억
+        wallet = Wallet(user_id=user_uuid, balance=100000000) # 초기자금 1억
         db.add(wallet)
         db.commit() # ID 생성을 위해 커밋
         db.refresh(wallet)
 
     # 3. 주문 기록 생성 (API에서 DB에 안 넣었으므로 여기서 생성)
     new_order = Order(
-        id=order_id,
-        user_id=user_id,
+        id=order_uuid,
+        user_id=user_uuid,
         ticker_id=ticker_id,
-        side=side,
+        side=trade_side,
         quantity=quantity,
         price=current_price,
         status=OrderStatus.PENDING
@@ -56,12 +72,13 @@ def execute_trade(db: Session, user_id: str, order_id: str, ticker_id: str, side
     try:
         total_cost = current_price * quantity
         
-        if side == OrderSide.BUY:
+        if trade_side == OrderSide.BUY:
             # [매수] 잔고 확인
             if wallet.balance < total_cost:
                 new_order.status = OrderStatus.FAILED
-                new_order.fail_reason = "잔고 부족"
+                new_order.fail_reason = f"잔고 부족 (필요: {total_cost}, 보유: {wallet.balance})"
                 db.commit()
+                print(f"⚠️ 잔고 부족으로 실패")
                 return False
 
             # 돈 빼기
@@ -69,12 +86,12 @@ def execute_trade(db: Session, user_id: str, order_id: str, ticker_id: str, side
             
             # 주식 더하기 (포트폴리오)
             portfolio = db.query(Portfolio).filter(
-                Portfolio.user_id == user_id, 
+                Portfolio.user_id == user_uuid, 
                 Portfolio.ticker_id == ticker_id
             ).first()
             
             if not portfolio:
-                portfolio = Portfolio(user_id=user_id, ticker_id=ticker_id, quantity=0, average_price=0)
+                portfolio = Portfolio(user_id=user_uuid, ticker_id=ticker_id, quantity=0, average_price=0)
                 db.add(portfolio)
             
             # 평단가 계산 (이동평균법)
@@ -86,10 +103,10 @@ def execute_trade(db: Session, user_id: str, order_id: str, ticker_id: str, side
             portfolio.average_price = new_total / new_quantity
             portfolio.quantity = new_quantity
 
-        elif side == OrderSide.SELL:
+        elif trade_side == OrderSide.SELL:
             # [매도] 보유 수량 확인
             portfolio = db.query(Portfolio).filter(
-                Portfolio.user_id == user_id, 
+                Portfolio.user_id == user_uuid, 
                 Portfolio.ticker_id == ticker_id
             ).first()
             

@@ -1,7 +1,7 @@
 # backend/app/main.py
 from fastapi import FastAPI
 from backend.core.config import settings
-from backend.app.routers import order
+from backend.app.routers import order, portfolio
 
 app = FastAPI(
     title="Stonk Server API",
@@ -24,3 +24,4 @@ def health_check():
 
 
 app.include_router(order.router)
+app.include_router(portfolio.router)
