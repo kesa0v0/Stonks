@@ -114,5 +114,20 @@ services:
       postgres:
         condition: service_healthy
 
+  worker_matcher:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: python -m backend.worker.limit_matcher
+    volumes:
+      - ./backend:/app/backend
+    environment:
+      - DATABASE_URL=postgresql://devuser:devpass@postgres:5432/dev_db
+      - REDIS_HOST=redis
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - postgres
+      - redis
+
 volumes:
   dev_postgres_data:

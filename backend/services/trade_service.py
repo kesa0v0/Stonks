@@ -5,7 +5,7 @@ import uuid
 from decimal import Decimal
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from backend.models import User, Wallet, Portfolio, Order, OrderStatus, OrderSide, Ticker
+from backend.models import User, Wallet, Portfolio, Order, OrderStatus, OrderSide, OrderType, Ticker
 from backend.core.config import settings
 
 # Redis 연결 (시세 조회용, 동기식 사용)
@@ -22,6 +22,7 @@ def get_current_price(ticker_id: str) -> Decimal:
 def execute_trade(db: Session, user_id: str, order_id: str, ticker_id: str, side: str, quantity: float):
     """
     주문 실행 및 체결 로직 (Atomic Transaction)
+    공매도(Short Selling) 및 스위칭 매매 지원
     """
     quantity = Decimal(str(quantity))
 
@@ -40,100 +41,143 @@ def execute_trade(db: Session, user_id: str, order_id: str, ticker_id: str, side
         print(f"❌ Invalid Side: {side}")
         return False
 
-    # 1. 현재가 조회 (시장가 거래 가정)
+    # 1. 현재가 조회
     current_price = get_current_price(ticker_id)
     if current_price is None:
         print(f"❌ Price not found for {ticker_id}")
         return False
 
     # 2. 유저 및 지갑 조회
-    # (실제로는 없는 유저면 에러 처리해야 함. 여기선 테스트 유저 생성 로직이 필요할 수 있음)
     wallet = db.query(Wallet).filter(Wallet.user_id == user_uuid).first()
     if not wallet:
-        # 지갑이 없으면 자동 생성 (테스트 편의상)
         wallet = Wallet(user_id=user_uuid, balance=100000000) # 초기자금 1억
         db.add(wallet)
-        db.commit() # ID 생성을 위해 커밋
+        db.commit()
         db.refresh(wallet)
 
-    # 3. 주문 기록 생성 (API에서 DB에 안 넣었으므로 여기서 생성)
-    new_order = Order(
-        id=order_uuid,
-        user_id=user_uuid,
-        ticker_id=ticker_id,
-        side=trade_side,
-        quantity=quantity,
-        price=current_price,
-        status=OrderStatus.PENDING
-    )
-    db.add(new_order)
+    # 3. 주문 조회 또는 생성
+    order = db.query(Order).filter(Order.id == order_uuid).first()
 
-    # 4. 매수/매도 로직
+    if not order:
+        order = Order(
+            id=order_uuid,
+            user_id=user_uuid,
+            ticker_id=ticker_id,
+            side=trade_side,
+            quantity=quantity,
+            price=current_price,
+            type=OrderType.MARKET,
+            status=OrderStatus.PENDING,
+            unfilled_quantity=quantity
+        )
+        db.add(order)
+    else:
+        order.price = current_price
+
+    # 4. 포트폴리오 조회 (없으면 0으로 생성)
+    portfolio = db.query(Portfolio).filter(
+        Portfolio.user_id == user_uuid, 
+        Portfolio.ticker_id == ticker_id
+    ).first()
+    
+    if not portfolio:
+        portfolio = Portfolio(user_id=user_uuid, ticker_id=ticker_id, quantity=0, average_price=0)
+        db.add(portfolio)
+
+    # 5. 매매 로직 (공매도/스위칭 포함)
     try:
-        total_cost = current_price * quantity
+        trade_amount = current_price * quantity
+        current_qty = portfolio.quantity
         
+        # [매수 (BUY)]
+        # 1. 롱 진입/추가 (Long Open/Add)
+        # 2. 숏 청산/커버링 (Short Close/Cover)
         if trade_side == OrderSide.BUY:
-            # [매수] 잔고 확인
-            if wallet.balance < total_cost:
-                new_order.status = OrderStatus.FAILED
-                new_order.fail_reason = f"잔고 부족 (필요: {total_cost}, 보유: {wallet.balance})"
+            # 지갑에서 돈 차감 (숏 커버링이어도 돈은 나감)
+            if wallet.balance < trade_amount:
+                order.status = OrderStatus.FAILED
+                order.fail_reason = f"잔고 부족 (필요: {trade_amount}, 보유: {wallet.balance})"
                 db.commit()
-                print(f"⚠️ 잔고 부족으로 실패")
                 return False
+            
+            wallet.balance -= trade_amount
+            
+            # A. 롱 -> 롱 (불타기/물타기)
+            if current_qty >= 0:
+                # 평단가 갱신: (기존가치 + 신규가치) / 전체수량
+                prev_total_val = current_qty * portfolio.average_price
+                new_total_val = prev_total_val + trade_amount
+                new_qty = current_qty + quantity
+                
+                portfolio.average_price = new_total_val / new_qty
+                portfolio.quantity = new_qty
+                
+            # B. 숏 -> ? (상환 or 스위칭)
+            else: # current_qty < 0
+                remaining_qty = current_qty + quantity # 음수 + 양수 = 0쪽으로 이동
+                
+                if remaining_qty <= 0:
+                    # B-1. 숏 -> 숏/0 (일부 상환 또는 완전 상환)
+                    # 평단가 유지 (빚을 갚는 것이므로 평단가는 그대로)
+                    portfolio.quantity = remaining_qty
+                else:
+                    # B-2. 숏 -> 롱 (스위칭)
+                    # 숏은 다 청산하고, 남은 수량만큼 롱 신규 진입
+                    # 평단가는 현재가(신규 진입 가격)로 리셋
+                    portfolio.quantity = remaining_qty
+                    portfolio.average_price = current_price
 
-            # 돈 빼기
-            wallet.balance -= total_cost
-            
-            # 주식 더하기 (포트폴리오)
-            portfolio = db.query(Portfolio).filter(
-                Portfolio.user_id == user_uuid, 
-                Portfolio.ticker_id == ticker_id
-            ).first()
-            
-            if not portfolio:
-                portfolio = Portfolio(user_id=user_uuid, ticker_id=ticker_id, quantity=0, average_price=0)
-                db.add(portfolio)
-            
-            # 평단가 계산 (이동평균법)
-            # 기존총액 + 신규총액 / 기존수량 + 신규수량
-            prev_total = portfolio.quantity * portfolio.average_price
-            new_total = prev_total + total_cost
-            new_quantity = portfolio.quantity + quantity
-            
-            portfolio.average_price = new_total / new_quantity
-            portfolio.quantity = new_quantity
-
+        # [매도 (SELL)]
+        # 1. 롱 청산/이익실현 (Long Close)
+        # 2. 숏 진입/추가 (Short Open/Add) - 공매도
         elif trade_side == OrderSide.SELL:
-            # [매도] 보유 수량 확인
-            portfolio = db.query(Portfolio).filter(
-                Portfolio.user_id == user_uuid, 
-                Portfolio.ticker_id == ticker_id
-            ).first()
+            # 지갑에 돈 입금 (공매도여도 현금 확보)
+            wallet.balance += trade_amount
             
-            if not portfolio or portfolio.quantity < quantity:
-                new_order.status = OrderStatus.FAILED
-                new_order.fail_reason = "보유 수량 부족"
-                db.commit()
-                return False
-
-            # 주식 빼기
-            portfolio.quantity -= quantity
-            # 돈 더하기
-            wallet.balance += total_cost
+            # A. 롱 -> ? (청산 or 스위칭)
+            if current_qty > 0:
+                remaining_qty = current_qty - quantity
+                
+                if remaining_qty >= 0:
+                    # A-1. 롱 -> 롱/0 (일부 매도)
+                    # 평단가 유지 (이익 실현)
+                    portfolio.quantity = remaining_qty
+                else:
+                    # A-2. 롱 -> 숏 (스위칭)
+                    # 롱 다 팔고, 남은 수량만큼 숏 신규 진입
+                    # 평단가는 현재가(신규 숏 진입 가격)로 리셋
+                    portfolio.quantity = remaining_qty
+                    portfolio.average_price = current_price
             
-            # (수량이 0이 되면 포트폴리오 삭제 로직 등을 넣을 수도 있음)
+            # B. 숏 -> 숏 (불타기/추가 공매도)
+            else: # current_qty <= 0
+                # 평단가 갱신 필요! (숏 물타기)
+                # 주의: 숏 수량은 음수이므로 절대값 사용 계산
+                prev_total_val = abs(current_qty) * portfolio.average_price
+                new_total_val = prev_total_val + trade_amount
+                new_qty_abs = abs(current_qty - quantity) # 둘 다 음수 방향이므로 절대값은 더해짐
+                
+                portfolio.average_price = new_total_val / new_qty_abs
+                portfolio.quantity -= quantity
 
-        # 5. 최종 커밋 (체결 완료)
-        new_order.status = OrderStatus.FILLED
-        new_order.filled_at = func.now()
+        # 6. 마무리 (0이면 삭제할지, 말지)
+        # 부동소수점 오차 고려하여 0에 가까우면 0 처리
+        if abs(portfolio.quantity) <= Decimal("1e-8"):
+             db.delete(portfolio)
+        
+        # 최종 커밋
+        order.status = OrderStatus.FILLED
+        order.unfilled_quantity = 0
+        order.filled_at = func.now()
         db.commit()
-        print(f"✅ Trade Executed: {side} {quantity} {ticker_id} @ {current_price}")
+        
+        print(f"✅ Trade Executed: {side} {quantity} {ticker_id} @ {current_price}. New Qty: {portfolio.quantity if abs(portfolio.quantity) > Decimal('1e-8') else 0}")
         return True
 
     except Exception as e:
         db.rollback()
         print(f"❌ Trade Failed: {e}")
-        new_order.status = OrderStatus.FAILED
-        new_order.fail_reason = str(e)
+        order.status = OrderStatus.FAILED
+        order.fail_reason = str(e)
         db.commit()
         return False

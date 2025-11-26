@@ -7,6 +7,11 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from backend.core.database import Base
 
+
+class OrderType(enum.Enum):
+    MARKET = "MARKET" # 시장가
+    LIMIT = "LIMIT"   # 지정가
+
 class OrderSide(enum.Enum):
     BUY = "BUY"
     SELL = "SELL"
@@ -26,7 +31,14 @@ class Order(Base):
     
     side = Column(Enum(OrderSide), nullable=False)
     status = Column(Enum(OrderStatus), default=OrderStatus.PENDING, nullable=False)
-    
+
+    # 주문 타입 (기본값은 시장가)
+    type = Column(Enum(OrderType), default=OrderType.MARKET, nullable=False)
+    # 지정가 가격 (시장가면 null)
+    target_price = Column(Numeric(20, 8), nullable=True)
+
+    # 미체결 잔량 (부분 체결 대비, 일단은 quantity와 똑같이 시작)
+    unfilled_quantity = Column(Numeric(20, 8), default=0, nullable=False)
     quantity = Column(Numeric(20, 8), nullable=False)
     price = Column(Numeric(20, 8), nullable=True) # 체결가
     

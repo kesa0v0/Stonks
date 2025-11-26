@@ -27,7 +27,13 @@ INITIAL_TICKERS = [
         "market_type": MarketType.CRYPTO,
         "currency": Currency.KRW
     },
-    # 나중에 삼성전자 등도 여기에 추가하면 됩니다.
+    {
+        "id": "TEST-COIN",
+        "symbol": "TEST/KRW",
+        "name": "Volatility Test Coin",
+        "market_type": MarketType.CRYPTO,
+        "currency": Currency.KRW
+    },
 ]
 
 try:

@@ -1,9 +1,15 @@
 # backend/schemas/order.py
 from datetime import datetime
+from typing import Optional
 from pydantic import BaseModel, Field
 from enum import Enum
 from decimal import Decimal
 from uuid import UUID
+
+
+class OrderType(str, Enum):
+    MARKET = "MARKET"
+    LIMIT = "LIMIT"
 
 class OrderSide(str, Enum):
     BUY = "BUY"
@@ -13,6 +19,9 @@ class OrderCreate(BaseModel):
     ticker_id: str = Field()
     side: OrderSide = Field()
     quantity: Decimal = Field(gt=0)
+
+    type: OrderType = OrderType.MARKET # 안 보내면 시장가
+    target_price: Optional[Decimal] = None # 지정가일 때만 필수
 
 class OrderResponse(BaseModel):
     order_id: str
@@ -26,7 +35,7 @@ class OrderListResponse(BaseModel):
     side: str
     status: str
     quantity: float
-    price: float
+    price: Optional[float] = None # 미체결 시 None일 수 있음
     created_at: datetime # 주문 시간
 
     class Config:
