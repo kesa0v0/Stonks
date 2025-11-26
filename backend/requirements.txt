@@ -12,3 +12,6 @@ redis
 aio_pika
 
 websockets
+
+pytest
+httpx
