@@ -17,6 +17,8 @@ dev-down:
 # 4. DB 테이블 초기화 (최초 실행 시 1회 필수)
 dev-init-db:
 	docker-compose -f docker-compose.dev.yml run --rm api python -m backend.create_tables
+	docker-compose -f docker-compose.dev.yml run --rm api python -m backend.create_test_user
+	docker-compose -f docker-compose.dev.yml run --rm api python -m backend.create_tickers
 
 # 5. 프론트엔드 실행 (별도 터미널 권장)
 dev-front:
