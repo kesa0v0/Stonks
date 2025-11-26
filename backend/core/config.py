@@ -1,5 +1,5 @@
 import os
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     # 1. DB 설정 (기본값은 로컬용이나, Docker 환경변수가 있으면 덮어씌워짐)
@@ -21,12 +21,13 @@ class Settings(BaseSettings):
 
     DEBUG: bool = True
 
-    class Config:
+    model_config = SettingsConfigDict(
         # Pydantic은 운영체제 환경변수(Docker가 넣어준 값)를 1순위로 읽고,
         # 없으면 아래 파일(.env)을 찾습니다.
         # Docker Compose에서 env_file을 지정했으므로 이 설정은 '로컬 실행용' 보험입니다.
-        env_file = ".env"
+        env_file = ".env",
         # .env 파일에 정의되지 않은 추가 변수가 있어도 에러 내지 않음
         extra = "ignore" 
+    )
 
 settings = Settings()

@@ -1,26 +1,12 @@
 # backend/models/order.py
 import uuid
-import enum
 from sqlalchemy import Column, String, DateTime, ForeignKey, Enum, Numeric, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from backend.core.database import Base
+from backend.core.enums import OrderType, OrderSide, OrderStatus
 
-
-class OrderType(enum.Enum):
-    MARKET = "MARKET" # 시장가
-    LIMIT = "LIMIT"   # 지정가
-
-class OrderSide(enum.Enum):
-    BUY = "BUY"
-    SELL = "SELL"
-
-class OrderStatus(enum.Enum):
-    PENDING = "PENDING"
-    FILLED = "FILLED"
-    CANCELLED = "CANCELLED"
-    FAILED = "FAILED"
 
 class Order(Base):
     __tablename__ = "orders"

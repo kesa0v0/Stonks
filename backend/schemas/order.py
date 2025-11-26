@@ -1,19 +1,11 @@
 # backend/schemas/order.py
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, Field
-from enum import Enum
+from pydantic import BaseModel, Field, ConfigDict # Pydantic V2 ConfigDict import
 from decimal import Decimal
 from uuid import UUID
+from backend.core.enums import OrderType, OrderSide
 
-
-class OrderType(str, Enum):
-    MARKET = "MARKET"
-    LIMIT = "LIMIT"
-
-class OrderSide(str, Enum):
-    BUY = "BUY"
-    SELL = "SELL"
 
 class OrderCreate(BaseModel):
     ticker_id: str = Field()
@@ -38,5 +30,6 @@ class OrderListResponse(BaseModel):
     price: Optional[float] = None # 미체결 시 None일 수 있음
     created_at: datetime # 주문 시간
 
-    class Config:
+    model_config = ConfigDict(
         from_attributes = True # ORM 객체를 Pydantic으로 자동 변환
+    )

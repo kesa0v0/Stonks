@@ -1,29 +1,31 @@
 # backend/app/routers/portfolio.py
 import json
 import redis
+from uuid import UUID
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from backend.core.database import get_db
 from backend.core.config import settings
 from backend.models import User, Wallet, Portfolio, Ticker
 from backend.schemas.portfolio import PortfolioResponse, AssetResponse
+from backend.core.deps import get_current_user_id
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
 # Redis 연결 (시세 조회용)
 r = redis.Redis(host=settings.REDIS_HOST, port=settings.REDIS_PORT, decode_responses=True)
 
-# 테스트용 고정 유저 ID (나중에 Auth 붙이면 교체)
-TEST_USER_ID = "3fa85f64-5717-4562-b3fc-2c963f66afa6"
-
 @router.get("", response_model=PortfolioResponse)
-def get_my_portfolio(db: Session = Depends(get_db)):
+def get_my_portfolio(
+    db: Session = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id)
+):
     # 1. 지갑(현금) 조회
-    wallet = db.query(Wallet).filter(Wallet.user_id == TEST_USER_ID).first()
+    wallet = db.query(Wallet).filter(Wallet.user_id == user_id).first()
     cash_balance = float(wallet.balance) if wallet else 0.0
 
     # 2. 보유 주식 조회
-    portfolios = db.query(Portfolio).filter(Portfolio.user_id == TEST_USER_ID).all()
+    portfolios = db.query(Portfolio).filter(Portfolio.user_id == user_id).all()
     
     assets = []
     total_stock_value = 0.0
