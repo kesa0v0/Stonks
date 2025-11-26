@@ -50,7 +50,13 @@ def get_my_portfolio(db: Session = Depends(get_db)):
         
         profit_rate = 0.0
         if avg_price > 0:
-            profit_rate = ((current_price - avg_price) / avg_price) * 100
+            if qty >= 0:
+                # 롱 포지션: (현재가 - 평단가) / 평단가
+                profit_rate = ((current_price - avg_price) / avg_price) * 100
+            else:
+                # 숏 포지션: (평단가 - 현재가) / 평단가
+                # 예: 평단 100, 현재 150 -> (100-150)/100 = -50% (손해)
+                profit_rate = ((avg_price - current_price) / avg_price) * 100
 
         assets.append(AssetResponse(
             ticker_id=p.ticker_id,
