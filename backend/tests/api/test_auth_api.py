@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+from backend.core.deps import get_current_user
 
 def test_login_access_token(client: TestClient, test_user):
     """
@@ -10,8 +11,6 @@ def test_login_access_token(client: TestClient, test_user):
         "password": "test1234"
     }
     
-    # Note: Content-Type should be application/x-www-form-urlencoded, 
-    # TestClient.post(data=...) handles this automatically.
     response = client.post("/login/access-token", data=login_data)
     
     assert response.status_code == 200, f"Login failed: {response.text}"
@@ -41,7 +40,7 @@ def test_refresh_token(client: TestClient, test_user):
     assert response.status_code == 200
     new_tokens = response.json()
     assert "access_token" in new_tokens
-    # assert new_tokens["access_token"] != tokens["access_token"] # Flaky: identical if generated in same second
+    # assert new_tokens["access_token"] != tokens["access_token"] # Flaky check
     assert "refresh_token" in new_tokens
 
 def test_login_wrong_password(client: TestClient, test_user):
@@ -52,3 +51,34 @@ def test_login_wrong_password(client: TestClient, test_user):
     response = client.post("/login/access-token", data=login_data)
     assert response.status_code == 401
     assert "Incorrect email or password" in response.json()["detail"]
+
+def test_logout(client: TestClient, test_user, mock_external_services):
+    """
+    Test logout (blacklist) functionality.
+    """
+    # 1. Enable real auth logic by removing the override
+    if get_current_user in client.app.dependency_overrides:
+        del client.app.dependency_overrides[get_current_user]
+
+    # 2. Login
+    login_data = {"username": "test@test.com", "password": "test1234"}
+    response = client.post("/login/access-token", data=login_data)
+    assert response.status_code == 200
+    token = response.json()["access_token"]
+    
+    # 3. Logout
+    headers = {"Authorization": f"Bearer {token}"}
+    response = client.post("/logout", headers=headers)
+    assert response.status_code == 200
+    
+    # Verify Redis interaction
+    mock_redis = mock_external_services["redis"]
+    mock_redis.setex.assert_called()
+    
+    # 4. Verify Access Denied (Mock Redis 'exists' to True)
+    mock_redis.exists.return_value = 1 # Blacklisted
+    
+    response = client.get("/orders", headers=headers)
+    
+    assert response.status_code == 401
+    assert "Token has been revoked" in response.json()["detail"]

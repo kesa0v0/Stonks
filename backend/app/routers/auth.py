@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import timedelta, datetime
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -6,12 +6,15 @@ from sqlalchemy.orm import Session
 from jose import jwt, JWTError
 from uuid import UUID
 from pydantic import ValidationError
+import redis
 
 from backend.core.database import get_db
 from backend.core import security
 from backend.core.config import settings
 from backend.models import User
 from backend.schemas.token import Token, RefreshTokenRequest
+from backend.core.cache import get_sync_redis
+from backend.core.deps import oauth2_scheme
 
 router = APIRouter(tags=["authentication"])
 
@@ -87,3 +90,24 @@ def refresh_token(
         "token_type": "bearer",
         "refresh_token": security.create_refresh_token(subject=user.id)
     }
+
+@router.post("/logout")
+def logout(
+    token: str = Depends(oauth2_scheme),
+    redis_client: redis.Redis = Depends(get_sync_redis)
+):
+    """
+    Logout: Blacklist the access token until expiration.
+    """
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        exp = payload.get("exp")
+        if exp:
+            # Calculate TTL
+            ttl = exp - int(datetime.utcnow().timestamp())
+            if ttl > 0:
+                redis_client.setex(f"blacklist:{token}", ttl, "true")
+    except JWTError:
+        pass # Already invalid
+        
+    return {"message": "Successfully logged out"}

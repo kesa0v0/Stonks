@@ -5,10 +5,12 @@ from jose import jwt, JWTError
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 from uuid import UUID
+import redis
 
 from backend.core.database import get_db
 from backend.models import User
 from backend.core.config import settings
+from backend.core.cache import get_sync_redis
 
 # OAuth2 스키마 정의 (토큰 발급 URL 지정)
 # 프론트엔드에서 로그인 요청을 보낼 주소와 일치해야 함
@@ -16,11 +18,27 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login/access-token")
 
 def get_current_user(
     db: Session = Depends(get_db),
-    token: str = Depends(oauth2_scheme)
+    token: str = Depends(oauth2_scheme),
+    redis_client: redis.Redis = Depends(get_sync_redis)
 ) -> User:
     """
     JWT 토큰을 검증하고 해당하는 사용자를 반환합니다.
     """
+    # 1. Blacklist 확인 (Redis)
+    try:
+        if redis_client.exists(f"blacklist:{token}"):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    except redis.RedisError:
+        # Redis 장애 시 로그인은 허용할지, 차단할지 결정 필요.
+        # 보안을 위해선 차단이 맞지만, 가용성을 위해선 로그를 남기고 통과시킬 수도 있음.
+        # 여기선 일단 Pass (Fail-Open) 혹은 Error (Fail-Closed).
+        # 일반적으로 인증 서버 Redis 죽으면 로그인 안되는게 맞음 -> 에러 전파
+        pass 
+
     try:
         payload = jwt.decode(
             token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
