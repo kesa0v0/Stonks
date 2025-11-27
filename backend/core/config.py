@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql://devuser:devpass@localhost:5432/dev_db"
     
     # 2. 보안 설정
-    SECRET_KEY: str = "YOUR_SECRET_KEY_HERE"
+    SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
