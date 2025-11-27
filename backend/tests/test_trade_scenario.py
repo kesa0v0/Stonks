@@ -10,6 +10,19 @@ from backend.services.trade_service import execute_trade
 # 'execute_trade 함수를 직접 호출'하여 체결 로직을 검증하는 것이 더 확실함.
 # (API 테스트는 잔고 체크 로직 검증용으로 별도로 할 수 있음)
 
+import pytest
+from unittest.mock import patch
+from decimal import Decimal
+from backend.models import OrderStatus, OrderSide, OrderType, Portfolio, Order, Wallet
+import uuid
+from backend.services.trade_service import execute_trade
+
+# 시나리오 테스트
+# 주의: create_order API는 RabbitMQ로 보내기만 하고 체결은 안 함.
+# 따라서 여기서는 'API를 통해 주문을 넣는 것'보다
+# 'execute_trade 함수를 직접 호출'하여 체결 로직을 검증하는 것이 더 확실함.
+# (API 테스트는 잔고 체크 로직 검증용으로 별도로 할 수 있음)
+
 class TestShortSellingScenario:
     
     def test_short_selling_flow(self, db_session, test_user, test_ticker, mock_external_services):
@@ -110,3 +123,47 @@ class TestShortSellingScenario:
             # 삭제되었는지 확인
             pf_deleted = db_session.query(Portfolio).first()
             assert pf_deleted is None # 삭제됨
+
+class TestBalanceValidation:
+    def test_insufficient_balance_buy_order(self, db_session, test_user, test_ticker):
+        """
+        잔고 부족으로 인한 매수 주문 실패 시나리오 검증
+        """
+        user_id = str(test_user)
+        ticker_id = test_ticker
+        
+        # 1. 사용자 지갑 잔고를 매우 낮게 설정
+        wallet = db_session.query(Wallet).filter(Wallet.user_id == test_user).first()
+        wallet.balance = Decimal("50.0") # 50원으로 설정
+        db_session.add(wallet)
+        db_session.commit()
+        db_session.refresh(wallet)
+        
+        # 2. 매수 주문 시도 (주문 금액 > 잔고)
+        order_quantity = 1.0
+        mock_order_price = Decimal("100.0") # 1주당 100원, 총 100원 필요
+        
+        with patch("backend.services.trade_service.get_current_price") as mock_price:
+            mock_price.return_value = mock_order_price
+            order_id = str(uuid.uuid4())
+            
+            result = execute_trade(
+                db=db_session,
+                user_id=user_id,
+                order_id=order_id,
+                ticker_id=ticker_id,
+                side="BUY",
+                quantity=order_quantity
+            )
+            
+            # 3. 결과 검증
+            assert result is False, "잔고 부족으로 매수 주문이 실패해야 합니다."
+            
+            failed_order = db_session.query(Order).filter(Order.id == uuid.UUID(order_id)).first()
+            assert failed_order is not None, "실패한 주문이 DB에 기록되어야 합니다."
+            assert failed_order.status == OrderStatus.FAILED, "주문 상태가 FAILED여야 합니다."
+            assert "Insufficient balance" in failed_order.fail_reason, "실패 사유에 잔고 부족이 명시되어야 합니다."
+            
+            # 지갑 잔고가 변하지 않았는지 확인
+            db_session.refresh(wallet)
+            assert wallet.balance == Decimal("50.0"), "잔고가 부족한 주문은 지갑 잔고를 변경하지 않아야 합니다."
