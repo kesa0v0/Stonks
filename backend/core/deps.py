@@ -76,3 +76,16 @@ def get_current_user_id(
     User 객체에서 ID만 추출하여 반환 (기존 코드 호환성 유지)
     """
     return current_user.id
+
+def get_current_admin_user(
+    current_user: User = Depends(get_current_user)
+) -> User:
+    """
+    관리자 권한을 가진 사용자만 반환합니다.
+    """
+    if current_user.email != settings.ADMIN_EMAIL:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="The user doesn't have enough privileges"
+        )
+    return current_user

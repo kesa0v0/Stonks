@@ -2,24 +2,31 @@
 import asyncio
 import json
 import aio_pika
+import redis.asyncio as async_redis
 from backend.core.config import settings
 from backend.core.database import SessionLocal
 from backend.services.trade_service import execute_trade
 
 async def process_message(message: aio_pika.IncomingMessage):
-    async with message.process():
-        # 1. 메시지 디코딩
-        body = json.loads(message.body.decode())
-        print(f"📩 Received Order: {body}")
-        
-        # 2. DB 세션 생성
-        db = SessionLocal()
-        
-        try:
-            # 3. 비즈니스 로직 실행 (동기 함수이므로, 실행 흐름을 위해 여기서 바로 호출)
-            # (대규모 트래픽 처리를 위해선 run_in_executor 등을 쓰지만 지금은 직접 호출)
-            success = execute_trade(
+    db = SessionLocal()
+    redis_client = None # 초기화
+    try:
+        async with message.process():
+            # 1. 메시지 디코딩
+            body = json.loads(message.body.decode())
+            print(f"📩 Received Order: {body}")
+            
+            # 2. Redis 클라이언트 생성 (메시지 처리당 하나씩)
+            redis_client = async_redis.Redis(
+                host=settings.REDIS_HOST,
+                port=settings.REDIS_PORT,
+                decode_responses=True
+            )
+            
+            # 3. 비즈니스 로직 실행 (비동기 함수이므로 await 사용)
+            success = await execute_trade(
                 db=db,
+                redis_client=redis_client,
                 user_id=body['user_id'], # 테스트용 UUID (주의: DB에 User가 먼저 있어야 함)
                 order_id=body['order_id'],
                 ticker_id=body['ticker_id'],
@@ -32,10 +39,12 @@ async def process_message(message: aio_pika.IncomingMessage):
             else:
                 print("⚠️ Order Failed logic")
                 
-        except Exception as e:
-            print(f"🔥 Critical Error processing order: {e}")
-        finally:
-            db.close()
+    except Exception as e:
+        print(f"🔥 Critical Error processing order: {e}")
+    finally:
+        if redis_client:
+            await redis_client.close()
+        db.close()
 
 async def main():
     # RabbitMQ 연결

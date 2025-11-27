@@ -2,6 +2,7 @@
 import json
 import uuid
 import aio_pika
+import redis.asyncio as async_redis
 from typing import List
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,6 +14,7 @@ from backend.core.enums import OrderType, OrderSide, OrderStatus
 from backend.schemas.order import OrderCreate, OrderResponse, OrderListResponse
 from backend.core.config import settings
 from backend.core.deps import get_current_user_id
+from backend.core.cache import get_redis
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -32,7 +34,8 @@ async def get_rabbitmq_channel():
 async def create_order(
     order: OrderCreate, 
     db: Session = Depends(get_db),
-    user_uuid: UUID = Depends(get_current_user_id)
+    user_uuid: UUID = Depends(get_current_user_id),
+    redis: async_redis.Redis = Depends(get_redis)
 ):
     """
     주문 접수 API (Non-blocking)
@@ -55,6 +58,18 @@ async def create_order(
     wallet = db.query(Wallet).filter(Wallet.user_id == user_uuid).first()
     balance = wallet.balance if wallet else 0
 
+    # [수수료율 조회]
+    fee_rate_str = await redis.get("config:trading_fee_rate")
+    fee_rate = float(fee_rate_str) if fee_rate_str else 0.001
+
+    # [시장가 주문 사전 가격 조회]
+    current_price = 0.0
+    if order.type == OrderType.MARKET:
+        price_data = await redis.get(f"price:{order.ticker_id}")
+        if not price_data:
+             raise HTTPException(status_code=400, detail=f"Current market price unavailable for {order.ticker_id}")
+        current_price = float(json.loads(price_data)['price'])
+
     # 1) 매도(SELL) 주문 시 검증
     if order.side == OrderSide.SELL:
         # A. 롱 포지션 청산 (보유 수량 > 0)
@@ -64,31 +79,45 @@ async def create_order(
                     status_code=400, 
                     detail=f"Insufficient holdings to close long position. Available: {float(available_qty)}, Required: {float(order.quantity)}"
                 )
-        # B. 공매도 (보유 수량 <= 0 또는 숏 포지션) - 지정가만 API에서 체크
-        elif available_qty <= 0 and order.type == OrderType.LIMIT:
-            if not order.target_price or order.target_price <= 0:
-                 raise HTTPException(status_code=400, detail="Limit order requires a valid target_price")
+        # B. 공매도 (보유 수량 <= 0 또는 숏 포지션)
+        else:
+            required_margin = 0.0
             
-            required_margin = order.target_price * order.quantity
+            # 지정가 공매도
+            if order.type == OrderType.LIMIT:
+                if not order.target_price or order.target_price <= 0:
+                     raise HTTPException(status_code=400, detail="Limit order requires a valid target_price")
+                required_margin = order.target_price * order.quantity
+            
+            # 시장가 공매도
+            elif order.type == OrderType.MARKET:
+                required_margin = current_price * order.quantity
+
+            # 공매도 증거금에는 수수료 포함 안 함 (매도 시 돈이 들어오므로)
             if balance < required_margin:
                  raise HTTPException(
                     status_code=400, 
                     detail=f"Insufficient balance for short selling. Required margin: {float(required_margin)}, Available: {float(balance)}"
                 )
 
-    # 2) 매수(BUY) 지정가(LIMIT) 주문 시 잔고 확인
-    # (시장가 매수는 가격을 모르므로 여기서 체크 불가 -> 체결 시 실패 처리)
-    elif order.side == OrderSide.BUY and order.type == OrderType.LIMIT:
-        # 숏 포지션 커버링(상환)이거나 신규 롱 진입일 수 있음.
-        # 현금은 무조건 필요하므로 잔고 체크
-        if not order.target_price or order.target_price <= 0:
-             raise HTTPException(status_code=400, detail="Limit order requires a valid target_price")
-             
-        required_amount = order.target_price * order.quantity
+    # 2) 매수(BUY) 주문 시 검증
+    elif order.side == OrderSide.BUY:
+        required_amount = 0.0
+        
+        # 지정가 매수
+        if order.type == OrderType.LIMIT:
+            if not order.target_price or order.target_price <= 0:
+                 raise HTTPException(status_code=400, detail="Limit order requires a valid target_price")
+            required_amount = (order.target_price * order.quantity) * (1 + fee_rate)
+            
+        # 시장가 매수
+        elif order.type == OrderType.MARKET:
+            required_amount = (current_price * order.quantity) * (1 + fee_rate)
+
         if balance < required_amount:
              raise HTTPException(
                 status_code=400, 
-                detail=f"Insufficient balance for buying. Available: {float(balance)}, Required: {float(required_amount)}"
+                detail=f"Insufficient balance for buying (incl. fee {fee_rate*100}%). Available: {float(balance)}, Required: {float(required_amount)}"
             )
 
     # [분기 1] 지정가(LIMIT) 주문인 경우 -> DB에 저장만 하고 끝냄 (매칭 대기)

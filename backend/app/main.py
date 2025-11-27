@@ -5,7 +5,7 @@ import redis.asyncio as redis
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from backend.core.config import settings
-from backend.app.routers import order, portfolio, test, market_data, auth
+from backend.app.routers import order, portfolio, test, market_data, auth, admin
 
 app = FastAPI(
     title="Stonk Server API",
@@ -80,3 +80,4 @@ app.include_router(order.router)
 app.include_router(portfolio.router)
 app.include_router(test.router)
 app.include_router(market_data.router)
+app.include_router(admin.router)
