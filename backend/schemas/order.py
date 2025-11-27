@@ -10,10 +10,10 @@ from backend.core.enums import OrderType, OrderSide
 class OrderCreate(BaseModel):
     ticker_id: str = Field()
     side: OrderSide = Field()
-    quantity: Decimal = Field(gt=0)
+    quantity: Decimal = Field(gt=Decimal(0)) # Change to Decimal
 
     type: OrderType = OrderType.MARKET # 안 보내면 시장가
-    target_price: Optional[Decimal] = None # 지정가일 때만 필수
+    target_price: Optional[Decimal] = None # 지정가일 때만 필수 # Change to Decimal
 
 class OrderResponse(BaseModel):
     order_id: str
@@ -26,8 +26,8 @@ class OrderListResponse(BaseModel):
     ticker_id: str
     side: str
     status: str
-    quantity: float
-    price: Optional[float] = None # 미체결 시 None일 수 있음
+    quantity: float # This can remain float for display
+    price: Optional[float] = None # 미체결 시 None일 수 있음 # This can remain float for display
     created_at: datetime # 주문 시간
 
     model_config = ConfigDict(

@@ -1,8 +1,8 @@
 # backend/create_tickers.py
-from backend.core.database import SessionLocal
+import asyncio
+from sqlalchemy import select
+from backend.core.database import AsyncSessionLocal
 from backend.models import Ticker, MarketType, Currency
-
-db = SessionLocal()
 
 # 등록할 종목 리스트
 INITIAL_TICKERS = [
@@ -36,28 +36,33 @@ INITIAL_TICKERS = [
     },
 ]
 
-try:
+async def init_tickers():
     print("🚀 Initializing Tickers...")
-    for item in INITIAL_TICKERS:
-        existing = db.query(Ticker).filter(Ticker.id == item["id"]).first()
-        if not existing:
-            ticker = Ticker(
-                id=item["id"],
-                symbol=item["symbol"],
-                name=item["name"],
-                market_type=item["market_type"],
-                currency=item["currency"]
-            )
-            db.add(ticker)
-            print(f"✅ Added: {item['name']} ({item['id']})")
-        else:
-            print(f"ℹ️ Already exists: {item['name']}")
-    
-    db.commit()
-    print("🎉 Ticker initialization complete!")
+    async with AsyncSessionLocal() as db:
+        try:
+            for item in INITIAL_TICKERS:
+                result = await db.execute(select(Ticker).where(Ticker.id == item["id"]))
+                existing = result.scalars().first()
+                
+                if not existing:
+                    ticker = Ticker(
+                        id=item["id"],
+                        symbol=item["symbol"],
+                        name=item["name"],
+                        market_type=item["market_type"],
+                        currency=item["currency"]
+                    )
+                    db.add(ticker)
+                    print(f"✅ Added: {item['name']} ({item['id']})")
+                else:
+                    print(f"ℹ️ Already exists: {item['name']}")
+            
+            await db.commit()
+            print("🎉 Ticker initialization complete!")
 
-except Exception as e:
-    print(f"❌ Error: {e}")
-    db.rollback()
-finally:
-    db.close()
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            await db.rollback()
+
+if __name__ == "__main__":
+    asyncio.run(init_tickers())

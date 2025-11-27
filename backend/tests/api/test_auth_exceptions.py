@@ -1,13 +1,17 @@
 import uuid
-from sqlalchemy.orm import Session
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from backend.models import User
 from backend.core.security import get_password_hash
-from fastapi.testclient import TestClient
+from httpx import AsyncClient
 from datetime import timedelta
 from backend.core.security import create_access_token, create_refresh_token
 from backend.core.deps import get_current_user
+from backend.tests.conftest import convert_decimals_to_str # Import the helper
 
-def test_expired_access_token(client: TestClient, test_user, mock_external_services):
+@pytest.mark.asyncio
+async def test_expired_access_token(client: AsyncClient, test_user, mock_external_services, payload_json_converter):
     mock_redis = mock_external_services["redis"]
     mock_redis.exists.return_value = 0
 
@@ -16,15 +20,20 @@ def test_expired_access_token(client: TestClient, test_user, mock_external_servi
     headers = {"Authorization": f"Bearer {token}"}
     
     # 2. Disable override to test actual validation logic
-    if get_current_user in client.app.dependency_overrides:
-        del client.app.dependency_overrides[get_current_user]
-        
-    # Use any protected endpoint
-    response = client.get("/orders", headers=headers)
-    assert response.status_code == 401
-    assert "Token has expired" in response.json()["detail"]
+    from backend.app.main import app
+    if get_current_user in app.dependency_overrides:
+        del app.dependency_overrides[get_current_user]
+    
+    try:
+        # Use any protected endpoint
+        response = await client.get("/orders", headers=headers)
+        assert response.status_code == 401
+        assert "Token has expired" in response.json()["detail"]
+    finally:
+        pass
 
-def test_tampered_access_token(client: TestClient, test_user, mock_external_services):
+@pytest.mark.asyncio
+async def test_tampered_access_token(client: AsyncClient, test_user, mock_external_services, payload_json_converter):
     mock_redis = mock_external_services["redis"]
     mock_redis.exists.return_value = 0
 
@@ -33,14 +42,19 @@ def test_tampered_access_token(client: TestClient, test_user, mock_external_serv
     tampered_token = token[:-1] + ("A" if token[-1] != "A" else "B")
     headers = {"Authorization": f"Bearer {tampered_token}"}
     
-    if get_current_user in client.app.dependency_overrides:
-        del client.app.dependency_overrides[get_current_user]
+    from backend.app.main import app
+    if get_current_user in app.dependency_overrides:
+        del app.dependency_overrides[get_current_user]
         
-    response = client.get("/orders", headers=headers)
-    assert response.status_code == 401
-    assert "Could not validate credentials" in response.json()["detail"]
+    try:
+        response = await client.get("/orders", headers=headers)
+        assert response.status_code == 401
+        assert "Could not validate credentials" in response.json()["detail"]
+    finally:
+        pass
 
-def test_expired_refresh_token(client: TestClient, test_user, mock_external_services):
+@pytest.mark.asyncio
+async def test_expired_refresh_token(client: AsyncClient, test_user, mock_external_services, payload_json_converter):
     mock_redis = mock_external_services["redis"]
     mock_redis.exists.return_value = 0
 
@@ -48,11 +62,12 @@ def test_expired_refresh_token(client: TestClient, test_user, mock_external_serv
     refresh_data = {"refresh_token": token}
     
     # Refresh endpoint handles validation itself (no override issue)
-    response = client.post("/login/refresh", json=refresh_data)
+    response = await client.post("/login/refresh", json=payload_json_converter(refresh_data)) # Convert payload
     assert response.status_code == 401
     assert "Refresh token has expired" in response.json()["detail"]
 
-def test_tampered_refresh_token(client: TestClient, test_user, mock_external_services):
+@pytest.mark.asyncio
+async def test_tampered_refresh_token(client: AsyncClient, test_user, mock_external_services, payload_json_converter):
     mock_redis = mock_external_services["redis"]
     mock_redis.exists.return_value = 0
 
@@ -60,11 +75,12 @@ def test_tampered_refresh_token(client: TestClient, test_user, mock_external_ser
     tampered_token = token + "junk"
     refresh_data = {"refresh_token": tampered_token}
     
-    response = client.post("/login/refresh", json=refresh_data)
+    response = await client.post("/login/refresh", json=payload_json_converter(refresh_data)) # Convert payload
     assert response.status_code == 401
     assert "Invalid refresh token" in response.json()["detail"]
 
-def test_login_inactive_user(client: TestClient, db_session: Session):
+@pytest.mark.asyncio
+async def test_login_inactive_user(client: AsyncClient, db_session: AsyncSession, payload_json_converter):
     # 1. Create inactive user
     user_id = uuid.uuid4()
     hashed = get_password_hash("test1234")
@@ -76,11 +92,12 @@ def test_login_inactive_user(client: TestClient, db_session: Session):
         is_active=False # Inactive
     )
     db_session.add(user)
-    db_session.commit()
+    await db_session.commit()
     
     # 2. Try login
     login_data = {"username": "inactive@test.com", "password": "test1234"}
-    response = client.post("/login/access-token", data=login_data)
+    # No need to convert login_data for login endpoints, as username/password are strings
+    response = await client.post("/login/access-token", data=login_data)
     
     # 3. Assert
     assert response.status_code == 400

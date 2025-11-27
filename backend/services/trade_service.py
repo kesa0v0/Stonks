@@ -4,8 +4,8 @@ import redis.asyncio as async_redis
 import uuid
 import logging
 from decimal import Decimal
-from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
 from backend.models import User, Wallet, Portfolio, Order, Ticker
 from backend.core.enums import OrderStatus, OrderSide, OrderType
 from backend.core.config import settings
@@ -41,7 +41,7 @@ async def get_trading_fee_rate(redis_client: async_redis.Redis) -> Decimal:
         logger.error(f"Failed to fetch fee rate: {e}")
         return Decimal("0.001")
 
-async def execute_trade(db: Session, redis_client: async_redis.Redis, user_id: str, order_id: str, ticker_id: str, side: str, quantity: float):
+async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_id: str, order_id: str, ticker_id: str, side: str, quantity: float):
     """
     주문 실행 및 체결 로직 (Atomic Transaction)
     공매도(Short Selling) 및 스위칭 매매 지원
@@ -71,48 +71,53 @@ async def execute_trade(db: Session, redis_client: async_redis.Redis, user_id: s
         
     fee_rate = await get_trading_fee_rate(redis_client)
 
-    # 2. 유저 및 지갑 조회 (Pessimistic Lock 적용)
-    # with_for_update()를 사용하여 트랜잭션 종료 시까지 Row Lock을 걺
-    wallet = db.query(Wallet).filter(Wallet.user_id == user_uuid).with_for_update().first()
-    if not wallet:
-        logger.error(f"Wallet not found for user {user_id}. Trade failed.")
-        # 지갑이 없으면 실패 처리 (자동 생성 로직 삭제함)
-        return False
-
-    # 3. 주문 조회 또는 생성
-    order = db.query(Order).filter(Order.id == order_uuid).first()
-
-    if not order:
-        # Market 주문: DB에 없으므로 새로 생성
-        order = Order(
-            id=order_uuid,
-            user_id=user_uuid,
-            ticker_id=ticker_id,
-            side=trade_side,
-            quantity=quantity,
-            price=current_price,
-            type=OrderType.MARKET,
-            status=OrderStatus.PENDING,
-            unfilled_quantity=quantity
-        )
-        db.add(order)
-    else:
-        # Limit 주문
-        order.price = current_price
-
-    # 4. 포트폴리오 조회 (Pessimistic Lock 적용)
-    # 없으면 생성해야 하므로, 일단 조회 시도
-    portfolio = db.query(Portfolio).filter(
-        Portfolio.user_id == user_uuid, 
-        Portfolio.ticker_id == ticker_id
-    ).with_for_update().first()
-    
-    if not portfolio:
-        portfolio = Portfolio(user_id=user_uuid, ticker_id=ticker_id, quantity=0, average_price=0)
-        db.add(portfolio)
-
-    # 5. 매매 로직 (공매도/스위칭 포함)
     try:
+        # 2. 유저 및 지갑 조회 (Pessimistic Lock 적용)
+        # with_for_update()를 사용하여 트랜잭션 종료 시까지 Row Lock을 걺
+        wallet_stmt = select(Wallet).where(Wallet.user_id == user_uuid).with_for_update()
+        result = await db.execute(wallet_stmt)
+        wallet = result.scalars().first()
+
+        if not wallet:
+            logger.error(f"Wallet not found for user {user_id}. Trade failed.")
+            return False
+
+        # 3. 주문 조회 또는 생성
+        order_stmt = select(Order).where(Order.id == order_uuid)
+        result = await db.execute(order_stmt)
+        order = result.scalars().first()
+
+        if not order:
+            # Market 주문: DB에 없으므로 새로 생성
+            order = Order(
+                id=order_uuid,
+                user_id=user_uuid,
+                ticker_id=ticker_id,
+                side=trade_side,
+                quantity=quantity,
+                price=current_price,
+                type=OrderType.MARKET,
+                status=OrderStatus.PENDING,
+                unfilled_quantity=quantity
+            )
+            db.add(order)
+        else:
+            # Limit 주문
+            order.price = current_price
+
+        # 4. 포트폴리오 조회 (Pessimistic Lock 적용)
+        portfolio_stmt = select(Portfolio).where(
+            Portfolio.user_id == user_uuid, 
+            Portfolio.ticker_id == ticker_id
+        ).with_for_update()
+        result = await db.execute(portfolio_stmt)
+        portfolio = result.scalars().first()
+        
+        if not portfolio:
+            portfolio = Portfolio(user_id=user_uuid, ticker_id=ticker_id, quantity=0, average_price=0)
+            db.add(portfolio)
+
+        # 5. 매매 로직 (공매도/스위칭 포함)
         trade_amount = current_price * quantity
         fee = trade_amount * fee_rate
         
@@ -126,7 +131,7 @@ async def execute_trade(db: Session, redis_client: async_redis.Redis, user_id: s
             if wallet.balance < total_cost:
                 order.status = OrderStatus.FAILED
                 order.fail_reason = f"Insufficient balance (Req: {total_cost}, Bal: {wallet.balance})"
-                db.commit()
+                await db.commit()
                 logger.warning(f"Trade failed: Insufficient balance for user {user_id}")
                 return False
             
@@ -158,11 +163,6 @@ async def execute_trade(db: Session, redis_client: async_redis.Redis, user_id: s
                     portfolio.quantity = remaining_qty
                 else:
                     # B-2. 숏 -> 롱 (스위칭)
-                    # 스위칭 시 남은 수량에 대해 새로운 평단가(현재가 + 수수료 고려?) 
-                    # 여기선 단순하게 현재가로 진입한다고 가정 (수수료는 위에서 지불됨)
-                    # 스위칭은 사실상 (숏 청산) + (롱 진입)임.
-                    # 간단히: 남은 수량만큼 현재가로 롱 진입한 것으로 처리
-                    # (엄밀히 하려면 수수료를 비례 배분해야 하지만 복잡하므로 생략)
                     portfolio.quantity = remaining_qty
                     portfolio.average_price = current_price
 
@@ -182,7 +182,6 @@ async def execute_trade(db: Session, redis_client: async_redis.Redis, user_id: s
                     portfolio.quantity = remaining_qty
                 else:
                     # A-2. 롱 -> 숏 (스위칭)
-                    # 숏 진입 평단가 = 현재가 (보수적으로 잡기 위해 수수료 차감 안함 or 함? 정책 나름)
                     portfolio.quantity = remaining_qty
                     portfolio.average_price = current_price
             
@@ -201,21 +200,26 @@ async def execute_trade(db: Session, redis_client: async_redis.Redis, user_id: s
 
         # 6. 마무리 (0 근처 삭제)
         if abs(portfolio.quantity) <= Decimal("1e-8"):
-             db.delete(portfolio)
+             await db.delete(portfolio)
         
         # 최종 커밋
         order.status = OrderStatus.FILLED
         order.unfilled_quantity = 0
         order.filled_at = func.now()
-        db.commit()
+        await db.commit()
         
         logger.info(f"Trade Executed: {side} {quantity} {ticker_id} @ {current_price} (Fee: {fee}) for user {user_id}")
         return True
 
     except Exception as e:
-        db.rollback()
+        await db.rollback()
         logger.error(f"Trade Execution Logic Error: {e}", exc_info=True)
-        order.status = OrderStatus.FAILED
-        order.fail_reason = str(e)
-        db.commit()
+        try:
+            # 실패 상태 업데이트를 위한 별도 트랜잭션 (만약 order가 세션에 있다면)
+             if order:
+                order.status = OrderStatus.FAILED
+                order.fail_reason = str(e)
+                await db.commit()
+        except:
+            pass # 실패 업데이트 중 에러는 무시
         return False

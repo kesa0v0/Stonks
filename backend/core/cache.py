@@ -1,12 +1,10 @@
 import redis.asyncio as async_redis
-import redis
-from typing import AsyncGenerator, Generator
+from typing import AsyncGenerator
 from backend.core.config import settings
 
+# get_sync_redis 함수 제거, 모든 Redis 사용은 비동기로 통일
+
 async def get_redis() -> AsyncGenerator[async_redis.Redis, None]:
-    """
-    Redis 클라이언트 의존성 주입 (Async)
-    """
     client = async_redis.Redis(
         host=settings.REDIS_HOST,
         port=settings.REDIS_PORT,
@@ -15,18 +13,6 @@ async def get_redis() -> AsyncGenerator[async_redis.Redis, None]:
     try:
         yield client
     finally:
-        await client.close()
-
-def get_sync_redis() -> Generator[redis.Redis, None, None]:
-    """
-    Redis 클라이언트 의존성 주입 (Sync) - 동기 DB 세션과 함께 사용 시 권장
-    """
-    client = redis.Redis(
-        host=settings.REDIS_HOST,
-        port=settings.REDIS_PORT,
-        decode_responses=True
-    )
-    try:
-        yield client
-    finally:
-        client.close()
+        # aclose()는 redis-py 5.x 이상에서 권장되는 비동기 클라이언트 종료 방식
+        # 기존 client.close()가 TypeError를 발생시키므로 변경
+        await client.aclose()

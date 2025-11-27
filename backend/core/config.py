@@ -23,6 +23,10 @@ class Settings(BaseSettings):
 
     DEBUG: bool = True
 
+    @property
+    def ASYNC_DATABASE_URL(self) -> str:
+        return self.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
+
     model_config = SettingsConfigDict(
         # Pydantic은 운영체제 환경변수(Docker가 넣어준 값)를 1순위로 읽고,
         # 없으면 아래 파일(.env)을 찾습니다.

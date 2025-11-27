@@ -2,32 +2,33 @@ from datetime import timedelta, datetime
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from jose import jwt, JWTError, ExpiredSignatureError
 from uuid import UUID
 from pydantic import ValidationError
-import redis
+import redis.asyncio as async_redis # Use async_redis
 
 from backend.core.database import get_db
 from backend.core import security
 from backend.core.config import settings
 from backend.models import User
 from backend.schemas.token import Token, RefreshTokenRequest, LogoutRequest
-from backend.core.cache import get_sync_redis
+from backend.core.cache import get_redis # Import async get_redis
 from backend.core.deps import oauth2_scheme
 
 router = APIRouter(tags=["authentication"])
 
 @router.post("/login/access-token", response_model=Token)
-def login_access_token(
-    db: Session = Depends(get_db),
-    form_data: OAuth2PasswordRequestForm = Depends()
+async def login_access_token(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: AsyncSession = Depends(get_db)
 ) -> Any:
     """
     OAuth2 compatible token login, get an access token for future requests
     """
-    # form_data.username에 email을 담아서 보낸다고 가정
-    user = db.query(User).filter(User.email == form_data.username).first()
+    result = await db.execute(select(User).where(User.email == form_data.username))
+    user = result.scalars().first()
     
     if not user or not security.verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
@@ -49,16 +50,16 @@ def login_access_token(
     }
 
 @router.post("/login/refresh", response_model=Token)
-def refresh_token(
+async def refresh_token(
     request: RefreshTokenRequest,
-    db: Session = Depends(get_db),
-    redis_client: redis.Redis = Depends(get_sync_redis)
+    db: AsyncSession = Depends(get_db),
+    redis_client: async_redis.Redis = Depends(get_redis) # Use async get_redis
 ) -> Any:
     """
     Refresh access token using a refresh token
     """
-    # Check Blacklist
-    if redis_client.exists(f"blacklist:{request.refresh_token}"):
+    # Check Blacklist - use await
+    if await redis_client.exists(f"blacklist:{request.refresh_token}"):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token has been revoked",
@@ -87,7 +88,9 @@ def refresh_token(
             detail="Invalid refresh token",
         )
         
-    user = db.query(User).filter(User.id == UUID(user_id)).first()
+    result = await db.execute(select(User).where(User.id == UUID(user_id)))
+    user = result.scalars().first()
+    
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     if not user.is_active:
@@ -105,15 +108,15 @@ def refresh_token(
     }
 
 @router.post("/logout")
-def logout(
+async def logout( # Make async
     request: LogoutRequest = None,
     token: str = Depends(oauth2_scheme),
-    redis_client: redis.Redis = Depends(get_sync_redis)
+    redis_client: async_redis.Redis = Depends(get_redis) # Use async get_redis
 ):
     """
     Logout: Blacklist the access token AND refresh token (if provided).
     """
-    # 1. Blacklist Access Token
+    # 1. Blacklist Access Token - use await
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         exp = payload.get("exp")
@@ -121,11 +124,11 @@ def logout(
             # Calculate TTL
             ttl = exp - int(datetime.utcnow().timestamp())
             if ttl > 0:
-                redis_client.setex(f"blacklist:{token}", ttl, "true")
+                await redis_client.setex(f"blacklist:{token}", ttl, "true")
     except JWTError:
         pass # Already invalid
         
-    # 2. Blacklist Refresh Token
+    # 2. Blacklist Refresh Token - use await
     if request and request.refresh_token:
         try:
             payload = jwt.decode(request.refresh_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
@@ -133,7 +136,7 @@ def logout(
             if exp:
                 ttl = exp - int(datetime.utcnow().timestamp())
                 if ttl > 0:
-                    redis_client.setex(f"blacklist:{request.refresh_token}", ttl, "true")
+                    await redis_client.setex(f"blacklist:{request.refresh_token}", ttl, "true")
         except JWTError:
             pass
             

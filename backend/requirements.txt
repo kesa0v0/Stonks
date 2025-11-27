@@ -3,6 +3,7 @@ fastapi
 uvicorn
 sqlalchemy
 psycopg2-binary
+asyncpg
 pydantic
 pydantic-settings
 
@@ -14,6 +15,8 @@ aio_pika
 websockets
 
 pytest
+pytest-asyncio
+aiosqlite
 httpx
 
 python-jose[cryptography]
