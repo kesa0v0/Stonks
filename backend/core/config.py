@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "YOUR_SECRET_KEY_HERE"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
     # 3. 추가된 인프라 설정 (Redis, RabbitMQ)
     REDIS_HOST: str = "localhost"

@@ -18,6 +18,31 @@ def test_login_access_token(client: TestClient, test_user):
     tokens = response.json()
     assert "access_token" in tokens
     assert tokens["token_type"] == "bearer"
+    assert "refresh_token" in tokens
+
+def test_refresh_token(client: TestClient, test_user):
+    """
+    Test refreshing the access token using a valid refresh token.
+    """
+    # 1. Login to get refresh token
+    login_data = {
+        "username": "test@test.com",
+        "password": "test1234"
+    }
+    response = client.post("/login/access-token", data=login_data)
+    assert response.status_code == 200
+    tokens = response.json()
+    refresh_token = tokens["refresh_token"]
+    
+    # 2. Use refresh token
+    refresh_data = {"refresh_token": refresh_token}
+    response = client.post("/login/refresh", json=refresh_data)
+    
+    assert response.status_code == 200
+    new_tokens = response.json()
+    assert "access_token" in new_tokens
+    # assert new_tokens["access_token"] != tokens["access_token"] # Flaky: identical if generated in same second
+    assert "refresh_token" in new_tokens
 
 def test_login_wrong_password(client: TestClient, test_user):
     login_data = {
