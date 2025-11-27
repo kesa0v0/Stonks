@@ -1,7 +1,7 @@
 from typing import Generator, Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import jwt, JWTError
+from jose import jwt, JWTError, ExpiredSignatureError
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 from uuid import UUID
@@ -33,10 +33,6 @@ def get_current_user(
                 headers={"WWW-Authenticate": "Bearer"},
             )
     except redis.RedisError:
-        # Redis 장애 시 로그인은 허용할지, 차단할지 결정 필요.
-        # 보안을 위해선 차단이 맞지만, 가용성을 위해선 로그를 남기고 통과시킬 수도 있음.
-        # 여기선 일단 Pass (Fail-Open) 혹은 Error (Fail-Closed).
-        # 일반적으로 인증 서버 Redis 죽으면 로그인 안되는게 맞음 -> 에러 전파
         pass 
 
     try:
@@ -52,6 +48,12 @@ def get_current_user(
                 detail="Could not validate credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+    except ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     except (JWTError, ValidationError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
