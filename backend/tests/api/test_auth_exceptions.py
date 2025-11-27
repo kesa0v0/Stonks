@@ -1,3 +1,7 @@
+import uuid
+from sqlalchemy.orm import Session
+from backend.models import User
+from backend.core.security import get_password_hash
 from fastapi.testclient import TestClient
 from datetime import timedelta
 from backend.core.security import create_access_token, create_refresh_token
@@ -59,3 +63,25 @@ def test_tampered_refresh_token(client: TestClient, test_user, mock_external_ser
     response = client.post("/login/refresh", json=refresh_data)
     assert response.status_code == 401
     assert "Invalid refresh token" in response.json()["detail"]
+
+def test_login_inactive_user(client: TestClient, db_session: Session):
+    # 1. Create inactive user
+    user_id = uuid.uuid4()
+    hashed = get_password_hash("test1234")
+    user = User(
+        id=user_id, 
+        email="inactive@test.com", 
+        hashed_password=hashed, 
+        nickname="Inactive",
+        is_active=False # Inactive
+    )
+    db_session.add(user)
+    db_session.commit()
+    
+    # 2. Try login
+    login_data = {"username": "inactive@test.com", "password": "test1234"}
+    response = client.post("/login/access-token", data=login_data)
+    
+    # 3. Assert
+    assert response.status_code == 400
+    assert "Inactive user" in response.json()["detail"]
