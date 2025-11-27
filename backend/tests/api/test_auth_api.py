@@ -19,10 +19,14 @@ def test_login_access_token(client: TestClient, test_user):
     assert tokens["token_type"] == "bearer"
     assert "refresh_token" in tokens
 
-def test_refresh_token(client: TestClient, test_user):
+def test_refresh_token(client: TestClient, test_user, mock_external_services):
     """
     Test refreshing the access token using a valid refresh token.
     """
+    # Mock Redis to ensure token is not blacklisted
+    mock_redis = mock_external_services["redis"]
+    mock_redis.exists.return_value = 0
+
     # 1. Login to get refresh token
     login_data = {
         "username": "test@test.com",
@@ -82,3 +86,31 @@ def test_logout(client: TestClient, test_user, mock_external_services):
     
     assert response.status_code == 401
     assert "Token has been revoked" in response.json()["detail"]
+
+def test_logout_refresh_token(client: TestClient, test_user, mock_external_services):
+    """
+    Test that logout revokes the refresh token as well.
+    """
+    # 1. Login
+    login_data = {"username": "test@test.com", "password": "test1234"}
+    response = client.post("/login/access-token", data=login_data)
+    tokens = response.json()
+    access_token = tokens["access_token"]
+    refresh_token = tokens["refresh_token"]
+    
+    # 2. Logout with refresh token
+    headers = {"Authorization": f"Bearer {access_token}"}
+    logout_data = {"refresh_token": refresh_token}
+    response = client.post("/logout", headers=headers, json=logout_data)
+    assert response.status_code == 200
+    
+    # 3. Try to refresh
+    # Mock Redis exists to return 1 (Blacklisted)
+    mock_redis = mock_external_services["redis"]
+    mock_redis.exists.return_value = 1 
+    
+    refresh_data = {"refresh_token": refresh_token}
+    response = client.post("/login/refresh", json=refresh_data)
+    
+    assert response.status_code == 401
+    assert "Refresh token has been revoked" in response.json()["detail"]

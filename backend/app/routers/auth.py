@@ -12,7 +12,7 @@ from backend.core.database import get_db
 from backend.core import security
 from backend.core.config import settings
 from backend.models import User
-from backend.schemas.token import Token, RefreshTokenRequest
+from backend.schemas.token import Token, RefreshTokenRequest, LogoutRequest
 from backend.core.cache import get_sync_redis
 from backend.core.deps import oauth2_scheme
 
@@ -51,11 +51,19 @@ def login_access_token(
 @router.post("/login/refresh", response_model=Token)
 def refresh_token(
     request: RefreshTokenRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    redis_client: redis.Redis = Depends(get_sync_redis)
 ) -> Any:
     """
     Refresh access token using a refresh token
     """
+    # Check Blacklist
+    if redis_client.exists(f"blacklist:{request.refresh_token}"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token has been revoked",
+        )
+
     try:
         payload = jwt.decode(
             request.refresh_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
@@ -93,12 +101,14 @@ def refresh_token(
 
 @router.post("/logout")
 def logout(
+    request: LogoutRequest = None,
     token: str = Depends(oauth2_scheme),
     redis_client: redis.Redis = Depends(get_sync_redis)
 ):
     """
-    Logout: Blacklist the access token until expiration.
+    Logout: Blacklist the access token AND refresh token (if provided).
     """
+    # 1. Blacklist Access Token
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         exp = payload.get("exp")
@@ -110,4 +120,16 @@ def logout(
     except JWTError:
         pass # Already invalid
         
+    # 2. Blacklist Refresh Token
+    if request and request.refresh_token:
+        try:
+            payload = jwt.decode(request.refresh_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+            exp = payload.get("exp")
+            if exp:
+                ttl = exp - int(datetime.utcnow().timestamp())
+                if ttl > 0:
+                    redis_client.setex(f"blacklist:{request.refresh_token}", ttl, "true")
+        except JWTError:
+            pass
+            
     return {"message": "Successfully logged out"}
