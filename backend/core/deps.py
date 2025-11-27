@@ -1,19 +1,56 @@
-from typing import Optional
+from typing import Generator, Optional
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import jwt, JWTError
+from pydantic import ValidationError
+from sqlalchemy.orm import Session
 from uuid import UUID
-from fastapi import Header, HTTPException
 
-# 기본 테스트 유저 ID (하드코딩된 값 대체)
-DEFAULT_TEST_USER_ID = "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+from backend.core.database import get_db
+from backend.models import User
+from backend.core.config import settings
 
-async def get_current_user_id(x_user_id: Optional[str] = Header(None, alias="x-user-id")) -> UUID:
+# OAuth2 스키마 정의 (토큰 발급 URL 지정)
+# 프론트엔드에서 로그인 요청을 보낼 주소와 일치해야 함
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login/access-token")
+
+def get_current_user(
+    db: Session = Depends(get_db),
+    token: str = Depends(oauth2_scheme)
+) -> User:
     """
-    헤더에서 x-user-id를 받아와 UUID로 변환하여 반환합니다.
-    헤더가 없으면 기본 테스트 유저 ID를 반환합니다.
+    JWT 토큰을 검증하고 해당하는 사용자를 반환합니다.
     """
-    if x_user_id:
-        try:
-            return UUID(x_user_id)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid x-user-id header format")
-    
-    return UUID(DEFAULT_TEST_USER_ID)
+    try:
+        payload = jwt.decode(
+            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
+        )
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    except (JWTError, ValidationError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+        
+    user = db.query(User).filter(User.id == UUID(user_id)).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not user.is_active:
+        raise HTTPException(status_code=400, detail="Inactive user")
+        
+    return user
+
+def get_current_user_id(
+    current_user: User = Depends(get_current_user)
+) -> UUID:
+    """
+    User 객체에서 ID만 추출하여 반환 (기존 코드 호환성 유지)
+    """
+    return current_user.id
