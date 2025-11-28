@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from decimal import Decimal # Import Decimal
+from datetime import datetime, timezone
 
 from backend.core.database import get_db
 from backend.models import Order, Portfolio, Wallet
@@ -19,6 +20,8 @@ from backend.core.deps import get_current_user_id
 from backend.core.cache import get_redis
 
 router = APIRouter(prefix="/orders", tags=["orders"])
+
+
 
 @router.post("", response_model=OrderResponse)
 async def create_order(
@@ -193,3 +196,40 @@ async def get_order_history(
     orders = result.scalars().all()
     
     return orders
+
+
+@router.post("/{order_id}/cancel")
+async def cancel_order(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_uuid: UUID = Depends(get_current_user_id),
+):
+    """
+    PENDING 상태의 지정가 주문을 취소합니다. 주문 소유자만 취소 가능.
+    """
+    # 주문 조회
+    result = await db.execute(select(Order).where(Order.id == order_id))
+    order_obj = result.scalars().first()
+
+    if not order_obj:
+        raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
+
+    # 소유자 확인
+    if str(order_obj.user_id) != str(user_uuid):
+        raise HTTPException(status_code=403, detail="권한이 없습니다.")
+
+    # 상태 확인: PENDING만 취소 가능
+    if order_obj.status != OrderStatus.PENDING:
+        raise HTTPException(status_code=400, detail=f"취소 불가한 주문 상태입니다: {order_obj.status}")
+
+    # 취소 처리
+    order_obj.status = OrderStatus.CANCELLED
+    order_obj.fail_reason = "Cancelled by user"
+    order_obj.cancelled_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    return {
+        "order_id": str(order_id),
+        "status": "CANCELLED",
+        "message": "Order has been cancelled."
+    }
