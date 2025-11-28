@@ -16,10 +16,20 @@ from backend.core import security
 from backend.core.config import settings
 from backend.models import User
 from backend.schemas.token import Token, RefreshTokenRequest, LogoutRequest
+from backend.schemas.user import UserResponse # Import the new UserResponse schema
 from backend.core.cache import get_redis # Import async get_redis
-from backend.core.deps import oauth2_scheme
+from backend.core.deps import oauth2_scheme, get_current_user
 
 router = APIRouter(tags=["authentication"])
+
+@router.get("/login/me", response_model=UserResponse)
+async def read_current_user_me(
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get current authenticated user's information.
+    """
+    return current_user
 
 @router.post("/login/access-token", response_model=Token)
 async def login_access_token(
