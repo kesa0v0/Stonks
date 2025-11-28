@@ -1,17 +1,28 @@
-from typing import Optional
+from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends, Security
-from pydantic import BaseModel
 import redis.asyncio as async_redis
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+
 from backend.core.cache import get_redis
+from backend.core.database import get_db
 from backend.core.deps import get_current_user_by_api_key, get_current_user_any
 from backend.services.trade_service import get_current_price
+from backend.models import Ticker
+from backend.schemas.market import TickerResponse, CurrentPriceResponse
 
 router = APIRouter(prefix="/market", tags=["market"])
 
-class CurrentPriceResponse(BaseModel):
-    ticker_id: str
-    price: Optional[float] = None
-    message: Optional[str] = None
+@router.get("/tickers", response_model=List[TickerResponse])
+async def get_tickers(
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    상장된 모든 활성 종목 리스트를 조회합니다.
+    """
+    result = await db.execute(select(Ticker).where(Ticker.is_active == True))
+    tickers = result.scalars().all()
+    return tickers
 
 @router.get("/price/{ticker_id}", response_model=CurrentPriceResponse, dependencies=[Security(get_current_user_by_api_key)])
 async def get_ticker_current_price(
