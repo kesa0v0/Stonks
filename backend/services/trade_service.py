@@ -136,7 +136,7 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
             # 지갑에서 돈 차감 (수수료 포함)
             if wallet.balance < total_cost:
                 order.status = OrderStatus.FAILED
-                order.fail_reason = f"Insufficient balance (Req: {total_cost}, Bal: {wallet.balance})"
+                order.fail_reason = f"매수 잔액이 부족합니다. (필요: {total_cost}, 보유: {wallet.balance})"
                 await db.commit()
                 logger.warning(f"Trade failed: Insufficient balance for user {user_id}")
                 return False
@@ -222,7 +222,7 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
             # 실패 상태 업데이트를 위한 별도 트랜잭션 (만약 order가 세션에 있다면)
              if order:
                 order.status = OrderStatus.FAILED
-                order.fail_reason = str(e)
+                order.fail_reason = f"시스템 오류: {str(e)}"
                 await db.commit()
         except:
             pass # 실패 업데이트 중 에러는 무시

@@ -61,7 +61,7 @@ async def create_order(
     if order.type == OrderType.MARKET:
         price_data = await redis.get(f"price:{order.ticker_id}")
         if not price_data:
-             raise HTTPException(status_code=400, detail=f"Current market price unavailable for {order.ticker_id}")
+             raise HTTPException(status_code=400, detail=f"현재 시세 정보를 가져올 수 없습니다.")
         # Convert to Decimal
         current_price = Decimal(str(json.loads(price_data)['price']))
 
@@ -72,7 +72,7 @@ async def create_order(
             if available_qty < order.quantity:
                 raise HTTPException(
                     status_code=400, 
-                    detail=f"Insufficient holdings to close long position. Available: {available_qty}, Required: {order.quantity}"
+                    detail=f"보유 수량이 부족하여 매도할 수 없습니다. (보유: {available_qty}, 요청: {order.quantity})"
                 )
         # B. 공매도 (보유 수량 <= 0 또는 숏 포지션)
         else:
@@ -81,7 +81,7 @@ async def create_order(
             # 지정가 공매도
             if order.type == OrderType.LIMIT:
                 if not order.target_price or order.target_price <= Decimal(0):
-                     raise HTTPException(status_code=400, detail="Limit order requires a valid target_price")
+                     raise HTTPException(status_code=400, detail="지정가 주문에는 유효한 목표 가격이 필요합니다.")
                 required_margin = order.target_price * order.quantity
             
             # 시장가 공매도
@@ -92,7 +92,7 @@ async def create_order(
             if balance < required_margin:
                  raise HTTPException(
                     status_code=400, 
-                    detail=f"Insufficient balance for short selling. Required margin: {required_margin}, Available: {balance}"
+                    detail=f"공매도 증거금이 부족합니다. (필요: {required_margin}, 보유: {balance})"
                 )
 
     # 2) 매수(BUY) 주문 시 검증
@@ -102,7 +102,7 @@ async def create_order(
         # 지정가 매수
         if order.type == OrderType.LIMIT:
             if not order.target_price or order.target_price <= Decimal(0):
-                 raise HTTPException(status_code=400, detail="Limit order requires a valid target_price")
+                 raise HTTPException(status_code=400, detail="지정가 주문에는 유효한 목표 가격이 필요합니다.")
             required_amount = (order.target_price * order.quantity) * (Decimal(1) + fee_rate) # Use Decimal(1)
             
         # 시장가 매수
@@ -112,13 +112,13 @@ async def create_order(
         if balance < required_amount:
              raise HTTPException(
                 status_code=400, 
-                detail=f"Insufficient balance for buying (incl. fee {fee_rate*Decimal(100)}%). Available: {balance}, Required: {required_amount}"
+                detail=f"매수 잔액이 부족합니다 (수수료 {fee_rate*Decimal(100)}% 포함). (필요: {required_amount}, 보유: {balance})"
             )
 
     # [분기 1] 지정가(LIMIT) 주문인 경우 -> DB에 저장만 하고 끝냄 (매칭 대기)
     if order.type == OrderType.LIMIT:
         if not order.target_price or order.target_price <= Decimal(0):
-             raise HTTPException(status_code=400, detail="Limit order requires a valid target_price")
+             raise HTTPException(status_code=400, detail="지정가 주문에는 유효한 목표 가격이 필요합니다.")
 
         new_order = Order(
             id=uuid.UUID(order_id),
@@ -170,7 +170,7 @@ async def create_order(
             )
             
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Broker Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"주문 시스템 오류가 발생했습니다: {str(e)}")
 
     return {
         "order_id": order_id,

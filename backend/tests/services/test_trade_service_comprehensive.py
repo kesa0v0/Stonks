@@ -46,7 +46,7 @@ async def test_trade_boundary_insufficient_fee(db_session, test_user, test_ticke
         failed_order = res.scalars().first()
         assert failed_order is not None
         assert failed_order.status == OrderStatus.FAILED
-        assert "Insufficient balance" in failed_order.fail_reason
+        assert "매수 잔액이 부족합니다" in failed_order.fail_reason
 
 @pytest.mark.asyncio
 async def test_trade_boundary_exact_balance(db_session, test_user, test_ticker, mock_external_services):

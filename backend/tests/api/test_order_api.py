@@ -44,13 +44,13 @@ async def test_create_limit_order_insufficient_balance(client: AsyncClient, db_s
     # 4. Assert
     assert response.status_code == 400
     data = response.json()
-    assert "Insufficient balance" in data["detail"]
+    assert "매수 잔액이 부족합니다" in data["detail"]
     # Updated assertion to reflect fee calculation and Decimal formatting
     # Based on previous logs, let's check partial string matching or standardized format if needed.
     # The previous failure log didn't show this one failing with the new format 100.10000, 
     # but let's be safe. If it's converted to float, it might be 100.1.
     # "Required: 100.10000" seems to be what we put in code, let's keep it consistent with findings.
-    assert "Required: 100.1" in data["detail"]
+    assert "필요: 100.1" in data["detail"]
 
 @pytest.mark.asyncio
 async def test_create_short_sell_limit_order_insufficient_margin(client: AsyncClient, db_session: AsyncSession, test_user, test_ticker, payload_json_converter):
@@ -90,9 +90,9 @@ async def test_create_short_sell_limit_order_insufficient_margin(client: AsyncCl
     # 3. Execute
     response = await client.post("/orders", json=payload)
     assert response.status_code == 400
-    assert "Insufficient balance for short selling" in response.json()["detail"]
+    assert "공매도 증거금이 부족합니다" in response.json()["detail"]
     # Updated assertion to match actual output format
-    assert "Required margin: 100.0" in response.json()["detail"]
+    assert "필요: 100.0" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -130,9 +130,9 @@ async def test_create_sell_order_insufficient_holdings(client: AsyncClient, db_s
     
     response = await client.post("/orders", json=payload)
     assert response.status_code == 400
-    assert "Insufficient holdings" in response.json()["detail"]
+    assert "보유 수량이 부족하여" in response.json()["detail"]
     # Updated assertion to match actual output format
-    assert "Available: 5.0, Required: 10.0" in response.json()["detail"]
+    assert "보유: 5.0, 요청: 10.0" in response.json()["detail"]
 
 
 @pytest.mark.asyncio

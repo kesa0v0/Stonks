@@ -160,7 +160,7 @@ class TestBalanceValidation:
             
             if failed_order:
                 assert failed_order.status == OrderStatus.FAILED
-                assert "Insufficient balance" in failed_order.fail_reason
+                assert "매수 잔액이 부족합니다" in failed_order.fail_reason
             
             # 지갑 잔고가 변하지 않았는지 확인
             await db_session.refresh(wallet)
