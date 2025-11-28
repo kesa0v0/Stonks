@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     RABBITMQ_USER: str = "guest"
     RABBITMQ_PASS: str = "guest"
 
+    # 4. Discord OAuth 설정
+    DISCORD_CLIENT_ID: str = ""
+    DISCORD_CLIENT_SECRET: str = ""
+    DISCORD_REDIRECT_URI: str = "http://localhost:5173/auth/discord/callback"
+
     DEBUG: bool = True
 
     @property

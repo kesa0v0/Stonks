@@ -33,7 +33,8 @@ async def login_access_token(
     result = await db.execute(select(User).where(User.email == form_data.username))
     user = result.scalars().first()
     
-    if not user or not security.verify_password(form_data.password, user.hashed_password):
+    # Check if user exists and has a password (local user)
+    if not user or not user.hashed_password or not security.verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",

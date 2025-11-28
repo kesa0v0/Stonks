@@ -11,10 +11,14 @@ class User(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email = Column(String(100), unique=True, nullable=False, index=True)
-    hashed_password = Column(String(200), nullable=False)
+    hashed_password = Column(String(200), nullable=True)  # Nullable for OAuth users
     nickname = Column(String(50), nullable=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # OAuth info
+    provider = Column(String(20), default="local", nullable=False)  # e.g., "local", "discord"
+    social_id = Column(String(100), nullable=True, index=True)  # ID from the provider
 
     # Relationships
     wallet = relationship("Wallet", back_populates="user", uselist=False)
