@@ -11,7 +11,7 @@ from backend.core.cache import get_redis
 from backend.core.config import settings
 from backend.core import security
 from backend.models import ApiKey, User
-from backend.schemas.api_key import ApiKeyCreateResponse, ApiKeyItem, ApiKeyListResponse, ApiKeyRotateResponse
+from backend.schemas.api_key import ApiKeyCreateResponse, ApiKeyItem, ApiKeyListResponse, ApiKeyRotateResponse, ApiKeyCreateRequest
 
 router = APIRouter(prefix="/api-keys", tags=["api-keys"])  # RESTful collection
 
@@ -26,10 +26,11 @@ def _generate_api_key() -> str:
 
 @router.post("/", response_model=ApiKeyCreateResponse)
 async def create_api_key(
-    name: str | None = None,
+    request: ApiKeyCreateRequest = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    name = request.name if request else None
     plain_key = _generate_api_key()
     prefix = plain_key[:PREFIX_LENGTH]
     hashed = security.hash_api_key(plain_key)

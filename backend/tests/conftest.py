@@ -178,6 +178,33 @@ async def another_user_token(db_session: AsyncSession):
     token = create_access_token(subject=other_id)
     return token
 
+@pytest_asyncio.fixture(scope="function")
+async def admin_user(db_session: AsyncSession):
+    """
+    Creates an admin user for testing.
+    """
+    admin_id = uuid.uuid4()
+    hashed = get_password_hash("admin1234")
+    admin = User(
+        id=admin_id,
+        email=settings.ADMIN_EMAIL, # Use the configured ADMIN_EMAIL
+        hashed_password=hashed,
+        nickname="AdminUser",
+        is_active=True
+    )
+    db_session.add(admin)
+    db_session.add(Wallet(user_id=admin_id, balance=Decimal("1000000000"))) # Large balance for admin
+    await db_session.commit()
+    return admin
+
+@pytest_asyncio.fixture(scope="function")
+async def admin_user_token(admin_user: User):
+    """
+    Generates an access token for the admin user.
+    """
+    token = create_access_token(subject=admin_user.id)
+    return token
+
 # 3. Client Fixture (AsyncClient)
 @pytest_asyncio.fixture(scope="function")
 async def client(db_session: AsyncSession, test_user, mock_external_services): 

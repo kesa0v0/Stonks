@@ -4,6 +4,9 @@ from typing import Optional
 from pydantic import BaseModel, Field, ConfigDict
 from uuid import UUID
 
+class ApiKeyCreateRequest(BaseModel):
+    name: Optional[str] = None
+
 class ApiKeyCreateResponse(BaseModel):
     key_id: UUID
     api_key: str  # 전체 Key는 최초 발급시에만 반환
