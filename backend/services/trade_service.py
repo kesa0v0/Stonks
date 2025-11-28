@@ -35,6 +35,8 @@ async def get_trading_fee_rate(redis_client: async_redis.Redis) -> Decimal:
     try:
         rate = await redis_client.get("config:trading_fee_rate")
         if rate:
+            if isinstance(rate, bytes):
+                rate = rate.decode()
             return Decimal(str(rate))
         return Decimal("0.001")
     except Exception as e:
@@ -47,6 +49,10 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
     공매도(Short Selling) 및 스위칭 매매 지원
     """
     quantity = Decimal(str(quantity))
+    
+    if quantity <= 0:
+        logger.warning(f"Trade quantity must be positive: {quantity}")
+        return False
 
     # UUID 유효성 검사
     try:

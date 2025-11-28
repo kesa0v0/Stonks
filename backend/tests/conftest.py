@@ -62,6 +62,10 @@ async def db_session():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 
+@pytest.fixture(scope="function")
+def session_factory():
+    return TestingSessionLocal
+
 # 4. 테스트 데이터 Fixture (유저, 코인)
 @pytest_asyncio.fixture(scope="function")
 async def test_user(db_session: AsyncSession): 
