@@ -5,6 +5,11 @@ import redis.asyncio as redis
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from backend.core.config import settings
+from backend.core.database import Base
+from backend.core.database import engine
+from sqlalchemy import text
+from backend.create_test_user import create_test_user
+from backend.create_tickers import init_tickers
 from backend.app.routers import order, portfolio, test, market_data, auth, admin
 
 app = FastAPI(
@@ -81,3 +86,26 @@ app.include_router(portfolio.router)
 app.include_router(test.router)
 app.include_router(market_data.router)
 app.include_router(admin.router)
+
+# Ensure DB tables exist at startup (idempotent)
+@app.on_event("startup")
+async def ensure_db_tables():
+    try:
+        async with engine.begin() as conn:
+            # Optionally set schema/search_path if needed
+            # await conn.execute(text("SET search_path TO public"))
+            await conn.run_sync(Base.metadata.create_all)
+        if settings.DEBUG:
+            print("[startup] DB tables ensured (create_all)")
+
+        # In DEBUG, seed minimal dev data (idempotent)
+        if settings.DEBUG:
+            try:
+                tasks = [create_test_user(), init_tickers()]
+                await asyncio.gather(*tasks)
+                print("[startup] Dev seed completed (test user, tickers)")
+            except Exception as se:
+                print(f"[startup] Dev seed failed: {se}")
+    except Exception as e:
+        # Log the error; in dev we continue to surface it
+        print(f"[startup] Failed to ensure DB tables: {e}")

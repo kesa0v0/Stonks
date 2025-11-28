@@ -56,6 +56,8 @@ services:
       - ./backend:/app/backend
     ports:
       - "8000:8000"
+    env_file:
+      - ./.env
     environment:
       - DATABASE_URL=postgresql://devuser:devpass@postgres:5432/dev_db
       - REDIS_HOST=redis
@@ -63,7 +65,6 @@ services:
       - RABBITMQ_USER=guest
       - RABBITMQ_PASS=guest
       # JWT 시크릿 등은 개발용 임의 값
-      - SECRET_KEY=dev_secret_key
       - ALGORITHM=HS256
       - PYTHONUNBUFFERED=1
     depends_on:
@@ -81,6 +82,8 @@ services:
     command: python -m backend.worker.data_feeder
     volumes:
       - ./backend:/app/backend # 코드 수정 시 즉시 반영 (Hot Reload는 안 되지만 재시작하면 됨)
+    env_file:
+      - ./.env
     environment:
       - DATABASE_URL=postgresql://devuser:devpass@postgres:5432/dev_db
       - REDIS_HOST=redis
@@ -99,6 +102,8 @@ services:
     command: python -m backend.worker.trade_consumer
     volumes:
       - ./backend:/app/backend
+    env_file:
+      - ./.env
     environment:
       - DATABASE_URL=postgresql://devuser:devpass@postgres:5432/dev_db
       - REDIS_HOST=redis
@@ -121,6 +126,8 @@ services:
     command: python -m backend.worker.limit_matcher
     volumes:
       - ./backend:/app/backend
+    env_file:
+      - ./.env
     environment:
       - DATABASE_URL=postgresql://devuser:devpass@postgres:5432/dev_db
       - REDIS_HOST=redis
