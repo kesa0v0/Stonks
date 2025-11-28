@@ -10,6 +10,7 @@ class TokenPayload(BaseModel):
     sub: Optional[str] = None
     type: Optional[str] = None
     exp: Optional[int] = None
+    jti: Optional[str] = None  # For refresh token reuse detection
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str

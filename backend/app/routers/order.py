@@ -198,6 +198,43 @@ async def get_order_history(
     return orders
 
 
+# 특정 주문 상세 조회 API
+@router.get("/{order_id}", response_model=OrderResponse)
+async def get_order_detail(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_uuid: UUID = Depends(get_current_user_id),
+):
+    """
+    특정 주문 상세 조회 (주문 소유자만 가능)
+    """
+    result = await db.execute(select(Order).where(Order.id == order_id))
+    order_obj = result.scalars().first()
+
+    if not order_obj:
+        raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
+
+    if str(order_obj.user_id) != str(user_uuid):
+        raise HTTPException(status_code=403, detail="권한이 없습니다.")
+
+    return {
+        "order_id": str(order_obj.id),
+        "status": order_obj.status,
+        "message": "",  # 상세 조회는 빈 문자열 반환
+        "ticker_id": order_obj.ticker_id,
+        "side": order_obj.side,
+        "type": order_obj.type,
+        "quantity": float(order_obj.quantity),
+        "target_price": float(order_obj.target_price) if order_obj.target_price is not None else None,
+        "price": float(order_obj.price) if order_obj.price is not None else None,
+        "unfilled_quantity": float(order_obj.unfilled_quantity) if order_obj.unfilled_quantity is not None else None,
+        "created_at": order_obj.created_at,
+        "cancelled_at": order_obj.cancelled_at,
+        "fail_reason": order_obj.fail_reason,
+        "user_id": str(order_obj.user_id)
+    }
+
+
 @router.post("/{order_id}/cancel")
 async def cancel_order(
     order_id: UUID,
