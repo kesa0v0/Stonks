@@ -1,8 +1,9 @@
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Security
 from pydantic import BaseModel
 import redis.asyncio as async_redis
 from backend.core.cache import get_redis
+from backend.core.deps import get_current_user_by_api_key, get_current_user_any
 from backend.services.trade_service import get_current_price
 
 router = APIRouter(prefix="/market-data", tags=["market-data"])
@@ -12,7 +13,7 @@ class CurrentPriceResponse(BaseModel):
     price: Optional[float] = None
     message: Optional[str] = None
 
-@router.get("/price/{ticker_id}", response_model=CurrentPriceResponse)
+@router.get("/price/{ticker_id}", response_model=CurrentPriceResponse, dependencies=[Security(get_current_user_by_api_key)])
 async def get_ticker_current_price(
     ticker_id: str,
     redis_client: async_redis.Redis = Depends(get_redis)
@@ -30,7 +31,15 @@ async def get_ticker_current_price(
             message=f"Price data not available for {ticker_id}"
         )
     
-    return CurrentPriceResponse(
-        ticker_id=ticker_id,
-        price=float(price_decimal)
-    )
+    return CurrentPriceResponse(ticker_id=ticker_id, price=float(price_decimal))
+
+@router.get("/price-any/{ticker_id}", response_model=CurrentPriceResponse)
+async def get_ticker_current_price_multi_auth(
+    ticker_id: str,
+    redis_client: async_redis.Redis = Depends(get_redis),
+    _user=Depends(get_current_user_any)
+):
+    price_decimal = await get_current_price(redis_client, ticker_id)
+    if price_decimal is None:
+        return CurrentPriceResponse(ticker_id=ticker_id, price=None, message=f"Price data not available for {ticker_id}")
+    return CurrentPriceResponse(ticker_id=ticker_id, price=float(price_decimal))

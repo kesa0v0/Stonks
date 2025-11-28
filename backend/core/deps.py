@@ -1,5 +1,5 @@
-from typing import Generator, Optional
-from fastapi import Depends, HTTPException, status
+from typing import Optional
+from fastapi import Depends, HTTPException, status, Header
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError, ExpiredSignatureError
 from pydantic import ValidationError
@@ -9,7 +9,10 @@ from uuid import UUID
 import redis.asyncio as async_redis 
 
 from backend.core.database import get_db
-from backend.models import User
+from backend.models import User, ApiKey
+from datetime import datetime
+from sqlalchemy import update
+from backend.core import security
 from backend.core.config import settings
 from backend.core.cache import get_redis 
 
@@ -100,3 +103,66 @@ async def get_current_admin_user(
             detail="The user doesn't have enough privileges"
         )
     return current_user
+
+async def get_current_user_by_api_key(
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    db: AsyncSession = Depends(get_db),
+    redis_client: async_redis.Redis = Depends(get_redis)
+) -> User:
+    """Strict API Key auth: missing key => 401. Includes rate limit and last_used_at update."""
+    if not x_api_key:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing API Key")
+    prefix = x_api_key[:12]
+    result = await db.execute(select(ApiKey).where(ApiKey.key_prefix == prefix, ApiKey.is_active == True))
+    candidates = result.scalars().all()
+    if not candidates:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API Key")
+    for candidate in candidates:
+        if security.verify_api_key(x_api_key, candidate.hashed_key):
+            # Rate limit: fixed window per minute
+            window = datetime.utcnow().strftime("%Y%m%d%H%M")
+            rl_key = f"rl:apikey:{candidate.id}:{window}"
+            try:
+                current = await redis_client.incr(rl_key)
+                if current == 1:
+                    await redis_client.expire(rl_key, 61)
+                limit = settings.API_KEY_RATE_LIMIT_PER_MINUTE
+                if current > limit:
+                    raise HTTPException(status_code=429, detail="API Key rate limit exceeded")
+            except HTTPException:
+                raise
+            except Exception:
+                pass
+
+            try:
+                await db.execute(
+                    update(ApiKey).where(ApiKey.id == candidate.id).values(last_used_at=datetime.utcnow())
+                )
+                await db.commit()
+            except Exception:
+                pass
+
+            user_result = await db.execute(select(User).where(User.id == candidate.user_id))
+            user = user_result.scalars().first()
+            if not user or not user.is_active:
+                raise HTTPException(status_code=401, detail="Inactive user")
+            return user
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API Key")
+
+async def get_current_user_any(
+    bearer_user: Optional[User] = Depends(get_current_user),
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+    db: AsyncSession = Depends(get_db),
+    redis_client: async_redis.Redis = Depends(get_redis)
+) -> User:
+    if bearer_user:
+        return bearer_user
+    if x_api_key:
+        # call helper directly (strict); convert 401 Missing to unified message
+        try:
+            return await get_current_user_by_api_key(x_api_key=x_api_key, db=db, redis_client=redis_client)
+        except HTTPException as e:
+            if e.status_code == status.HTTP_401_UNAUTHORIZED:
+                raise HTTPException(status_code=401, detail="Invalid API Key")
+            raise
+    raise HTTPException(status_code=401, detail="Authentication required (Bearer or X-API-Key)")

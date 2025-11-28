@@ -19,6 +19,19 @@ class OrderResponse(BaseModel):
     order_id: str
     status: str
     message: str
+    ticker_id: Optional[str] = None
+    side: Optional[str] = None
+    type: Optional[str] = None
+    quantity: Optional[float] = None
+    target_price: Optional[float] = None
+    price: Optional[float] = None
+    unfilled_quantity: Optional[float] = None
+    created_at: Optional[datetime] = None
+    cancelled_at: Optional[datetime] = None
+    fail_reason: Optional[str] = None
+    user_id: Optional[str] = None
+
+    model_config = ConfigDict(extra='ignore')
 
 # 거래 내역 조회용 스키마
 class OrderListResponse(BaseModel):

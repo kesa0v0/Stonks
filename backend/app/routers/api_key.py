@@ -1,10 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, update
 from uuid import UUID
 import secrets
+from datetime import datetime
+import redis.asyncio as async_redis
 from backend.core.database import get_db
-from backend.core.deps import get_current_user
+from backend.core.deps import get_current_user, get_current_user_by_api_key
+from backend.core.cache import get_redis
+from backend.core.config import settings
 from backend.core import security
 from backend.models import ApiKey, User
 from backend.schemas.api_key import ApiKeyCreateResponse, ApiKeyItem, ApiKeyListResponse, ApiKeyRotateResponse
@@ -77,26 +81,4 @@ async def rotate_api_key(
     return ApiKeyRotateResponse(key_id=api_key.id, api_key=new_plain)
 
 # Dependency for API Key authentication
-async def get_current_user_by_api_key(
-    x_api_key: str | None = Header(default=None, alias=API_KEY_HEADER),
-    db: AsyncSession = Depends(get_db)
-) -> User:
-    if not x_api_key:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing API Key")
-    prefix = x_api_key[:PREFIX_LENGTH]
-    result = await db.execute(select(ApiKey).where(ApiKey.key_prefix == prefix, ApiKey.is_active == True))
-    candidates = result.scalars().all()
-    if not candidates:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API Key")
-    for candidate in candidates:
-        if security.verify_api_key(x_api_key, candidate.hashed_key):
-            # Update last used timestamp
-            candidate.last_used_at = candidate.last_used_at or None  # could set to now with server_default
-            await db.commit()
-            # Fetch user
-            user_result = await db.execute(select(User).where(User.id == candidate.user_id))
-            user = user_result.scalars().first()
-            if not user or not user.is_active:
-                raise HTTPException(status_code=401, detail="Inactive user")
-            return user
-    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API Key")
+ # API Key auth now provided by deps.get_current_user_by_api_key
