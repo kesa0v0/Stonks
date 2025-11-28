@@ -148,8 +148,6 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
                 # 수량이 있으면 가중평균
                 if new_qty > 0:
                     portfolio.average_price = new_total_val / new_qty
-                else:
-                    portfolio.average_price = current_price # 0일때 의미 없지만 초기화
                     
                 portfolio.quantity = new_qty
                 
