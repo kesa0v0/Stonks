@@ -45,7 +45,8 @@ def payload_json_converter():
 # 우선순위:
 #  - TEST_DB 토글이 'pg'면 TEST_DATABASE_URL이 있으면 그걸, 없으면 dev 고정 DSN 사용
 #  - 그 외에는 TEST_DATABASE_URL, DATABASE_URL, 기본은 SQLite 메모리
-TEST_DB_TOGGLE = (os.getenv("TEST_DB") or "").lower().strip()
+
+TEST_DB_TOGGLE = "pg" # pg or sqlite
 DEFAULT_DEV_PG_DSN = "postgresql://devuser:devpass@localhost:5432/dev_db"
 
 RAW_DB_URL = None
