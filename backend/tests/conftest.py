@@ -19,7 +19,10 @@ from backend.core.database import Base, get_db
 from backend.app.main import app
 from backend.core.deps import get_current_user
 from backend.models import User, Wallet, Ticker, MarketType, Currency
-from backend.core.security import get_password_hash
+from backend.core.security import get_password_hash, create_access_token
+from fastapi import Request
+from jose import jwt, JWTError
+from backend.core.config import settings
 import uuid
 import redis.asyncio as async_redis 
 from decimal import Decimal 
@@ -157,6 +160,24 @@ async def test_ticker(db_session: AsyncSession):
     await db_session.commit() 
     return ticker_id
 
+# Additional user/token fixture for forbidden access tests
+@pytest_asyncio.fixture(scope="function")
+async def another_user_token(db_session: AsyncSession):
+    other_id = uuid.uuid4()
+    hashed = get_password_hash("otherpass123")
+    other = User(
+        id=other_id,
+        email="other@test.com",
+        hashed_password=hashed,
+        nickname="Other",
+        is_active=True
+    )
+    db_session.add(other)
+    db_session.add(Wallet(user_id=other_id, balance=Decimal("500000")))
+    await db_session.commit()
+    token = create_access_token(subject=other_id)
+    return token
+
 # 3. Client Fixture (AsyncClient)
 @pytest_asyncio.fixture(scope="function")
 async def client(db_session: AsyncSession, test_user, mock_external_services): 
@@ -166,7 +187,21 @@ async def client(db_session: AsyncSession, test_user, mock_external_services):
     async def override_get_db():
         yield db_session
 
-    async def override_get_current_user():
+    async def override_get_current_user(request: Request):
+        auth = request.headers.get("Authorization")
+        if auth and auth.startswith("Bearer "):
+            token = auth.split(" ", 1)[1]
+            try:
+                payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+                sub = payload.get("sub")
+                ttype = payload.get("type")
+                if sub and ttype == "access":
+                    result2 = await db_session.execute(select(User).where(User.id == uuid.UUID(sub)))
+                    user2 = result2.scalars().first()
+                    if user2:
+                        return user2
+            except (JWTError, ValueError):
+                pass
         result = await db_session.execute(select(User).where(User.id == test_user))
         return result.scalars().first()
     

@@ -3,6 +3,7 @@ import asyncio
 import json
 import redis.asyncio as redis
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from contextlib import asynccontextmanager
 from fastapi.openapi.utils import get_openapi
 from fastapi.middleware.cors import CORSMiddleware
 from backend.core.config import settings
@@ -13,10 +14,34 @@ from backend.create_test_user import create_test_user
 from backend.create_tickers import init_tickers
 from backend.app.routers import order, portfolio, test, market_data, auth, admin, api_key
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup logic replacing deprecated on_event
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        if settings.DEBUG:
+            print("[lifespan] DB tables ensured (create_all)")
+        if settings.DEBUG:
+            try:
+                tasks = [create_test_user(), init_tickers()]
+                await asyncio.gather(*tasks)
+                print("[lifespan] Dev seed completed (test user, tickers)")
+            except Exception as se:
+                print(f"[lifespan] Dev seed failed: {se}")
+    except Exception as e:
+        print(f"[lifespan] Startup failure: {e}")
+    # Yield control to allow application to serve
+    yield
+    # Shutdown logic (none yet; placeholder for future resource cleanup)
+    if settings.DEBUG:
+        print("[lifespan] Shutdown complete")
+
 app = FastAPI(
     title="Stonk Server API",
     description="Stock & Crypto Trading Simulation Platform",
-    version="0.1.0"
+    version="0.1.0",
+    lifespan=lifespan
 )
 
 # CORS 설정: 허용할 출처(Origin) 목록
@@ -113,25 +138,4 @@ def custom_openapi():
 
 app.openapi = custom_openapi
 
-# Ensure DB tables exist at startup (idempotent)
-@app.on_event("startup")
-async def ensure_db_tables():
-    try:
-        async with engine.begin() as conn:
-            # Optionally set schema/search_path if needed
-            # await conn.execute(text("SET search_path TO public"))
-            await conn.run_sync(Base.metadata.create_all)
-        if settings.DEBUG:
-            print("[startup] DB tables ensured (create_all)")
-
-        # In DEBUG, seed minimal dev data (idempotent)
-        if settings.DEBUG:
-            try:
-                tasks = [create_test_user(), init_tickers()]
-                await asyncio.gather(*tasks)
-                print("[startup] Dev seed completed (test user, tickers)")
-            except Exception as se:
-                print(f"[startup] Dev seed failed: {se}")
-    except Exception as e:
-        # Log the error; in dev we continue to surface it
-        print(f"[startup] Failed to ensure DB tables: {e}")
+# Removed deprecated on_event startup handler; migrated to lifespan above.
