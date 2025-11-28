@@ -29,14 +29,14 @@ async def test_api_key_lifecycle(client: AsyncClient, db_session, test_user):
 
     # 3. Use API Key to access protected endpoint
     # Using 'X-API-Key' header
-    # We'll access /market-data/price/{ticker_id} which requires API Key
+    # We'll access /market/price/{ticker_id} which requires API Key
     # Note: We need a ticker. 'test_ticker' fixture is needed if we run this alone, 
     # but 'test_user' implies DB setup. Let's rely on mocking or simple endpoint.
-    # Actually, /market-data/price/... uses get_current_user_by_api_key.
+    # Actually, /market/price/... uses get_current_user_by_api_key.
     
     # Use a mock ticker for the price check or reuse test_ticker logic if we add fixture
     # For simplicity, let's just check if auth passes (not 401/403).
-    # But /market-data/price/UNKNOWN will return 200 with null price if auth works.
+    # But /market/price/UNKNOWN will return 200 with null price if auth works.
     
     headers = {"X-API-Key": created_key}
     # We need to clear the default Authorization header from client if it exists
@@ -45,7 +45,7 @@ async def test_api_key_lifecycle(client: AsyncClient, db_session, test_user):
     # But get_current_user_by_api_key is a DIFFERENT dependency.
     # So we need to ensure get_current_user_by_api_key works correctly with DB.
     
-    response = await client.get("/market-data/price/UNKNOWN", headers=headers)
+    response = await client.get("/market/price/UNKNOWN", headers=headers)
     # If key is valid, it should return 200 (with null price) or 404 depending on logic.
     # The code returns 200 with message if not found.
     assert response.status_code == 200 
@@ -58,12 +58,12 @@ async def test_api_key_lifecycle(client: AsyncClient, db_session, test_user):
     
     # Verify old key fails
     headers_old = {"X-API-Key": created_key}
-    response = await client.get("/market-data/price/UNKNOWN", headers=headers_old)
+    response = await client.get("/market/price/UNKNOWN", headers=headers_old)
     assert response.status_code == 401
     
     # Verify new key works
     headers_new = {"X-API-Key": new_key}
-    response = await client.get("/market-data/price/UNKNOWN", headers=headers_new)
+    response = await client.get("/market/price/UNKNOWN", headers=headers_new)
     assert response.status_code == 200
 
     # 5. Revoke API Key
@@ -71,7 +71,7 @@ async def test_api_key_lifecycle(client: AsyncClient, db_session, test_user):
     assert response.status_code == 204
     
     # Verify new key fails after revoke
-    response = await client.get("/market-data/price/UNKNOWN", headers=headers_new)
+    response = await client.get("/market/price/UNKNOWN", headers=headers_new)
     assert response.status_code == 401
     assert "Invalid API Key" in response.json()["detail"]
     

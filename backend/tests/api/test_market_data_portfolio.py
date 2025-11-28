@@ -13,7 +13,7 @@ async def test_get_ticker_price(client: AsyncClient, test_ticker, mock_external_
     # Note: The endpoint requires an API Key or valid User Token. 
     # The client fixture authenticates as test_user by default if no headers provided?
     # Actually client fixture overrides get_current_user to return test_user.
-    # But /market-data/price/{ticker_id} uses `get_current_user_by_api_key` security scheme.
+    # But /market/price/{ticker_id} uses `get_current_user_by_api_key` security scheme.
     # We need to check if `client` fixture supports this.
     # The endpoint `get_ticker_current_price` uses `Security(get_current_user_by_api_key)`.
     # If we use standard `client.get`, it won't send API Key.
@@ -21,8 +21,8 @@ async def test_get_ticker_price(client: AsyncClient, test_ticker, mock_external_
     # Let's use the `price-any` endpoint which allows any authenticated user (including session token)
     # or we can mock the API Key dependency.
     
-    # For now, let's test `/market-data/price-any/{ticker_id}`
-    response = await client.get(f"/market-data/price-any/{test_ticker}")
+    # For now, let's test `/market/price-any/{ticker_id}`
+    response = await client.get(f"/market/price-any/{test_ticker}")
     
     assert response.status_code == 200
     data = response.json()

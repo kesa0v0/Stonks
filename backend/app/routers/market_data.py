@@ -6,7 +6,7 @@ from backend.core.cache import get_redis
 from backend.core.deps import get_current_user_by_api_key, get_current_user_any
 from backend.services.trade_service import get_current_price
 
-router = APIRouter(prefix="/market-data", tags=["market-data"])
+router = APIRouter(prefix="/market", tags=["market"])
 
 class CurrentPriceResponse(BaseModel):
     ticker_id: str
