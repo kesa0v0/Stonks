@@ -164,3 +164,65 @@ async def test_create_order_invalid_input(client: AsyncClient, test_ticker, payl
     response = await client.post("/orders", json=payload)
     # This now correctly asserts 400 because order.py explicitly raises HTTPException(400)
     assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_get_order_detail_success(client: AsyncClient, db_session: AsyncSession, test_user, test_ticker, payload_json_converter):
+    """
+    본인 주문 상세 조회 성공 케이스
+    """
+    # 1. 주문 생성
+    payload = {
+        "ticker_id": test_ticker,
+        "side": "BUY",
+        "type": "LIMIT",
+        "quantity": "1.0",
+        "target_price": "100.0"
+    }
+    response = await client.post("/orders", json=payload)
+    assert response.status_code == 200
+    order_id = response.json()["order_id"]
+
+    # 2. 상세 조회
+    detail_resp = await client.get(f"/orders/{order_id}")
+    assert detail_resp.status_code == 200
+    data = detail_resp.json()
+    assert data["order_id"] == order_id
+    assert data["ticker_id"] == test_ticker
+    assert data["side"] == "BUY"
+    assert data["type"] == "LIMIT"
+    assert data["quantity"] == 1.0 or data["quantity"] == "1.0"
+
+@pytest.mark.asyncio
+async def test_get_order_detail_not_found(client: AsyncClient, test_user):
+    """
+    없는 주문 조회 시 404 반환
+    """
+    import uuid
+    fake_id = str(uuid.uuid4())
+    resp = await client.get(f"/orders/{fake_id}")
+    assert resp.status_code == 404
+    assert "주문을 찾을 수 없습니다" in resp.json()["detail"]
+
+@pytest.mark.asyncio
+async def test_get_order_detail_forbidden(client: AsyncClient, db_session: AsyncSession, test_user, test_ticker, payload_json_converter, another_user_token):
+    """
+    타인 주문 조회 시 403 반환
+    """
+    # 1. 주문 생성 (test_user)
+    payload = {
+        "ticker_id": test_ticker,
+        "side": "BUY",
+        "type": "LIMIT",
+        "quantity": "1.0",
+        "target_price": "100.0"
+    }
+    response = await client.post("/orders", json=payload)
+    assert response.status_code == 200
+    order_id = response.json()["order_id"]
+
+    # 2. 타인 토큰으로 조회
+    headers = {"Authorization": f"Bearer {another_user_token}"}
+    resp = await client.get(f"/orders/{order_id}", headers=headers)
+    assert resp.status_code == 403
+    assert "권한이 없습니다" in resp.json()["detail"]

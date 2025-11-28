@@ -201,3 +201,14 @@ graph TD
     - [ ]  OCI에 Frontend 빌드 파일 배포.
     - [ ]  Discord 알림 봇 연동.
     - [ ]  친구들 초대 및 버그 사냥.
+\n+## 7. 인증 (Authentication Summary)\n+\n+### JWT Access / Refresh\n+- `POST /login/access-token`: Access(30m) + Refresh(7d) 동시 발급\n+- `POST /login/refresh`: Refresh JTI 재사용 감지 + 회전(이전 토큰 블랙리스트)\n+- `POST /logout`: Access/Refresh 모두 Redis 블랙리스트 처리 + Refresh 상태 제거\n+- 헤더: `Authorization: Bearer <access_token>`\n+\n+### API Key 인증 (Header 기반)\n+- 발급: `POST /api-keys` (Bearer 필요) → 응답의 `api_key`는 최초 1회만 전체 평문 제공\n+- 호출: 헤더 `X-API-Key: <your_api_key>`\n+- 목록: `GET /api-keys`\n+- 회전: `POST /api-keys/{key_id}/rotate`\n+- 폐기: `DELETE /api-keys/{key_id}` (soft revoke: `is_active=false`)\n+- OpenAPI 문서: `ApiKeyAuth` security scheme (header `X-API-Key`) 자동 노출\n+\n+### 선택 기준\n+| 상황 | 권장 방식 | 이유 |\n+|------|-----------|------|\n+| 일반 사용자 웹/모바일 | JWT | 짧은 수명 + Refresh 회전 |\n+| 서버-서버 통신 / 배치 | API Key | 단순 헤더, 장기/비인터랙티브 |\n+| 고빈도 읽기 전용 | API Key | Stateless + 캐싱 결합 유리 |\n+| 민감한 거래 액션 | JWT | 세션 컨텍스트 / 재사용 토큰 감지 |\n+\n+### 다중 인증 헬퍼 예시\n+```python
+from fastapi import Depends, Security
+from backend.app.routers.api_key import get_current_user_by_api_key
+from backend.core.deps import get_current_user
+
+async def get_user_any(
+    bearer_user: str | None = Depends(get_current_user),
+    api_user: str | None = Security(get_current_user_by_api_key)
+):
+    return bearer_user or api_user
+```\n+\n+### 향후 확장 아이디어\n+- API Key 역할/스코프 (read/trade/admin)\n+- 사용량 집계(Rate Limit, Quota) + 경고\n+- 키 마지막 사용 시각 자동 업데이트 및 감사 로그\n+- 이상 사용 패턴(동시 지역/빈도) 탐지 후 자동 revoke\n+\n+---\n*** End Patch

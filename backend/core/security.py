@@ -13,6 +13,13 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
+def verify_api_key(plain_key: str, hashed_key: str) -> bool:
+    """Reuse password hashing (Argon2) for API key verification."""
+    return pwd_context.verify(plain_key, hashed_key)
+
+def hash_api_key(key: str) -> str:
+    return pwd_context.hash(key)
+
 def create_access_token(subject: Union[str, Any], expires_delta: Optional[timedelta] = None) -> str:
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
