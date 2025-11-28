@@ -12,7 +12,7 @@ from backend.core.database import engine
 from sqlalchemy import text
 from backend.create_test_user import create_test_user
 from backend.create_tickers import init_tickers
-from backend.app.routers import order, portfolio, test, market_data, auth, admin, api_key
+from backend.app.routers import order, portfolio, market_data, auth, admin, api_key
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -109,7 +109,6 @@ async def websocket_endpoint(websocket: WebSocket):
 app.include_router(auth.router)
 app.include_router(order.router)
 app.include_router(portfolio.router)
-app.include_router(test.router)
 app.include_router(market_data.router)
 app.include_router(admin.router)
 app.include_router(api_key.router)

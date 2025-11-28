@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from pydantic import BaseModel, Field
 import redis.asyncio as async_redis
+import json
+
 
 from backend.core.deps import get_current_admin_user
 from backend.core.cache import get_redis
@@ -41,3 +43,22 @@ async def update_trading_fee(
         "message": "Trading fee rate updated successfully",
         "fee_rate": fee_update.fee_rate
     }
+
+class PriceUpdate(BaseModel):
+    ticker_id: str
+    price: float
+
+@router.post("/price")
+async def set_test_price_admin(update: PriceUpdate, redis_client: async_redis.Redis = Depends(get_redis)):
+    """
+    [관리자용] 특정 코인의 가격을 강제로 변경하고 이벤트를 발생시킵니다.
+    이 API를 호출하면 limit_matcher가 즉시 반응하여 지정가 주문을 체결합니다.
+    """
+    price_data = {
+        "ticker_id": update.ticker_id,
+        "price": update.price,
+        "timestamp": "ADMIN_MANUAL_UPDATE"
+    }
+    await redis_client.set(f"price:{update.ticker_id}", json.dumps(price_data))
+    await redis_client.publish("market_updates", json.dumps(price_data))
+    return {"status": "ok", "message": f"Price of {update.ticker_id} set to {update.price}"}
