@@ -17,8 +17,11 @@ class ApiKeyItem(BaseModel):
     created_at: datetime
     last_used_at: Optional[datetime] = None
 
-    class Config:
-        orm_mode = True
+    # Pydantic v2: from_attributes replaces orm_mode, populate_by_name keeps alias working both ways
+    model_config = {
+        "from_attributes": True,
+        "populate_by_name": True
+    }
 
 class ApiKeyListResponse(BaseModel):
     items: list[ApiKeyItem]
