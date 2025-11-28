@@ -1,4 +1,5 @@
 import sys
+import os
 from pathlib import Path
 
 # Ensure project root is on sys.path so `import backend` works
@@ -10,7 +11,8 @@ import pytest
 import pytest_asyncio
 from unittest.mock import MagicMock, AsyncMock, patch 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import StaticPool, NullPool
+from sqlalchemy import text
 from sqlalchemy import select
 from httpx import AsyncClient, ASGITransport
 from backend.core.database import Base, get_db
@@ -39,14 +41,51 @@ def payload_json_converter():
     return convert_decimals_to_str
 
 
-# 1. 테스트용 DB (SQLite In-Memory with aiosqlite)
-SQLALCHEMY_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+# 1. 테스트용 DB URL 결정
+# 우선순위:
+#  - TEST_DB 토글이 'pg'면 TEST_DATABASE_URL이 있으면 그걸, 없으면 dev 고정 DSN 사용
+#  - 그 외에는 TEST_DATABASE_URL, DATABASE_URL, 기본은 SQLite 메모리
+TEST_DB_TOGGLE = (os.getenv("TEST_DB") or "").lower().strip()
+DEFAULT_DEV_PG_DSN = "postgresql://devuser:devpass@localhost:5432/dev_db"
 
-engine = create_async_engine(
-    SQLALCHEMY_DATABASE_URL, 
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool
-)
+RAW_DB_URL = None
+if TEST_DB_TOGGLE in {"pg", "postgres", "postgresql"}:
+    RAW_DB_URL = os.getenv("TEST_DATABASE_URL") or os.getenv("DATABASE_URL") or DEFAULT_DEV_PG_DSN
+else:
+    RAW_DB_URL = os.getenv("TEST_DATABASE_URL") or os.getenv("DATABASE_URL")
+
+is_postgres = False
+
+if RAW_DB_URL:
+    url = RAW_DB_URL
+    # 컨테이너 내부 호스트명이 'postgres'일 수 있으므로, 호스트에서 테스트 시 localhost로 변경
+    # 또한 async 드라이버로 변환
+    if url.startswith("postgresql://") or url.startswith("postgres://"):
+        is_postgres = True
+        url = url.replace("postgres://", "postgresql://")
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        # host 교체: postgres -> localhost (도커 포트가 5432로 매핑되어 있어야 함)
+        url = url.replace("@postgres:", "@localhost:")
+    SQLALCHEMY_DATABASE_URL = url
+else:
+    SQLALCHEMY_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+
+if SQLALCHEMY_DATABASE_URL.startswith("sqlite+aiosqlite"):
+    engine = create_async_engine(
+        SQLALCHEMY_DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool
+    )
+else:
+    # Postgres 등 외부 DB: 테스트 전용 스키마를 사용하여 격리
+    engine = create_async_engine(
+        SQLALCHEMY_DATABASE_URL,
+        poolclass=NullPool,  # 연결 공유 최소화
+        connect_args={
+            # asyncpg 전용: 연결 시 search_path 설정
+            "server_settings": {"search_path": "test_schema"}
+        } if is_postgres else {}
+    )
 
 TestingSessionLocal = async_sessionmaker(
     bind=engine,
@@ -59,16 +98,24 @@ TestingSessionLocal = async_sessionmaker(
 # 2. DB Fixture (Async)
 @pytest_asyncio.fixture(scope="function")
 async def db_session():
-    # 테이블 생성
+    # 스키마/테이블 생성
     async with engine.begin() as conn:
+        if is_postgres:
+            await conn.execute(text("CREATE SCHEMA IF NOT EXISTS test_schema"))
+            # 현재 트랜잭션에서도 적용되도록 search_path 설정 (connect_args에도 있으나 안전망)
+            await conn.execute(text("SET search_path TO test_schema"))
         await conn.run_sync(Base.metadata.create_all)
     
     async with TestingSessionLocal() as session:
         yield session
         
-    # 테이블 삭제 (cleanup)
+    # 정리 (cleanup)
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+        if SQLALCHEMY_DATABASE_URL.startswith("sqlite+aiosqlite"):
+            await conn.run_sync(Base.metadata.drop_all)
+        elif is_postgres:
+            # 스키마 전체를 제거하여 깔끔히 정리
+            await conn.execute(text("DROP SCHEMA IF EXISTS test_schema CASCADE"))
 
 @pytest.fixture(scope="function")
 def session_factory():

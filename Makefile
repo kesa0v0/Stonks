@@ -31,3 +31,24 @@ deploy:
 	git add .
 	git commit -m "Auto Deploy via Makefile"
 	git push origin main
+
+
+# --- Tests ---
+.PHONY: test-sqlite test-pg test-pg-docker
+
+# 로컬 Python 환경(가상환경 활성화 전제)에서 SQLite(in-memory)로 빠르게 테스트
+test-sqlite:
+	@echo "[tests] Running with SQLite (in-memory)"
+	TEST_DB=sqlite pytest -q backend
+
+# 로컬 Python 환경에서 Docker dev Postgres에 붙어 테스트 (필요시 컨테이너 기동)
+test-pg:
+	@echo "[tests] Ensuring dev postgres is up..."
+	docker-compose -f docker-compose.dev.yml up -d postgres
+	@echo "[tests] Running against Docker Postgres"
+	TEST_DB=pg pytest -q backend
+
+# 컨테이너(api) 안에서 테스트 실행 (로컬 파이썬/venv 불필요)
+test-pg-docker:
+	@echo "[tests] Running inside api container against dev Postgres"
+	docker-compose -f docker-compose.dev.yml run --rm -e TEST_DB=pg api pytest -q backend

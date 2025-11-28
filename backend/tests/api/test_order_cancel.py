@@ -5,7 +5,7 @@ from sqlalchemy import select
 from decimal import Decimal
 import uuid
 
-from backend.models import Order
+from backend.models import Order, User
 from backend.core.enums import OrderStatus, OrderType, OrderSide
 
 
@@ -47,6 +47,16 @@ async def test_cancel_order_not_owner_forbidden(client: AsyncClient, db_session:
     """다른 사용자의 주문을 취소하려 하면 403이 반환되어야 한다."""
     other_user = uuid.uuid4()
     order_id = uuid.uuid4()
+
+    # Ensure the other user exists to satisfy FK in Postgres
+    other = User(
+        id=other_user,
+        email="other@test.com",
+        hashed_password="x",
+        nickname="Other",
+        is_active=True,
+    )
+    db_session.add(other)
 
     order = Order(
         id=order_id,
