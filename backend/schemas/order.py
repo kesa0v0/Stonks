@@ -31,7 +31,11 @@ class OrderResponse(BaseModel):
     fail_reason: Optional[str] = None
     user_id: Optional[str] = None
 
-    model_config = ConfigDict(extra='ignore')
+    model_config = ConfigDict(
+        from_attributes=True,
+        populate_by_name=True,
+        extra='ignore'
+    )
 
 # 거래 내역 조회용 스키마
 class OrderListResponse(BaseModel):
@@ -44,5 +48,7 @@ class OrderListResponse(BaseModel):
     created_at: datetime # 주문 시간
 
     model_config = ConfigDict(
-        from_attributes = True # ORM 객체를 Pydantic으로 자동 변환
+        from_attributes=True,
+        populate_by_name=True,
+        extra='ignore'
     )

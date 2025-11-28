@@ -1,7 +1,7 @@
 # backend/schemas/api_key.py
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from uuid import UUID
 
 class ApiKeyCreateResponse(BaseModel):
@@ -18,10 +18,11 @@ class ApiKeyItem(BaseModel):
     last_used_at: Optional[datetime] = None
 
     # Pydantic v2: from_attributes replaces orm_mode, populate_by_name keeps alias working both ways
-    model_config = {
-        "from_attributes": True,
-        "populate_by_name": True
-    }
+    model_config = ConfigDict(
+        from_attributes=True,
+        populate_by_name=True,
+        extra='ignore'
+    )
 
 class ApiKeyListResponse(BaseModel):
     items: list[ApiKeyItem]
