@@ -3,17 +3,87 @@ from fastapi import APIRouter, HTTPException, Depends, Security, Query
 import redis.asyncio as async_redis
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    from backports.zoneinfo import ZoneInfo # Python 3.8 이하 호환성
 
 from backend.core.cache import get_redis
 from backend.core.database import get_db
 from backend.core.deps import get_current_user_by_api_key, get_current_user_any
 from backend.services.trade_service import get_current_price
 from backend.models import Ticker, Candle
-from backend.schemas.market import TickerResponse, CurrentPriceResponse
+from backend.schemas.market import TickerResponse, CurrentPriceResponse, MarketStatusResponse, MarketState
 from backend.schemas.candle import CandleResponse
 
 router = APIRouter(prefix="/market", tags=["market"])
+
+def get_market_status_by_type(market_type: str, now: datetime) -> MarketState:
+    """
+    현재 시간 기준 시장 상태 판별 (단순화된 로직)
+    """
+    if market_type == "CRYPTO":
+        return MarketState.OPEN # 24/7
+    
+    if market_type == "KRX":
+        # KST 기준
+        kst = ZoneInfo("Asia/Seoul")
+        now_kst = now.astimezone(kst)
+        
+        # 주말 체크 (월=0, 일=6)
+        if now_kst.weekday() >= 5:
+            return MarketState.CLOSED
+            
+        # 시간 체크 (09:00 ~ 15:30)
+        current_time = now_kst.time()
+        market_open = time(9, 0)
+        market_close = time(15, 30)
+        
+        if market_open <= current_time < market_close:
+            return MarketState.OPEN
+        else:
+            return MarketState.CLOSED
+            
+    if market_type == "US":
+        # America/New_York 기준 (서머타임 자동 처리)
+        ny_tz = ZoneInfo("America/New_York")
+        now_ny = now.astimezone(ny_tz)
+        
+        # 주말 체크
+        if now_ny.weekday() >= 5:
+            return MarketState.CLOSED
+            
+        current_time = now_ny.time()
+        
+        # 프리마켓: 04:00 ~ 09:30
+        # 정규장: 09:30 ~ 16:00
+        # 애프터마켓: 16:00 ~ 20:00
+        
+        regular_open = time(9, 30)
+        regular_close = time(16, 0)
+        
+        if regular_open <= current_time < regular_close:
+            return MarketState.OPEN
+        # (간단히 구현하기 위해 프리/애프터는 일단 CLOSED로 보거나 별도 처리 가능하지만, 
+        # 요청사항에 따라 OPEN/CLOSED 위주로 반환. 필요시 로직 확장)
+        return MarketState.CLOSED
+
+    return MarketState.CLOSED
+
+@router.get("/status", response_model=MarketStatusResponse)
+async def get_market_status():
+    """
+    현재 각 시장(KRX, US, CRYPTO)의 운영 상태를 반환합니다.
+    """
+    now = datetime.now(ZoneInfo("UTC"))
+    
+    return MarketStatusResponse(
+        krx=get_market_status_by_type("KRX", now),
+        us=get_market_status_by_type("US", now),
+        crypto=get_market_status_by_type("CRYPTO", now),
+        server_time=now.isoformat()
+    )
 
 @router.get("/tickers", response_model=List[TickerResponse])
 async def get_tickers(
