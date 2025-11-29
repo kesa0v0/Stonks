@@ -1,6 +1,6 @@
 import asyncio
 import ccxt.async_support as ccxt  # 비동기 버전 사용
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -193,8 +193,20 @@ async def initial_seed():
             await fetch_and_store_candles(exchange, ticker, interval='1m', count=200)
             await asyncio.sleep(0.1)
             
-            # 2. 일봉 5년치 (약 1800일) - 대량 수집
-            await fetch_historical_candles(exchange, ticker, interval='1d', days=1825)
+            # 2. 일봉 5년치 (약 1800일) - 데이터가 부족할 때만 수집
+            async with AsyncSessionLocal() as session:
+                count_stmt = select(func.count()).select_from(Candle).where(
+                    Candle.ticker_id == ticker.id,
+                    Candle.interval == '1d'
+                )
+                res = await session.execute(count_stmt)
+                existing_count = res.scalar() or 0
+            
+            if existing_count > 1000:
+                logger.info(f"⏭️ Skipping history for {ticker.symbol} (Found {existing_count} candles)")
+            else:
+                await fetch_historical_candles(exchange, ticker, interval='1d', days=1825)
+            
             await asyncio.sleep(0.1)
             
     except Exception as e:

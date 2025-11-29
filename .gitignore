@@ -233,3 +233,6 @@ yarn-error.log
 
 
 postgres-data/
+
+# Alembic
+versions/
