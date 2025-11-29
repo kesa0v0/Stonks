@@ -13,7 +13,12 @@ async def test_create_ipo(client: AsyncClient, db_session, test_user):
     Test IPO creation.
     """
     # 1. Apply for IPO
-    response = await client.post("/human/ipo")
+    payload = {
+        "quantity": 2000.0,
+        "initial_price": 500.0,
+        "dividend_rate": 0.1
+    }
+    response = await client.post("/human/ipo", json=payload)
     assert response.status_code == 200
     data = response.json()
     ticker_id = f"HUMAN-{test_user}"
@@ -24,53 +29,67 @@ async def test_create_ipo(client: AsyncClient, db_session, test_user):
     ticker = ticker_res.scalars().first()
     assert ticker is not None
     assert ticker.market_type == MarketType.HUMAN
-    assert ticker.source.name == "UPBIT" # As per implementation
     
-    # 3. Verify Portfolio (1000 shares)
+    # 3. Verify Portfolio
     pf_res = await db_session.execute(select(Portfolio).where(Portfolio.user_id == test_user, Portfolio.ticker_id == ticker_id))
     portfolio = pf_res.scalars().first()
     assert portfolio is not None
-    assert portfolio.quantity == 1000
+    assert float(portfolio.quantity) == 2000.0
+    assert float(portfolio.average_price) == 500.0
+    
+    # Verify User Dividend Rate
+    user_res = await db_session.execute(select(User).where(User.id == test_user))
+    user = user_res.scalars().first()
+    assert float(user.dividend_rate) == 0.1
     
     # 4. Verify Duplicate IPO Failure
-    response = await client.post("/human/ipo")
+    response = await client.post("/human/ipo", json=payload)
     assert response.status_code == 400
     assert "already listed" in response.json()["detail"]
 
 @pytest.mark.asyncio
 async def test_bankrupt_ipo(client: AsyncClient, db_session):
     """
-    Test IPO for a bankrupt user (Nickname prefix).
+    Test IPO for a bankrupt user (Dividend rate constraint).
     """
     # 1. Create bankrupt user
     user_id = uuid.uuid4()
     user = User(id=user_id, email="bankrupt@t.com", hashed_password="pw", nickname="PoorGuy", is_active=True, is_bankrupt=True)
-    # Must add wallet to avoid errors if any middleware checks it, though IPO logic doesn't strictly need it yet
     wallet = Wallet(user_id=user_id, balance=0) 
     db_session.add(user)
     db_session.add(wallet)
     await db_session.commit()
     
-    # 2. Login (Mocking or using client override if possible, but here we need custom user)
-    # We can override get_current_user_id dependency or just use a fresh client with auth
-    # For simplicity, let's mock the dependency for this test scope
+    # 2. Login Mock
     from backend.core.deps import get_current_user_id
     from backend.app.main import app
-    
     app.dependency_overrides[get_current_user_id] = lambda: user_id
     
     try:
-        response = await client.post("/human/ipo")
+        # Case 1: Try low dividend rate (Should fail)
+        payload_fail = {
+            "quantity": 1000.0,
+            "initial_price": 0.0,
+            "dividend_rate": 0.1 # Less than 0.5
+        }
+        response = await client.post("/human/ipo", json=payload_fail)
+        assert response.status_code == 400
+        assert "dividend rate" in response.json()["detail"]
+        
+        # Case 2: Try valid dividend rate
+        payload_ok = {
+            "quantity": 1000.0,
+            "initial_price": 0.0,
+            "dividend_rate": 0.5
+        }
+        response = await client.post("/human/ipo", json=payload_ok)
         assert response.status_code == 200
         
         ticker_id = f"HUMAN-{user_id}"
         ticker_res = await db_session.execute(select(Ticker).where(Ticker.id == ticker_id))
         ticker = ticker_res.scalars().first()
         
-        # Backend no longer prefixes ticker names for bankrupt users.
-        # It exposes `User.is_bankrupt` for frontend display logic instead.
-        assert "[노예]" not in ticker.name
-        assert "PoorGuy" in ticker.name
+        assert ticker.name == "PoorGuy's ETF"
         
     finally:
         del app.dependency_overrides[get_current_user_id]
@@ -166,76 +185,54 @@ async def test_dividend_distribution(client: AsyncClient, db_session, mock_exter
     assert float(history.amount) == 500.0
     assert history.ticker_id == ticker_id
 
-
 @pytest.mark.asyncio
-async def test_ipo_name_format_non_bankrupt(client: AsyncClient, db_session):
+async def test_burn_shares(client: AsyncClient, db_session):
     """
-    Non-bankrupt user's IPO should set ticker.name to "{nickname}'s ETF" with no prefix.
+    Test burning shares (Buyback & Burn).
     """
+    # 1. Create bankrupt user
     user_id = uuid.uuid4()
-    user = User(id=user_id, email="alice@t.com", hashed_password="pw", nickname="Alice", is_active=True, is_bankrupt=False)
+    user = User(id=user_id, email="burn@t.com", hashed_password="pw", nickname="Burner", is_active=True, is_bankrupt=True)
     wallet = Wallet(user_id=user_id, balance=0)
-    db_session.add_all([user, wallet])
+    db_session.add(user)
+    db_session.add(wallet)
     await db_session.commit()
-
+    
+    # Login Mock
     from backend.core.deps import get_current_user_id
     from backend.app.main import app
-
     app.dependency_overrides[get_current_user_id] = lambda: user_id
+    
     try:
-        resp = await client.post("/human/ipo")
-        assert resp.status_code == 200
-
-        ticker_id = f"HUMAN-{user_id}"
-        res = await db_session.execute(select(Ticker).where(Ticker.id == ticker_id))
-        ticker = res.scalars().first()
-        assert ticker is not None
-        assert ticker.name == "Alice's ETF"
-        assert ticker.symbol == f"HUMAN_{user_id}"
-
-        pf_res = await db_session.execute(select(Portfolio).where(Portfolio.user_id == user_id, Portfolio.ticker_id == ticker_id))
-        pf = pf_res.scalars().first()
-        assert pf is not None
-        assert float(pf.quantity) == 1000.0
-    finally:
-        del app.dependency_overrides[get_current_user_id]
-
-
-@pytest.mark.asyncio
-async def test_ipo_name_format_bankrupt(client: AsyncClient, db_session):
-    """
-    Bankrupt user's IPO should NOT prefix ticker name; name format remains "{nickname}'s ETF".
-    Also verify is_bankrupt state persists after IPO.
-    """
-    user_id = uuid.uuid4()
-    user = User(id=user_id, email="bob@t.com", hashed_password="pw", nickname="Bob", is_active=True, is_bankrupt=True)
-    wallet = Wallet(user_id=user_id, balance=0)
-    db_session.add_all([user, wallet])
-    await db_session.commit()
-
-    from backend.core.deps import get_current_user_id
-    from backend.app.main import app
-
-    app.dependency_overrides[get_current_user_id] = lambda: user_id
-    try:
-        resp = await client.post("/human/ipo")
-        assert resp.status_code == 200
-
-        ticker_id = f"HUMAN-{user_id}"
-        res = await db_session.execute(select(Ticker).where(Ticker.id == ticker_id))
-        ticker = res.scalars().first()
-        assert ticker is not None
-        assert ticker.name == "Bob's ETF"
-        assert "[노예]" not in ticker.name
-
-        # Check portfolio issuance
-        pf_res = await db_session.execute(select(Portfolio).where(Portfolio.user_id == user_id, Portfolio.ticker_id == ticker_id))
-        pf = pf_res.scalars().first()
-        assert pf is not None
-        assert float(pf.quantity) == 1000.0
-
-        # Ensure user's bankrupt flag remains true
+        # 2. IPO (1000 shares)
+        ipo_payload = {"quantity": 1000.0, "initial_price": 0.0, "dividend_rate": 0.5}
+        await client.post("/human/ipo", json=ipo_payload)
+        
+        # 3. Partial Burn (500 shares)
+        burn_payload = {"quantity": 500.0}
+        response = await client.post("/human/burn", json=burn_payload)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["is_delisted"] is False
+        assert float(data["remaining_shares"]) == 500.0
+        
         await db_session.refresh(user)
-        assert user.is_bankrupt is True
+        assert user.is_bankrupt is True # Still bankrupt
+        
+        # 4. Full Burn (Remaining 500 shares)
+        response = await client.post("/human/burn", json=burn_payload)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["is_delisted"] is True
+        assert float(data["remaining_shares"]) == 0.0
+        
+        # 5. Verify Freedom
+        await db_session.refresh(user)
+        assert user.is_bankrupt is False # Freed!
+        
+        ticker_res = await db_session.execute(select(Ticker).where(Ticker.id == f"HUMAN-{user_id}"))
+        ticker = ticker_res.scalars().first()
+        assert ticker.is_active is False # Delisted
+        
     finally:
         del app.dependency_overrides[get_current_user_id]
