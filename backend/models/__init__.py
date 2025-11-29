@@ -5,6 +5,7 @@ from .order import Order, OrderStatus, OrderSide, OrderType
 from .api_key import ApiKey
 from .candle import Candle
 from .ranking import UserPersona
+from .dividend import DividendHistory
 from backend.core.database import Base
 
 
@@ -16,5 +17,6 @@ __all__ = [
     "Order", "OrderStatus", "OrderSide", "OrderType",
     "ApiKey",
     "Candle",
-    "UserPersona"
+    "UserPersona",
+    "DividendHistory"
 ]

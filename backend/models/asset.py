@@ -10,6 +10,7 @@ class MarketType(enum.Enum):
     KRX = "KRX"
     US = "US"
     CRYPTO = "CRYPTO"
+    HUMAN = "HUMAN" # 인간 ETF
 
 class Currency(enum.Enum):
     KRW = "KRW"
@@ -24,7 +25,7 @@ class Ticker(Base):
     __tablename__ = "tickers"
 
     id = Column(String(50), primary_key=True)  # 예: KRX-STOCK-005930
-    symbol = Column(String(20), nullable=False)
+    symbol = Column(String(50), nullable=False) # 길이를 20 -> 50으로 확장
     name = Column(String(100), nullable=False)
     market_type = Column(Enum(MarketType), nullable=False)
     currency = Column(Enum(Currency), nullable=False)

@@ -10,6 +10,7 @@ from backend.models import User, Wallet, Portfolio, Order, Ticker
 from backend.core.enums import OrderStatus, OrderSide, OrderType
 from backend.core.config import settings
 from backend.services.ranking_service import update_user_persona # Import ranking service
+from backend.services.dividend_service import process_dividend # Import dividend service
 
 # 로깅 설정
 logger = logging.getLogger(__name__)
@@ -196,6 +197,18 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
                 # 매수 수익 = (현재매도가 - 매수평단가) * 수량 - 수수료
                 pnl = (current_price - portfolio.average_price) * closing_qty - allocated_fee
                 order.realized_pnl = pnl
+                
+                # [배당 처리] HUMAN ETF 주주에게 배당
+                if pnl > 0:
+                    # 유저 정보 조회 (dividend_rate 확인)
+                    # 이미 wallet을 조회했지만 User 객체를 로드하지 않았을 수 있으므로 다시 조회하거나 joinedload 사용
+                    # 여기선 간단히 다시 조회
+                    user_stmt = select(User).where(User.id == user_uuid)
+                    user_res = await db.execute(user_stmt)
+                    current_user = user_res.scalars().first()
+                    
+                    if current_user and current_user.dividend_rate > 0:
+                        await process_dividend(db, current_user, pnl)
 
             # A. 롱 -> ? (청산 or 스위칭)
             if current_qty > 0:

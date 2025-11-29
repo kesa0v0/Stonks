@@ -19,6 +19,10 @@ class User(Base):
     # OAuth info
     provider = Column(String(20), default="local", nullable=False)  # e.g., "local", "discord"
     social_id = Column(String(100), nullable=True, index=True)  # ID from the provider
+    
+    # Human ETF & Bankruptcy
+    is_bankrupt = Column(Boolean, default=False) # 파산 상태
+    dividend_rate = Column(Numeric(5, 4), default=0.5, nullable=False) # 배당률 (기본 50%)
 
     # Relationships
     wallet = relationship("Wallet", back_populates="user", uselist=False)
