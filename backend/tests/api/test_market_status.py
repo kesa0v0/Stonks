@@ -17,7 +17,7 @@ async def test_market_status_krx_open(client: AsyncClient):
     kst = ZoneInfo("Asia/Seoul")
     mock_now = datetime(2025, 6, 2, 10, 0, 0, tzinfo=kst).astimezone(timezone.utc)
     
-    with patch("backend.app.routers.market.datetime") as mock_datetime:
+    with patch("backend.services.market_service.datetime") as mock_datetime:
         mock_datetime.now.return_value = mock_now
         mock_datetime.side_effect = datetime # 다른 메서드는 그대로 동작하게
         
@@ -39,7 +39,7 @@ async def test_market_status_us_open(client: AsyncClient):
     ny = ZoneInfo("America/New_York")
     mock_now = datetime(2025, 6, 2, 11, 0, 0, tzinfo=ny).astimezone(timezone.utc)
     
-    with patch("backend.app.routers.market.datetime") as mock_datetime:
+    with patch("backend.services.market_service.datetime") as mock_datetime:
         mock_datetime.now.return_value = mock_now
         mock_datetime.side_effect = datetime
         
@@ -60,7 +60,7 @@ async def test_market_status_weekend(client: AsyncClient):
     kst = ZoneInfo("Asia/Seoul")
     mock_now = datetime(2025, 6, 7, 12, 0, 0, tzinfo=kst).astimezone(timezone.utc)
     
-    with patch("backend.app.routers.market.datetime") as mock_datetime:
+    with patch("backend.services.market_service.datetime") as mock_datetime:
         mock_datetime.now.return_value = mock_now
         mock_datetime.side_effect = datetime
 

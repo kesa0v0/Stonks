@@ -10,8 +10,10 @@ from uuid import UUID
 from backend.models import User, Wallet, Portfolio, Order, Ticker
 from backend.core.enums import OrderStatus, OrderSide, OrderType
 from backend.core.config import settings
-from backend.services.ranking_service import update_user_persona # Import ranking service
-from backend.services.dividend_service import process_dividend # Import dividend service
+from backend.services.ranking_service import update_user_persona
+from backend.services.dividend_service import process_dividend
+from backend.services.common.price import get_current_price
+from backend.services.common.config import get_trading_fee_rate
 
 # 로깅 설정
 logger = logging.getLogger(__name__)
@@ -20,31 +22,6 @@ if not logger.handlers:
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(handler)
-
-async def get_current_price(redis_client: async_redis.Redis, ticker_id: str) -> Decimal:
-    """Redis에서 현재가 조회 (비동기)"""
-    try:
-        data = await redis_client.get(f"price:{ticker_id}")
-        if not data:
-            return None
-        price_data = json.loads(data)
-        return Decimal(str(price_data['price']))
-    except Exception as e:
-        logger.error(f"Failed to fetch price for {ticker_id}: {e}")
-        return None
-
-async def get_trading_fee_rate(redis_client: async_redis.Redis) -> Decimal:
-    """거래 수수료율 조회 (비동기, 기본값 0.1%)"""
-    try:
-        rate = await redis_client.get("config:trading_fee_rate")
-        if rate:
-            if isinstance(rate, bytes):
-                rate = rate.decode()
-            return Decimal(str(rate))
-        return Decimal("0.001")
-    except Exception as e:
-        logger.error(f"Failed to fetch fee rate: {e}")
-        return Decimal("0.001")
 
 async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_id: str, order_id: str, ticker_id: str, side: str, quantity: float):
     """
@@ -270,28 +247,3 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
         except:
             pass # 실패 업데이트 중 에러는 무시
         return False
-
-async def liquidate_user_assets(db: AsyncSession, user_id: UUID, wallet: Wallet, redis_client: async_redis.Redis) -> Decimal:
-    """
-    유저의 모든 포트폴리오 자산을 시장가로 청산하고, 그 수익을 지갑에 추가합니다.
-    """
-    total_proceeds = Decimal("0")
-
-    # 유저의 모든 포트폴리오 조회
-    stmt = select(Portfolio).where(Portfolio.user_id == user_id).with_for_update() # Lock for update
-    portfolios = (await db.execute(stmt)).scalars().all()
-
-    # 각 포트폴리오 아이템 청산
-    for portfolio in portfolios:
-        current_price = await get_current_price(redis_client, portfolio.ticker_id)
-        if current_price is None:
-            # 시세가 없으면 평단가로 가정
-            current_price = portfolio.average_price
-        
-        proceeds = portfolio.quantity * current_price
-        wallet.balance += proceeds
-        total_proceeds += proceeds
-        
-        await db.delete(portfolio) # 포트폴리오 삭제
-
-    return total_proceeds
