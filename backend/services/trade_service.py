@@ -9,6 +9,7 @@ from sqlalchemy import select, func
 from backend.models import User, Wallet, Portfolio, Order, Ticker
 from backend.core.enums import OrderStatus, OrderSide, OrderType
 from backend.core.config import settings
+from backend.services.ranking_service import update_user_persona # Import ranking service
 
 # 로깅 설정
 logger = logging.getLogger(__name__)
@@ -225,6 +226,15 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
         if abs(portfolio.quantity) <= Decimal("1e-8"):
              await db.delete(portfolio)
         
+        # [RANKING] 사용자 페르소나 업데이트
+        await update_user_persona(
+            db=db,
+            user_id=user_uuid,
+            order_type=order.type,
+            pnl=order.realized_pnl,
+            fee=fee
+        )
+
         # 최종 커밋
         order.status = OrderStatus.FILLED
         order.unfilled_quantity = 0

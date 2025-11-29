@@ -4,6 +4,7 @@ from .asset import Ticker, Portfolio, MarketType, Currency, TickerSource
 from .order import Order, OrderStatus, OrderSide, OrderType
 from .api_key import ApiKey
 from .candle import Candle
+from .ranking import UserPersona
 from backend.core.database import Base
 
 
@@ -14,5 +15,6 @@ __all__ = [
     "Ticker", "Portfolio", "MarketType", "Currency", "TickerSource",
     "Order", "OrderStatus", "OrderSide", "OrderType",
     "ApiKey",
-    "Candle"
+    "Candle",
+    "UserPersona"
 ]

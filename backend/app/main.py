@@ -11,7 +11,7 @@ from backend.core.database import Base, engine, wait_for_db
 from sqlalchemy import text
 from backend.create_test_user import create_test_user
 from backend.create_tickers import init_tickers
-from backend.app.routers import market, order, auth, admin, api_key, me
+from backend.app.routers import market, order, auth, admin, api_key, me, ranking
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -54,6 +54,7 @@ tags_metadata = [
     {"name": "me", "description": "User Profile, Portfolio & PnL"},
     {"name": "order", "description": "Order Management"},
     {"name": "market", "description": "Market Data (Ticker, Candle, Price)"},
+    {"name": "ranking", "description": "Leaderboards & Hall of Fame"},
     {"name": "admin", "description": "Admin Operations"},
     {"name": "api_key", "description": "API Key Management"},
 ]
@@ -132,6 +133,7 @@ app.include_router(auth.router)
 app.include_router(me.router) # 순서: Auth -> Me -> Order -> Market
 app.include_router(order.router)
 app.include_router(market.router)
+app.include_router(ranking.router)
 app.include_router(admin.router)
 app.include_router(api_key.router)
 
