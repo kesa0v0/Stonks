@@ -143,6 +143,16 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
             
             wallet.balance -= total_cost
             
+            # [PnL 계산] 숏 포지션 상환 (Closing Short)
+            if current_qty < 0:
+                # 상환 수량 = min(절대값(보유숏), 주문수량)
+                closing_qty = min(abs(current_qty), quantity)
+                allocated_fee = fee * (closing_qty / quantity)
+                
+                # 공매도 수익 = (매도평단가 - 현재매수가) * 수량 - 수수료
+                pnl = (portfolio.average_price - current_price) * closing_qty - allocated_fee
+                order.realized_pnl = pnl
+            
             # A. 롱 -> 롱 (불타기/물타기)
             if current_qty >= 0:
                 prev_total_val = current_qty * portfolio.average_price
@@ -177,6 +187,15 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
             # 지갑에 돈 입금
             wallet.balance += net_income
             
+            # [PnL 계산] 롱 포지션 청산 (Closing Long)
+            if current_qty > 0:
+                closing_qty = min(current_qty, quantity)
+                allocated_fee = fee * (closing_qty / quantity)
+                
+                # 매수 수익 = (현재매도가 - 매수평단가) * 수량 - 수수료
+                pnl = (current_price - portfolio.average_price) * closing_qty - allocated_fee
+                order.realized_pnl = pnl
+
             # A. 롱 -> ? (청산 or 스위칭)
             if current_qty > 0:
                 remaining_qty = current_qty - quantity

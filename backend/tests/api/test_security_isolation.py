@@ -72,7 +72,7 @@ async def test_order_detail_isolation(client: AsyncClient, db_session, test_user
 async def test_portfolio_isolation(client: AsyncClient, db_session, test_user, another_user_token):
     """
     Scenario: User B tries to access portfolio.
-    Since /portfolio endpoint relies on the JWT token to determine the user ID,
+    Since /me/portfolio endpoint relies on the JWT token to determine the user ID,
     User B should only see their OWN portfolio, not User A's.
     So we verify that User B sees an empty/different portfolio, proving isolation by design.
     """
@@ -80,7 +80,7 @@ async def test_portfolio_isolation(client: AsyncClient, db_session, test_user, a
     
     # 2. User B (another_user) has 500,000 KRW (set in conftest)
     headers = {"Authorization": f"Bearer {another_user_token}"}
-    response = await client.get("/portfolio", headers=headers)
+    response = await client.get("/me/portfolio", headers=headers) # Changed from /portfolio
     
     assert response.status_code == 200
     data = response.json()
@@ -88,4 +88,4 @@ async def test_portfolio_isolation(client: AsyncClient, db_session, test_user, a
     # Verify it's User B's data
     assert float(data["cash_balance"]) == 500000.0
     # User A had 100,000,000, so if we saw that, it would be a fail.
-    assert float(data["cash_balance"]) != 100000000.0
+    assert float(data["cash_balance"]) != 100000000.0 # This assertion is redundant given the above

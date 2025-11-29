@@ -1,25 +1,30 @@
-# backend/app/routers/portfolio.py
 import json
 import redis.asyncio as async_redis
-from uuid import UUID
-from fastapi import APIRouter, Depends
+from typing import Optional
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func, and_
+from datetime import date, datetime, time, timezone
+from uuid import UUID
+
 from backend.core.database import get_db
-from backend.core.config import settings
-from backend.models import User, Wallet, Portfolio, Ticker
-from backend.schemas.portfolio import PortfolioResponse, AssetResponse
 from backend.core.deps import get_current_user_id
 from backend.core.cache import get_redis
+from backend.models import Order, User, Wallet, Portfolio, Ticker
+from backend.core.enums import OrderStatus
+from backend.schemas.portfolio import PnLResponse, PortfolioResponse, AssetResponse
 
-router = APIRouter(prefix="/portfolio", tags=["portfolio"])
+router = APIRouter(prefix="/me", tags=["me"])
 
-@router.get("", response_model=PortfolioResponse)
+@router.get("/portfolio", response_model=PortfolioResponse)
 async def get_my_portfolio(
     db: AsyncSession = Depends(get_db),
     user_id: UUID = Depends(get_current_user_id),
     redis: async_redis.Redis = Depends(get_redis)
 ):
+    """
+    내 포트폴리오(보유 자산 및 현금)를 조회합니다.
+    """
     # 1. 지갑(현금) 조회
     wallet_result = await db.execute(select(Wallet).where(Wallet.user_id == user_id))
     wallet = wallet_result.scalars().first()
@@ -82,3 +87,42 @@ async def get_my_portfolio(
         "total_asset_value": cash_balance + total_position_value,
         "assets": assets
     }
+
+@router.get("/pnl", response_model=PnLResponse)
+async def get_my_pnl(
+    start: date = Query(..., description="Start date (YYYY-MM-DD)"),
+    end: date = Query(..., description="End date (YYYY-MM-DD)"),
+    user_id: UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    특정 기간 동안의 실현 손익(Realized PnL) 합계를 조회합니다.
+    """
+    # 날짜 -> DateTime 변환 (UTC 기준)
+    # start: 해당 일의 00:00:00
+    # end: 해당 일의 23:59:59.999999
+    
+    # 주의: DB의 filled_at은 timezone=True (UTC)임.
+    # 클라이언트가 보낸 날짜를 UTC로 간주하거나, KST로 간주해서 변환해야 함.
+    # 여기선 단순하게 UTC 기준으로 00:00~23:59로 처리.
+    
+    start_dt = datetime.combine(start, time.min).replace(tzinfo=timezone.utc)
+    end_dt = datetime.combine(end, time.max).replace(tzinfo=timezone.utc)
+    
+    stmt = select(func.sum(Order.realized_pnl)).where(
+        and_(
+            Order.user_id == user_id,
+            Order.status == OrderStatus.FILLED,
+            Order.filled_at >= start_dt,
+            Order.filled_at <= end_dt
+        )
+    )
+    
+    result = await db.execute(stmt)
+    total_pnl = result.scalar() or 0.0
+    
+    return PnLResponse(
+        start_date=start,
+        end_date=end,
+        realized_pnl=float(total_pnl)
+    )

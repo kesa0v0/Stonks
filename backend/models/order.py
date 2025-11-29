@@ -28,6 +28,8 @@ class Order(Base):
     quantity = Column(Numeric(20, 8), nullable=False)
     price = Column(Numeric(20, 8), nullable=True) # 체결가
     
+    realized_pnl = Column(Numeric(20, 8), nullable=True) # 실현 손익 (매도 시 계산)
+
     applied_exchange_rate = Column(Numeric(10, 2), default=1.0)
     fee = Column(Numeric(20, 8), default=0)
     fail_reason = Column(Text, nullable=True)

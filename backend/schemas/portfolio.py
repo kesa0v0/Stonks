@@ -2,6 +2,7 @@
 from pydantic import BaseModel, ConfigDict
 from typing import List
 from decimal import Decimal
+from datetime import date
 
 class AssetResponse(BaseModel):
     ticker_id: str
@@ -23,6 +24,11 @@ class PortfolioResponse(BaseModel):
         extra='ignore'
     )
 
+class PnLResponse(BaseModel):
+    start_date: date
+    end_date: date
+    realized_pnl: float
+    
 AssetResponse.model_config = ConfigDict(
     from_attributes=True,
     populate_by_name=True,
