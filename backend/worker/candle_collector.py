@@ -9,7 +9,7 @@ import logging
 
 # 프로젝트 모듈 임포트
 from backend.core.database import AsyncSessionLocal, wait_for_db
-from backend.models import Ticker, Candle, MarketType
+from backend.models import Ticker, Candle, MarketType, TickerSource
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -135,7 +135,12 @@ async def minute_collector_job():
     exchange = ccxt.upbit()
     try:
         async with AsyncSessionLocal() as db:
-            stmt = select(Ticker).where(Ticker.market_type == MarketType.CRYPTO, Ticker.is_active == True)
+            # UPBIT 소스인 것만 조회
+            stmt = select(Ticker).where(
+                Ticker.market_type == MarketType.CRYPTO, 
+                Ticker.is_active == True,
+                Ticker.source == TickerSource.UPBIT
+            )
             result = await db.execute(stmt)
             tickers = result.scalars().all()
         
@@ -156,7 +161,12 @@ async def daily_collector_job():
     exchange = ccxt.upbit()
     try:
         async with AsyncSessionLocal() as db:
-            stmt = select(Ticker).where(Ticker.market_type == MarketType.CRYPTO, Ticker.is_active == True)
+            # UPBIT 소스인 것만 조회
+            stmt = select(Ticker).where(
+                Ticker.market_type == MarketType.CRYPTO, 
+                Ticker.is_active == True,
+                Ticker.source == TickerSource.UPBIT
+            )
             result = await db.execute(stmt)
             tickers = result.scalars().all()
         
@@ -178,12 +188,17 @@ async def initial_seed():
     exchange = ccxt.upbit()
     try:
         async with AsyncSessionLocal() as db:
-            stmt = select(Ticker).where(Ticker.market_type == MarketType.CRYPTO, Ticker.is_active == True)
+            # UPBIT 소스인 것만 조회
+            stmt = select(Ticker).where(
+                Ticker.market_type == MarketType.CRYPTO, 
+                Ticker.is_active == True,
+                Ticker.source == TickerSource.UPBIT
+            )
             result = await db.execute(stmt)
             tickers = result.scalars().all()
 
         if not tickers:
-            logger.info("⚠️ No active tickers found.")
+            logger.info("⚠️ No active UPBIT tickers found.")
             return
 
         logger.info(f"🎯 Found {len(tickers)} tickers. Starting hydration...")

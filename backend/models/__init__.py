@@ -1,6 +1,6 @@
 # backend/models/__init__.py
 from .user import User, Wallet
-from .asset import Ticker, Portfolio, MarketType, Currency
+from .asset import Ticker, Portfolio, MarketType, Currency, TickerSource
 from .order import Order, OrderStatus, OrderSide, OrderType
 from .api_key import ApiKey
 from .candle import Candle
@@ -11,7 +11,7 @@ from backend.core.database import Base
 __all__ = [
     "Base",
     "User", "Wallet",
-    "Ticker", "Portfolio", "MarketType", "Currency",
+    "Ticker", "Portfolio", "MarketType", "Currency", "TickerSource",
     "Order", "OrderStatus", "OrderSide", "OrderType",
     "ApiKey",
     "Candle"

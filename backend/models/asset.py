@@ -15,6 +15,11 @@ class Currency(enum.Enum):
     KRW = "KRW"
     USD = "USD"
 
+class TickerSource(enum.Enum):
+    UPBIT = "UPBIT"
+    MOCK = "MOCK"
+    TEST = "TEST"
+
 class Ticker(Base):
     __tablename__ = "tickers"
 
@@ -23,6 +28,8 @@ class Ticker(Base):
     name = Column(String(100), nullable=False)
     market_type = Column(Enum(MarketType), nullable=False)
     currency = Column(Enum(Currency), nullable=False)
+    # 소스 추가 (기본값 UPBIT)
+    source = Column(Enum(TickerSource), default=TickerSource.UPBIT, nullable=False)
     is_active = Column(Boolean, default=True)
 
 class Portfolio(Base):
