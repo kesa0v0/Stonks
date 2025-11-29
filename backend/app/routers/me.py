@@ -1,7 +1,7 @@
 import json
 import redis.asyncio as async_redis
-from typing import Optional
-from fastapi import APIRouter, Depends, Query
+from typing import Optional, List
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from datetime import date, datetime, time, timezone
@@ -13,6 +13,7 @@ from backend.core.cache import get_redis
 from backend.models import Order, User, Wallet, Portfolio, Ticker
 from backend.core.enums import OrderStatus
 from backend.schemas.portfolio import PnLResponse, PortfolioResponse, AssetResponse
+from backend.schemas.order import OrderListResponse, OrderResponse
 
 router = APIRouter(prefix="/me", tags=["me"])
 
@@ -99,13 +100,6 @@ async def get_my_pnl(
     특정 기간 동안의 실현 손익(Realized PnL) 합계를 조회합니다.
     """
     # 날짜 -> DateTime 변환 (UTC 기준)
-    # start: 해당 일의 00:00:00
-    # end: 해당 일의 23:59:59.999999
-    
-    # 주의: DB의 filled_at은 timezone=True (UTC)임.
-    # 클라이언트가 보낸 날짜를 UTC로 간주하거나, KST로 간주해서 변환해야 함.
-    # 여기선 단순하게 UTC 기준으로 00:00~23:59로 처리.
-    
     start_dt = datetime.combine(start, time.min).replace(tzinfo=timezone.utc)
     end_dt = datetime.combine(end, time.max).replace(tzinfo=timezone.utc)
     
@@ -126,3 +120,76 @@ async def get_my_pnl(
         end_date=end,
         realized_pnl=float(total_pnl)
     )
+
+@router.get("/orders", response_model=List[OrderListResponse])
+async def get_my_orders(
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id)
+):
+    """
+    내 전체 주문 내역을 조회합니다.
+    """
+    result = await db.execute(
+        select(Order)
+        .where(Order.user_id == user_id)
+        .order_by(Order.created_at.desc())
+        .limit(20)
+    )
+    orders = result.scalars().all()
+    return orders
+
+@router.get("/orders/open", response_model=List[OrderListResponse])
+async def get_my_open_orders(
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id)
+):
+    """
+    내 미체결(PENDING) 주문 내역을 조회합니다.
+    """
+    result = await db.execute(
+        select(Order)
+        .where(
+            Order.user_id == user_id,
+            Order.status == OrderStatus.PENDING
+        )
+        .order_by(Order.created_at.desc())
+    )
+    orders = result.scalars().all()
+    return orders
+
+@router.get("/orders/{order_id}", response_model=OrderResponse)
+async def get_my_order_detail(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
+):
+    """
+    특정 주문의 상세 정보를 조회합니다. (본인 주문만 가능)
+    """
+    result = await db.execute(select(Order).where(Order.id == order_id))
+    order_obj = result.scalars().first()
+
+    if not order_obj:
+        raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
+
+    if str(order_obj.user_id) != str(user_id):
+        raise HTTPException(status_code=403, detail="권한이 없습니다.")
+
+    return {
+        "order_id": str(order_obj.id),
+        "status": order_obj.status,
+        "message": "", 
+        "ticker_id": order_obj.ticker_id,
+        "side": order_obj.side,
+        "type": order_obj.type,
+        "quantity": float(order_obj.quantity),
+        "target_price": float(order_obj.target_price) if order_obj.target_price is not None else None,
+        "price": float(order_obj.price) if order_obj.price is not None else None,
+        "unfilled_quantity": float(order_obj.unfilled_quantity) if order_obj.unfilled_quantity is not None else None,
+        "created_at": order_obj.created_at,
+        "cancelled_at": order_obj.cancelled_at,
+        "filled_at": order_obj.filled_at,
+        "fail_reason": order_obj.fail_reason,
+        "user_id": str(order_obj.user_id),
+        "realized_pnl": float(order_obj.realized_pnl) if order_obj.realized_pnl is not None else None
+    }

@@ -183,8 +183,8 @@ async def test_get_order_detail_success(client: AsyncClient, db_session: AsyncSe
     assert response.status_code == 200
     order_id = response.json()["order_id"]
 
-    # 2. 상세 조회
-    detail_resp = await client.get(f"/orders/{order_id}")
+    # 2. 상세 조회 (API 경로 변경)
+    detail_resp = await client.get(f"/me/orders/{order_id}")
     assert detail_resp.status_code == 200
     data = detail_resp.json()
     assert data["order_id"] == order_id
@@ -200,7 +200,8 @@ async def test_get_order_detail_not_found(client: AsyncClient, test_user):
     """
     import uuid
     fake_id = str(uuid.uuid4())
-    resp = await client.get(f"/orders/{fake_id}")
+    # API 경로 변경
+    resp = await client.get(f"/me/orders/{fake_id}")
     assert resp.status_code == 404
     assert "주문을 찾을 수 없습니다" in resp.json()["detail"]
 
@@ -221,8 +222,8 @@ async def test_get_order_detail_forbidden(client: AsyncClient, db_session: Async
     assert response.status_code == 200
     order_id = response.json()["order_id"]
 
-    # 2. 타인 토큰으로 조회
+    # 2. 타인 토큰으로 조회 (API 경로 변경)
     headers = {"Authorization": f"Bearer {another_user_token}"}
-    resp = await client.get(f"/orders/{order_id}", headers=headers)
+    resp = await client.get(f"/me/orders/{order_id}", headers=headers)
     assert resp.status_code == 403
     assert "권한이 없습니다" in resp.json()["detail"]

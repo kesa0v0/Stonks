@@ -25,8 +25,8 @@ async def test_expired_access_token(client: AsyncClient, test_user, mock_externa
         del app.dependency_overrides[get_current_user]
     
     try:
-        # Use any protected endpoint
-        response = await client.get("/orders", headers=headers)
+        # Use any protected endpoint (Changed from /orders to /me/orders)
+        response = await client.get("/me/orders", headers=headers)
         assert response.status_code == 401
         assert "Token has expired" in response.json()["detail"]
     finally:
@@ -47,7 +47,8 @@ async def test_tampered_access_token(client: AsyncClient, test_user, mock_extern
         del app.dependency_overrides[get_current_user]
         
     try:
-        response = await client.get("/orders", headers=headers)
+        # Changed from /orders to /me/orders
+        response = await client.get("/me/orders", headers=headers)
         assert response.status_code == 401
         assert "Could not validate credentials" in response.json()["detail"]
     finally:

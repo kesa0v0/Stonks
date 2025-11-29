@@ -90,7 +90,8 @@ async def test_logout(client: AsyncClient, test_user, mock_external_services):
     mock_redis.setex.assert_called() 
     
     # 4. Verify Access Denied (Redis should now have the token)
-    response = await client.get("/orders", headers=headers)
+    # Changed from /orders to /me/orders
+    response = await client.get("/me/orders", headers=headers)
     
     assert response.status_code == 401
     assert "Token has been revoked" in response.json()["detail"]

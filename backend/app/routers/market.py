@@ -2,7 +2,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends, Security, Query
 import redis.asyncio as async_redis
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from datetime import datetime, timedelta, time
 try:
     from zoneinfo import ZoneInfo
@@ -96,6 +96,35 @@ async def get_tickers(
     result = await db.execute(select(Ticker).where(Ticker.is_active == True))
     tickers = result.scalars().all()
     return tickers
+
+@router.get("/search", response_model=List[TickerResponse])
+async def search_tickers(
+    query: str = Query(..., min_length=1, description="종목 이름 또는 심볼 검색어"),
+    limit: int = Query(10, ge=1, le=100),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    종목 이름 또는 심볼로 종목을 검색합니다.
+    """
+    search_pattern = f"%{query}%" # 부분 일치 검색
+    
+    # SQLite 호환성을 위해 ilike 대신 lower() + like() 사용
+    stmt = (
+        select(Ticker)
+        .where(
+            Ticker.is_active == True,
+            or_(
+                func.lower(Ticker.name).like(func.lower(search_pattern)),
+                func.lower(Ticker.symbol).like(func.lower(search_pattern))
+            )
+        )
+        .limit(limit)
+    )
+    
+    result = await db.execute(stmt)
+    tickers = result.scalars().all()
+    return tickers
+
 
 @router.get("/candles/{ticker_id}", response_model=List[CandleResponse])
 async def get_candles(
