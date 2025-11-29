@@ -68,9 +68,12 @@ services:
       - ALGORITHM=HS256
       - PYTHONUNBUFFERED=1
     depends_on:
-      - postgres
-      - redis
-      - rabbitmq
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      rabbitmq:
+        condition: service_started
 
   # 5. 데이터 수집 워커 (Data Feeder)
   worker_data:
@@ -91,7 +94,10 @@ services:
       - DEBUG=True
       - PYTHONUNBUFFERED=1
     depends_on:
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
 # 6. 주문 체결 워커 (Trade Worker)
   worker_trade:
@@ -133,8 +139,10 @@ services:
       - REDIS_HOST=redis
       - PYTHONUNBUFFERED=1
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
 volumes:
   dev_postgres_data:

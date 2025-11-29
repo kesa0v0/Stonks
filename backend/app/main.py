@@ -7,8 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi.openapi.utils import get_openapi
 from fastapi.middleware.cors import CORSMiddleware
 from backend.core.config import settings
-from backend.core.database import Base
-from backend.core.database import engine
+from backend.core.database import Base, engine, wait_for_db
 from sqlalchemy import text
 from backend.create_test_user import create_test_user
 from backend.create_tickers import init_tickers
@@ -18,12 +17,22 @@ from backend.app.routers import market, order, portfolio, auth, admin, api_key
 async def lifespan(app: FastAPI):
     # Startup logic replacing deprecated on_event
     try:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        if settings.DEBUG:
-            print("[lifespan] DB tables ensured (create_all)")
+        # 1. DB 연결 대기
+        await wait_for_db()
+
+        # 2. 테이블 생성 (Alembic을 쓰지만 개발 편의를 위해 남겨둘 수 있음. 
+        #    단, Alembic이 있으면 보통 생략하거나 Alembic을 호출함. 여기선 안전하게 유지)
+        #    * Alembic 사용 시에는 이 라인을 지워도 되지만, 초기 개발 시 편리함을 위해 둠.
+        #    * 단, Alembic revision이 꼬일 수 있으니 주의.
+        # async with engine.begin() as conn:
+        #     await conn.run_sync(Base.metadata.create_all)
+        
+        # if settings.DEBUG:
+        #     print("[lifespan] DB tables ensured (create_all)")
+        
         if settings.DEBUG:
             try:
+                # 데이터 시딩
                 tasks = [create_test_user(), init_tickers()]
                 await asyncio.gather(*tasks)
                 print("[lifespan] Dev seed completed (test user, tickers)")
@@ -31,6 +40,8 @@ async def lifespan(app: FastAPI):
                 print(f"[lifespan] Dev seed failed: {se}")
     except Exception as e:
         print(f"[lifespan] Startup failure: {e}")
+        # DB 연결 실패 시 앱 구동을 멈추려면 여기서 raise e
+    
     # Yield control to allow application to serve
     yield
     # Shutdown logic (none yet; placeholder for future resource cleanup)

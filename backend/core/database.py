@@ -1,7 +1,14 @@
 # backend/core/database.py
+import asyncio
+import logging
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
+from sqlalchemy import text
 from backend.core.config import settings
+
+# 로거 설정
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # 1. 비동기 엔진 생성
 # echo=True로 설정하면 실행되는 SQL이 로그에 찍힙니다. (디버깅용)
@@ -33,3 +40,23 @@ async def get_db():
             yield session
         finally:
             await session.close()
+
+# 5. DB 연결 대기 함수 (초기 구동 시 사용)
+async def wait_for_db(retries: int = 30, delay: int = 2):
+    """데이터베이스가 준비될 때까지 대기합니다."""
+    logger.info(f"⏳ Waiting for database... (Max retries: {retries})")
+    
+    for i in range(retries):
+        try:
+            # 간단한 쿼리 실행으로 연결 테스트
+            async with engine.begin() as conn:
+                await conn.execute(text("SELECT 1"))
+            logger.info("✅ Database is ready!")
+            return
+        except Exception as e:
+            if i == retries - 1:
+                logger.error(f"❌ Database connection failed after {retries} attempts: {e}")
+                raise e
+            
+            logger.warning(f"⚠️ Database not ready yet. Retrying in {delay}s... ({i+1}/{retries})")
+            await asyncio.sleep(delay)

@@ -8,7 +8,7 @@ from datetime import datetime, timezone, timedelta
 import logging
 
 # 프로젝트 모듈 임포트
-from backend.core.database import AsyncSessionLocal
+from backend.core.database import AsyncSessionLocal, wait_for_db
 from backend.models import Ticker, Candle, MarketType
 
 # 로깅 설정
@@ -215,6 +215,9 @@ async def initial_seed():
         await exchange.close()
 
 async def main():
+    # 0. DB 준비 대기
+    await wait_for_db()
+
     # 스케줄러를 먼저 띄우고 시드를 돌릴지, 시드를 다 돌리고 스케줄러를 띄울지 결정.
     # 시드가 오래 걸릴 수 있으므로(코인이 많으면), 스케줄러와 병행하거나
     # 여기서는 간단하게 시드 완료 후 스케줄러 실행 (블로킹)
