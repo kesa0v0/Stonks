@@ -15,6 +15,8 @@ from backend.core.config import settings
 from backend.models import User
 from backend.schemas.token import RefreshTokenRequest, LogoutRequest
 
+from backend.repository.user import user_repo
+
 async def authenticate_user(
     db: AsyncSession, 
     redis_client: async_redis.Redis, 
@@ -23,8 +25,7 @@ async def authenticate_user(
     """
     OAuth2 compatible token login, get an access token for future requests
     """
-    result = await db.execute(select(User).where(User.email == form_data.username))
-    user = result.scalars().first()
+    user = await user_repo.get_by_email(db, email=form_data.username)
     
     # Check if user exists and has a password (local user)
     if not user or not user.hashed_password or not security.verify_password(form_data.password, user.hashed_password):
@@ -142,8 +143,7 @@ async def refresh_access_token(
             detail="Refresh token reuse detected",
         )
         
-    result = await db.execute(select(User).where(User.id == UUID(user_id)))
-    user = result.scalars().first()
+    user = await user_repo.get(db, id=UUID(user_id))
     
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
