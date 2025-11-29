@@ -3,17 +3,19 @@ import redis.asyncio as async_redis
 from typing import Optional, List
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, delete, update
 from datetime import date, datetime, time, timezone
 from uuid import UUID
+from decimal import Decimal # Added Decimal import
 
 from backend.core.database import get_db
 from backend.core.deps import get_current_user_id
 from backend.core.cache import get_redis
-from backend.models import Order, User, Wallet, Portfolio, Ticker
+from backend.models import Order, User, Wallet, Portfolio, Ticker, MarketType, Currency, TickerSource
 from backend.core.enums import OrderStatus
 from backend.schemas.portfolio import PnLResponse, PortfolioResponse, AssetResponse
 from backend.schemas.order import OrderListResponse, OrderResponse
+from backend.services.trade_service import liquidate_user_assets
 
 router = APIRouter(prefix="/me", tags=["me"])
 
@@ -192,4 +194,120 @@ async def get_my_order_detail(
         "fail_reason": order_obj.fail_reason,
         "user_id": str(order_obj.user_id),
         "realized_pnl": float(order_obj.realized_pnl) if order_obj.realized_pnl is not None else None
+    }
+
+
+@router.post("/bankruptcy")
+async def file_bankruptcy(
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
+    redis: async_redis.Redis = Depends(get_redis) # Add redis dependency
+):
+    """
+    [파산 신청]
+    - 조건: 총 자산(현금 + 포트폴리오 평가액)이 0 이하일 때만 가능
+    - 보유 자산(Portfolio) 모두 시장가에 청산
+    - 미체결 주문(Pending Order) 취소
+    - 유저 상태: 파산(is_bankrupt=True), 파산 횟수 증가
+    - HUMAN ETF 발행: 본인 주식 1,000주 지급
+    """
+    # 0. 총 자산 평가 및 파산 조건 확인
+    wallet_result = await db.execute(select(Wallet).where(Wallet.user_id == user_id))
+    wallet = wallet_result.scalars().first()
+    cash_balance = float(wallet.balance) if wallet else 0.0
+
+    total_position_value = 0.0
+    stmt_portfolio = select(Portfolio).where(Portfolio.user_id == user_id)
+    portfolios = (await db.execute(stmt_portfolio)).scalars().all()
+    
+    # Store prices for liquidation phase to avoid re-fetching
+    portfolio_prices = {}
+    for portfolio in portfolios:
+        price_data = await redis.get(f"price:{portfolio.ticker_id}")
+        current_price = 0.0
+        if price_data:
+            current_price = float(json.loads(price_data)['price'])
+        else:
+            # 시세가 없으면 평단가로 가정
+            current_price = float(portfolio.average_price)
+        total_position_value += float(portfolio.quantity) * current_price
+        portfolio_prices[portfolio.ticker_id] = current_price
+    
+    total_asset_value = cash_balance + total_position_value
+    
+    if total_asset_value > 0:
+        raise HTTPException(status_code=400, detail=f"총 자산이 0 이하일 때만 파산 신청이 가능합니다. 현재 총 자산: {total_asset_value}")
+        
+    # 1. 미체결 주문 취소 처리
+    await db.execute(
+        update(Order)
+        .where(
+            and_(
+                Order.user_id == user_id, 
+                Order.status == OrderStatus.PENDING
+            )
+        )
+        .values(
+            status=OrderStatus.CANCELLED,
+            cancelled_at=func.now(),
+            fail_reason="Bankruptcy application"
+        )
+    )
+
+    # Ensure wallet exists if it was None initially (e.g., brand new user without any transactions)
+    if not wallet:
+        wallet = Wallet(user_id=user_id, balance=0)
+        db.add(wallet)
+
+    # 2. 보유 포트폴리오 시장가 청산 및 삭제
+    await liquidate_user_assets(db, user_id, wallet, redis)
+
+    # 3. 유저 정보 업데이트 (파산 상태, 횟수)
+    user_stmt = select(User).where(User.id == user_id)
+    user_res = await db.execute(user_stmt)
+    user = user_res.scalars().first()
+    
+    user.is_bankrupt = True
+    user.bankruptcy_count += 1
+
+    # 4. HUMAN Ticker 확인 및 생성
+    ticker_id = f"HUMAN-{user_id}"
+    ticker_stmt = select(Ticker).where(Ticker.id == ticker_id)
+    ticker = (await db.execute(ticker_stmt)).scalars().first()
+    
+    if not ticker:
+        ticker = Ticker(
+            id=ticker_id,
+            symbol=f"HUMAN_{user_id}",
+            name=f"{user.nickname}'s ETF",
+            market_type=MarketType.HUMAN,
+            currency=Currency.KRW,
+            source=TickerSource.UPBIT,
+            is_active=True
+        )
+        db.add(ticker)
+    else:
+        ticker.is_active = True
+        # 닉네임 변경 반영
+        ticker.name = f"{user.nickname}'s ETF" # Update ticker name with current nickname
+
+    # 5. 주식 1,000주 발행 (본인 포트폴리오에 입고)
+    new_portfolio = Portfolio(
+        user_id=user_id,
+        ticker_id=ticker_id,
+        quantity=1000,
+        average_price=0 # Cost Basis 0원으로 설정
+    )
+    db.add(new_portfolio)
+
+    await db.commit()
+    
+    # Refresh wallet to get the updated balance after liquidation
+    await db.refresh(wallet)
+
+    return {
+        "message": "Bankruptcy filed. Assets liquidated.",
+        "balance": wallet.balance,
+        "is_bankrupt": True,
+        "human_stock_issued": 1000
     }

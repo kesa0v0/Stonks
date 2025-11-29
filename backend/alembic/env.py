@@ -1,4 +1,28 @@
+import os
+import sys
 from logging.config import fileConfig
+
+# Explicitly add project root to sys.path
+# Assuming current file is backend/alembic/env.py
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+# Load .env automatically for Alembic migrations - MOVED TO TOP
+try:
+    from dotenv import load_dotenv
+    # Try loading from project root and backend folder
+    # Assuming this env.py is in backend/alembic, project root is two levels up.
+    # And backend folder is one level up.
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    backend_folder = os.path.dirname(os.path.dirname(__file__))
+
+    load_dotenv(os.path.join(project_root, '.env'))
+    load_dotenv(os.path.join(project_root, '.env.dev'))
+    load_dotenv(os.path.join(backend_folder, '.env'))
+    load_dotenv(os.path.join(backend_folder, '.env.dev'))
+except ImportError:
+    pass
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool

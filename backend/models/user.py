@@ -1,6 +1,6 @@
 # backend/models/user.py
 import uuid
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Numeric
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Numeric, Integer
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -22,6 +22,7 @@ class User(Base):
     
     # Human ETF & Bankruptcy
     is_bankrupt = Column(Boolean, default=False) # 파산 상태
+    bankruptcy_count = Column(Integer, default=0, nullable=False) # 파산 횟수
     dividend_rate = Column(Numeric(5, 4), default=0.5, nullable=False) # 배당률 (기본 50%)
 
     # Relationships

@@ -1,15 +1,97 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, and_
 from uuid import UUID
 from decimal import Decimal
+import random
 
 from backend.core.database import get_db
 from backend.core.deps import get_current_user_id
-from backend.models import User, Ticker, Portfolio, MarketType, Currency, TickerSource
+from backend.models import User, Ticker, Portfolio, MarketType, Currency, TickerSource, Wallet
 from backend.schemas.human import IpoCreate, BurnCreate
 
 router = APIRouter(prefix="/human", tags=["human_etf"])
+
+@router.post("/bailout")
+async def request_bailout(
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id)
+):
+    """
+    [긴급 구제 금융 신청]
+    - 조건: 파산 상태이며, 발행한 Human ETF 주식이 팔리지 않음.
+    - 효과: 시스템 봇이 평가 금액으로 전량 매수.
+    - 평가 공식: 기본금 * (1 - 파산횟수 * 패널티) * 활동점수 * 랜덤운빨
+    """
+    # 1. 유저 및 파산 상태 확인
+    user_result = await db.execute(select(User).where(User.id == user_id))
+    user = user_result.scalars().first()
+    
+    if not user or not user.is_bankrupt:
+        raise HTTPException(status_code=400, detail="Only bankrupt users can request a bailout.")
+
+    ticker_id = f"HUMAN-{user_id}"
+
+    # 2. 보유 주식 확인 (안 팔린 재고)
+    stmt = select(Portfolio).where(
+        Portfolio.user_id == user_id,
+        Portfolio.ticker_id == ticker_id
+    ).with_for_update()
+    result = await db.execute(stmt)
+    portfolio = result.scalars().first()
+
+    if not portfolio or portfolio.quantity <= 0:
+        raise HTTPException(status_code=400, detail="No shares found to bailout.")
+
+    # 3. 구제 금융 금액 산정 (The Evaluation)
+    BASE_AMOUNT = 100000 # 10만 원
+    PENALTY_PER_COUNT = 0.2 # 회당 20% 차감
+    
+    # 신용도 패널티 적용 (최대 90%까지만 깎임)
+    penalty_factor = max(0.1, 1.0 - (user.bankruptcy_count * PENALTY_PER_COUNT))
+    
+    # 활동 점수 (임시: 1.0 ~ 1.2 랜덤)
+    activity_bonus = random.uniform(1.0, 1.2)
+    
+    # 운빨 요소 (0.7 ~ 1.3)
+    luck_factor = random.uniform(0.7, 1.3)
+    
+    # 총 매입액 계산
+    total_bailout = BASE_AMOUNT * penalty_factor * activity_bonus * luck_factor
+    total_bailout = round(total_bailout) # 정수 반올림
+    
+    # 최소 보장액 (주당 10원)
+    min_guarantee = float(portfolio.quantity) * 10
+    final_amount = max(total_bailout, min_guarantee)
+    
+    # 4. 주식 매수 (시스템이 소각 처리한다고 가정 -> 삭제)
+    qty = portfolio.quantity
+    await db.delete(portfolio)
+    
+    # 5. 지갑 입금
+    wallet_stmt = select(Wallet).where(Wallet.user_id == user_id).with_for_update()
+    wallet_res = await db.execute(wallet_stmt)
+    wallet = wallet_res.scalars().first()
+    
+    if not wallet:
+        wallet = Wallet(user_id=user_id, balance=0)
+        db.add(wallet)
+        
+    wallet.balance += Decimal(final_amount)
+    
+    await db.commit()
+    
+    return {
+        "message": "Bailout successful. System bought your shares.",
+        "sold_quantity": qty,
+        "bailout_amount": final_amount,
+        "factors": {
+            "base": BASE_AMOUNT,
+            "penalty_factor": round(penalty_factor, 2),
+            "activity_bonus": round(activity_bonus, 2),
+            "luck_factor": round(luck_factor, 2)
+        }
+    }
 
 @router.post("/ipo")
 async def create_ipo(
