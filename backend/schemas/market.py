@@ -1,7 +1,7 @@
 from enum import Enum
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel, ConfigDict
-from backend.models.asset import MarketType, Currency
+from backend.models.asset import MarketType, Currency, TickerSource
 
 class MarketState(str, Enum):
     OPEN = "OPEN"
@@ -14,6 +14,23 @@ class MarketStatusResponse(BaseModel):
     us: MarketState
     crypto: MarketState
     server_time: str # ISO format
+
+class TickerCreate(BaseModel):
+    id: str # 관리자가 직접 입력
+    symbol: str
+    name: str
+    market_type: MarketType
+    currency: Currency
+    source: TickerSource = TickerSource.UPBIT
+    is_active: bool = True
+
+class TickerUpdate(BaseModel):
+    symbol: Optional[str] = None
+    name: Optional[str] = None
+    market_type: Optional[MarketType] = None
+    currency: Optional[Currency] = None
+    source: Optional[TickerSource] = None
+    is_active: Optional[bool] = None
 
 class TickerResponse(BaseModel):
     id: str
