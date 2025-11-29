@@ -168,3 +168,90 @@ async def test_ranking_api(client: AsyncClient, db_session):
     assert data[0]["value"] == 100.0
     assert data[1]["nickname"] == "Ace"
     assert data[1]["value"] == 75.0
+
+@pytest.mark.asyncio
+async def test_hall_of_fame(client: AsyncClient, db_session):
+    """
+    Test GET /rankings/hall-of-fame endpoint.
+    """
+    # 1. Setup Users
+    user_a = User(id=uuid.uuid4(), email="a@h.com", hashed_password="pw", nickname="ProfitKing", is_active=True)
+    # Profit King
+    persona_a = UserPersona(
+        user_id=user_a.id, total_realized_pnl=10000, total_loss=0, total_trade_count=10, 
+        total_fees_paid=0, night_trade_count=0,
+        win_count=0, loss_count=0, total_profit=0,
+        short_position_count=0, long_position_count=0, market_order_count=0, limit_order_count=0, panic_sell_count=0, best_trade_pnl=0, worst_trade_pnl=0, top_buyer_count=0, bottom_seller_count=0
+    )
+    
+    user_b = User(id=uuid.uuid4(), email="b@h.com", hashed_password="pw", nickname="LossKing", is_active=True)
+    # Loss King & Volume King
+    persona_b = UserPersona(
+        user_id=user_b.id, total_realized_pnl=-5000, total_loss=5000, total_trade_count=100, 
+        total_fees_paid=0, night_trade_count=0,
+        win_count=0, loss_count=0, total_profit=0,
+        short_position_count=0, long_position_count=0, market_order_count=0, limit_order_count=0, panic_sell_count=0, best_trade_pnl=0, worst_trade_pnl=0, top_buyer_count=0, bottom_seller_count=0
+    )
+    
+    user_c = User(id=uuid.uuid4(), email="c@h.com", hashed_password="pw", nickname="NightOwl", is_active=True)
+    # Night King
+    persona_c = UserPersona(
+        user_id=user_c.id, total_realized_pnl=0, total_loss=0, total_trade_count=10, 
+        total_fees_paid=0, night_trade_count=50,
+        win_count=0, loss_count=0, total_profit=0,
+        short_position_count=0, long_position_count=0, market_order_count=0, limit_order_count=0, panic_sell_count=0, best_trade_pnl=0, worst_trade_pnl=0, top_buyer_count=0, bottom_seller_count=0
+    )
+    
+    db_session.add_all([user_a, user_b, user_c, persona_a, persona_b, persona_c])
+    await db_session.commit()
+    
+    # 2. Call API
+    response = await client.get("/rankings/hall-of-fame")
+    assert response.status_code == 200
+    data = response.json()
+    
+    assert data["top_profit"]["nickname"] == "ProfitKing"
+    assert data["top_loss"]["nickname"] == "LossKing"
+    assert data["top_volume"]["nickname"] == "LossKing" # B has highest volume
+    assert data["top_night"]["nickname"] == "NightOwl"
+
+@pytest.mark.asyncio
+async def test_ranking_api_extended(client: AsyncClient, db_session):
+    """
+    Test extended ranking types: profit_factor, market_ratio.
+    """
+    user_a = User(id=uuid.uuid4(), email="a@e.com", hashed_password="pw", nickname="Efficient", is_active=True)
+    # Profit: 1000, Loss: 100 => PF = 10.0
+    # Market: 1, Total: 10 => Ratio = 10%
+    persona_a = UserPersona(
+        user_id=user_a.id, total_profit=1000, total_loss=100, total_trade_count=10, market_order_count=1,
+        total_realized_pnl=0, total_fees_paid=0, night_trade_count=0,
+        win_count=0, loss_count=0, short_position_count=0, long_position_count=0, limit_order_count=0, panic_sell_count=0, best_trade_pnl=0, worst_trade_pnl=0, top_buyer_count=0, bottom_seller_count=0
+    )
+    
+    user_b = User(id=uuid.uuid4(), email="b@e.com", hashed_password="pw", nickname="Impatient", is_active=True)
+    # Profit: 1000, Loss: 1000 => PF = 1.0
+    # Market: 9, Total: 10 => Ratio = 90%
+    persona_b = UserPersona(
+        user_id=user_b.id, total_profit=1000, total_loss=1000, total_trade_count=10, market_order_count=9,
+        total_realized_pnl=0, total_fees_paid=0, night_trade_count=0,
+        win_count=0, loss_count=0, short_position_count=0, long_position_count=0, limit_order_count=0, panic_sell_count=0, best_trade_pnl=0, worst_trade_pnl=0, top_buyer_count=0, bottom_seller_count=0
+    )
+    
+    db_session.add_all([user_a, user_b, persona_a, persona_b])
+    await db_session.commit()
+    
+    # 1. Profit Factor (Efficient > Impatient)
+    response = await client.get("/rankings/profit_factor")
+    assert response.status_code == 200
+    data = response.json()
+    assert data[0]["nickname"] == "Efficient"
+    assert data[0]["value"] == 10.0
+    
+    # 2. Market Ratio (Impatient > Efficient)
+    response = await client.get("/rankings/market_ratio")
+    assert response.status_code == 200
+    data = response.json()
+    assert data[0]["nickname"] == "Impatient"
+    assert data[0]["value"] == 90.0
+
