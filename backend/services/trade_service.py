@@ -233,6 +233,22 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
         await db.commit()
         
         logger.info(f"Trade Executed: {side} {quantity} {ticker_id} @ {current_price} (Fee: {fee}) for user {user_id}")
+
+        # Post-Trade Event Hook: 거래 이벤트 발행
+        from backend.services.common.event_hook import publish_event
+        event = {
+            "type": "trade_executed",
+            "user_id": str(user_id),
+            "order_id": str(order_id),
+            "ticker_id": str(ticker_id),
+            "side": str(side),
+            "quantity": float(quantity),
+            "price": float(current_price),
+            "fee": float(fee),
+            "realized_pnl": float(order.realized_pnl) if hasattr(order, "realized_pnl") and order.realized_pnl is not None else None,
+            "status": str(order.status)
+        }
+        await publish_event(redis_client, event)
         return True
 
     except Exception as e:
