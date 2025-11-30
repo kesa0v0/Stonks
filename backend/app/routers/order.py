@@ -5,14 +5,22 @@ from backend.core.rate_limit_config import get_rate_limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.database import get_db
-from backend.core.deps import get_current_user_id
+from backend.core.deps import get_current_user_id, check_market_open, check_not_bankrupt
 from backend.core.cache import get_redis
 from backend.schemas.order import OrderCreate, OrderResponse
 from backend.services.order_service import place_order, cancel_order_logic
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
-@router.post("", response_model=OrderResponse, dependencies=[Depends(get_rate_limiter("/orders"))])
+@router.post(
+    "",
+    response_model=OrderResponse,
+    dependencies=[
+        Depends(get_rate_limiter("/orders")),
+        Depends(check_not_bankrupt),
+        Depends(check_market_open),
+    ],
+)
 async def create_order(
     order: OrderCreate, 
     db: AsyncSession = Depends(get_db),

@@ -10,12 +10,19 @@ import redis.asyncio as async_redis
 
 from backend.core.database import get_db
 from backend.repository.user import user_repo
-from backend.models import User, ApiKey
+from backend.models import User, ApiKey, Ticker
 from datetime import datetime
 from sqlalchemy import update
 from backend.core import security
 from backend.core.config import settings
 from backend.core.cache import get_redis 
+from backend.schemas.order import OrderCreate
+from backend.schemas.market import MarketState
+from backend.services.market_service import get_market_status_by_type
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    from backports.zoneinfo import ZoneInfo
 
 # OAuth2 스키마 정의 (토큰 발급 URL 지정)
 # 프론트엔드에서 로그인 요청을 보낼 주소와 일치해야 함
@@ -166,3 +173,39 @@ async def get_current_user_any(
                 raise HTTPException(status_code=401, detail="Invalid API Key")
             raise
     raise HTTPException(status_code=401, detail="Authentication required (Bearer or X-API-Key)")
+
+
+# -------------------------------
+# Common request guard dependencies
+# -------------------------------
+async def check_not_bankrupt(current_user: User = Depends(get_current_user)) -> None:
+    """Block actions for bankrupt users.
+
+    Raises 403 if `current_user.is_bankrupt` is True.
+    """
+    if getattr(current_user, "is_bankrupt", False):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is bankrupt")
+
+
+async def check_market_open(
+    order: OrderCreate,  # parsed request body
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Ensure the market for the requested ticker is OPEN.
+
+    - Looks up `Ticker` by `order.ticker_id`
+    - Resolves market type and checks current status
+    - Raises 400 if market is closed
+    """
+    # Fetch ticker to determine market type
+    result = await db.execute(select(Ticker).where(Ticker.id == order.ticker_id))
+    ticker = result.scalars().first()
+    if not ticker:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid ticker")
+
+    now_utc = datetime.now(ZoneInfo("UTC"))
+    market_type = getattr(ticker.market_type, "value", str(ticker.market_type))
+    state = get_market_status_by_type(market_type, now_utc)
+
+    if state != MarketState.OPEN:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Market is closed")
