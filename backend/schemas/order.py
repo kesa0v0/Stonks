@@ -1,7 +1,7 @@
 # backend/schemas/order.py
 from datetime import datetime
-from typing import Optional
-from pydantic import BaseModel, Field, ConfigDict # Pydantic V2 ConfigDict import
+from typing import Optional, List
+from pydantic import BaseModel, Field, ConfigDict
 from decimal import Decimal
 from uuid import UUID
 from backend.core.enums import OrderType, OrderSide
@@ -10,11 +10,19 @@ from backend.core.enums import OrderType, OrderSide
 class OrderCreate(BaseModel):
     ticker_id: str = Field()
     side: OrderSide = Field()
-    quantity: Decimal = Field(gt=Decimal(0)) # Change to Decimal
+    quantity: Decimal = Field(gt=Decimal(0))
 
-    type: OrderType = OrderType.MARKET # 안 보내면 시장가
-    target_price: Optional[Decimal] = None # 지정가일 때만 필수 # Change to Decimal
-    stop_price: Optional[Decimal] = None # STOP_LOSS일 때 필수
+    type: OrderType = OrderType.MARKET
+    target_price: Optional[Decimal] = None
+    stop_price: Optional[Decimal] = None
+    
+    # Trailing Stop 전용
+    trailing_gap: Optional[Decimal] = None # 트레일링 간격 (가격 기준)
+    
+    # OCO (One Cancels Other) 링크용 - 클라이언트에서 보낼 땐 보통 두 개의 주문을 한번에 보내지만,
+    # 여기선 간단히 "이 주문을 만들 때 다른 주문 ID와 연결"하는 방식보다는,
+    # 서비스 단에서 두 주문을 생성하고 묶는게 나음.
+    # 일단 단일 주문 생성 필드로는 이정도가 적당함.
 
 class OrderResponse(BaseModel):
     order_id: str
@@ -26,12 +34,14 @@ class OrderResponse(BaseModel):
     quantity: Optional[float] = None
     target_price: Optional[float] = None
     stop_price: Optional[float] = None
+    trailing_gap: Optional[float] = None
     price: Optional[float] = None
     unfilled_quantity: Optional[float] = None
     created_at: Optional[datetime] = None
     cancelled_at: Optional[datetime] = None
     fail_reason: Optional[str] = None
     user_id: Optional[str] = None
+    link_id: Optional[str] = None # OCO Group ID
 
     model_config = ConfigDict(
         from_attributes=True,
@@ -39,15 +49,14 @@ class OrderResponse(BaseModel):
         extra='ignore'
     )
 
-# 거래 내역 조회용 스키마
 class OrderListResponse(BaseModel):
     id: UUID
     ticker_id: str
     side: str
     status: str
-    quantity: float # This can remain float for display
-    price: Optional[float] = None # 미체결 시 None일 수 있음 # This can remain float for display
-    created_at: datetime # 주문 시간
+    quantity: float
+    price: Optional[float] = None
+    created_at: datetime
 
     model_config = ConfigDict(
         from_attributes=True,

@@ -18,19 +18,25 @@ class Order(Base):
     side = Column(Enum(OrderSide), nullable=False)
     status = Column(Enum(OrderStatus), default=OrderStatus.PENDING, nullable=False)
 
-    # 주문 타입 (기본값은 시장가)
+    # 주문 타입
     type = Column(Enum(OrderType), default=OrderType.MARKET, nullable=False)
-    # 지정가 가격 (시장가면 null)
-    target_price = Column(Numeric(20, 8), nullable=True)
-    # 스탑로스 가격 (감시 가격)
-    stop_price = Column(Numeric(20, 8), nullable=True)
+    
+    # 가격 필드
+    target_price = Column(Numeric(20, 8), nullable=True) # LIMIT, STOP_LIMIT(목표가)
+    stop_price = Column(Numeric(20, 8), nullable=True)   # STOP_LOSS, TAKE_PROFIT, STOP_LIMIT(발동가)
+    
+    # Trailing Stop 필드
+    trailing_gap = Column(Numeric(20, 8), nullable=True) # 트레일링 간격
+    high_water_mark = Column(Numeric(20, 8), nullable=True) # 발동 이후 최고가(매수 시 최저가) 추적용
 
-    # 미체결 잔량 (부분 체결 대비, 일단은 quantity와 똑같이 시작)
+    # OCO / Linked Orders
+    link_id = Column(UUID(as_uuid=True), nullable=True) # 같이 묶인 주문 ID (하나 체결 시 나머지 취소)
+
     unfilled_quantity = Column(Numeric(20, 8), default=0, nullable=False)
     quantity = Column(Numeric(20, 8), nullable=False)
     price = Column(Numeric(20, 8), nullable=True) # 체결가
     
-    realized_pnl = Column(Numeric(20, 8), nullable=True) # 실현 손익 (매도 시 계산)
+    realized_pnl = Column(Numeric(20, 8), nullable=True)
 
     applied_exchange_rate = Column(Numeric(10, 2), default=1.0)
     fee = Column(Numeric(20, 8), default=0)
