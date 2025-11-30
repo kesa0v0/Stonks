@@ -248,7 +248,7 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
             "realized_pnl": float(order.realized_pnl) if hasattr(order, "realized_pnl") and order.realized_pnl is not None else None,
             "status": str(order.status)
         }
-        await publish_event(redis_client, event)
+        await publish_event(redis_client, event, channel="trade_events")
         return True
 
     except Exception as e:

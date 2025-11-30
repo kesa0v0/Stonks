@@ -50,7 +50,7 @@ async def fetch_and_publish():
                         "price": price,
                         "timestamp": ticker['timestamp']
                     }
-                    await publish_event(r, event)
+                    await publish_event(r, event, channel="price_events")
 
                     print(f"✅ {symbol}: {price:,.0f} KRW (event published)")
 

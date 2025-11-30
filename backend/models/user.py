@@ -37,9 +37,28 @@ class Wallet(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, unique=True)
-    
-    # 원화(KRW) 잔고 (소수점 8자리까지 허용하여 정밀도 유지)
     balance = Column(Numeric(20, 8), default=0, nullable=False)
     last_updated = Column(DateTime(timezone=True), onupdate=func.now())
-
     user = relationship("User", back_populates="wallet")
+
+# Audit Hook: Wallet after_update 이벤트 리스너
+from sqlalchemy import event
+from backend.models.wallet_transaction_history import WalletTransactionHistory
+
+@event.listens_for(Wallet, "after_update")
+def wallet_audit_hook(mapper, connection, target):
+    # target: 변경된 Wallet 객체
+    hist = target.__dict__.get("_sa_instance_state").attrs["balance"].history
+    if hist.has_changes():
+        prev_balance = hist.deleted[0] if hist.deleted else None
+        new_balance = target.balance
+        reason = getattr(target, "last_update_reason", None)
+        connection.execute(
+            WalletTransactionHistory.__table__.insert().values(
+                user_id=target.user_id,
+                wallet_id=target.id,
+                prev_balance=prev_balance,
+                new_balance=new_balance,
+                reason=reason
+            )
+        )
