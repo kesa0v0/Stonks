@@ -22,6 +22,8 @@ class Order(Base):
     type = Column(Enum(OrderType), default=OrderType.MARKET, nullable=False)
     # 지정가 가격 (시장가면 null)
     target_price = Column(Numeric(20, 8), nullable=True)
+    # 스탑로스 가격 (감시 가격)
+    stop_price = Column(Numeric(20, 8), nullable=True)
 
     # 미체결 잔량 (부분 체결 대비, 일단은 quantity와 똑같이 시작)
     unfilled_quantity = Column(Numeric(20, 8), default=0, nullable=False)

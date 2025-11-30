@@ -86,6 +86,17 @@ async def place_order(
                      raise InvalidLimitOrderPriceError("지정가 주문에는 유효한 목표 가격이 필요합니다.")
                 required_margin = order.target_price * order.quantity
             
+            # STOP_LOSS 공매도 (Stop Sell)
+            elif order.type == OrderType.STOP_LOSS:
+                if not order.stop_price or order.stop_price <= Decimal(0):
+                     raise InvalidLimitOrderPriceError("STOP_LOSS 주문에는 유효한 감시 가격(stop_price)이 필요합니다.")
+                # 스탑로스는 트리거되면 시장가로 매도됨. 증거금 계산은 스탑 가격 기준으로 하거나 현재가 기준으로 보수적으로 잡음
+                # 여기서는 Stop Price가 트리거 가격이므로 보수적으로 Min(현재가, 스탑가)로 잡을 수도 있지만,
+                # 보통 Stop Sell은 현재가보다 낮게 잡으므로(손절), 스탑가 기준으로 증거금을 잡는게 논리적일 수 있음.
+                # 하지만 Stop Sell이 트리거 되는 순간 시장가이므로 슬리피지가 발생할 수 있음.
+                # 간단히 stop_price로 계산.
+                required_margin = order.stop_price * order.quantity
+
             # 시장가 공매도
             elif order.type == OrderType.MARKET:
                 required_margin = current_price * order.quantity
@@ -104,6 +115,13 @@ async def place_order(
                  raise InvalidLimitOrderPriceError("지정가 주문에는 유효한 목표 가격이 필요합니다.")
             required_amount = (order.target_price * order.quantity) * (Decimal(1) + fee_rate) # Use Decimal(1)
             
+        # STOP_LOSS 매수 (Stop Buy)
+        elif order.type == OrderType.STOP_LOSS:
+            if not order.stop_price or order.stop_price <= Decimal(0):
+                 raise InvalidLimitOrderPriceError("STOP_LOSS 주문에는 유효한 감시 가격(stop_price)이 필요합니다.")
+            # Stop Buy: 가격이 오르면 매수. 보통 현재가보다 높게 설정.
+            required_amount = (order.stop_price * order.quantity) * (Decimal(1) + fee_rate)
+
         # 시장가 매수
         elif order.type == OrderType.MARKET:
             required_amount = (current_price * order.quantity) * (Decimal(1) + fee_rate) # Use Decimal(1)
@@ -111,30 +129,39 @@ async def place_order(
         if balance < required_amount:
              raise InsufficientBalanceError(float(required_amount), float(balance), message=f"매수 잔액이 부족합니다 (수수료 {fee_rate*Decimal(100)}% 포함). (필요: {required_amount}, 보유: {balance})")
 
-    # [분기 1] 지정가(LIMIT) 주문인 경우 -> DB에 저장만 하고 끝냄 (매칭 대기)
-    if order.type == OrderType.LIMIT:
-        if not order.target_price or order.target_price <= Decimal(0):
-             raise InvalidLimitOrderPriceError("지정가 주문에는 유효한 목표 가격이 필요합니다.")
+    # [분기 1] 지정가(LIMIT) 또는 스탑로스(STOP_LOSS) 주문인 경우 -> DB에 저장만 하고 끝냄 (매칭 대기)
+    if order.type in [OrderType.LIMIT, OrderType.STOP_LOSS]:
+        target_price = order.target_price
+        if order.type == OrderType.LIMIT:
+            if not target_price or target_price <= Decimal(0):
+                 raise InvalidLimitOrderPriceError("지정가 주문에는 유효한 목표 가격이 필요합니다.")
+        elif order.type == OrderType.STOP_LOSS:
+            # Stop-Loss 주문은 target_price 대신 stop_price를 사용하거나 별도 컬럼에 저장
+            # 여기서는 stop_price가 필수
+            if not order.stop_price or order.stop_price <= Decimal(0):
+                 raise InvalidLimitOrderPriceError("STOP_LOSS 주문에는 유효한 감시 가격이 필요합니다.")
 
         new_order = Order(
             id=uuid.UUID(order_id),
             user_id=user_uuid,
             ticker_id=order.ticker_id,
             side=order.side,
-            type=OrderType.LIMIT,
+            type=order.type,
             status=OrderStatus.PENDING, # 대기 상태
             quantity=order.quantity,
             unfilled_quantity=order.quantity, # 초기엔 100% 미체결
-            target_price=order.target_price,
+            target_price=order.target_price, # LIMIT일 때만 값 있음
+            stop_price=order.stop_price, # STOP_LOSS일 때만 값 있음
             price=None # 아직 체결 안 됨
         )
         db.add(new_order)
         await db.commit() # 비동기 커밋
         
+        msg = f"Limit order placed at {order.target_price}" if order.type == OrderType.LIMIT else f"Stop-Loss order placed at {order.stop_price}"
         return {
             "order_id": order_id,
             "status": "PENDING",
-            "message": f"Limit order placed at {order.target_price}"
+            "message": msg
         }
     
     # 2. 메시지 페이로드 구성. 시장가(MARKET) 주문인 경우 -> 기존처럼 RabbitMQ로 전송

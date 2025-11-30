@@ -14,6 +14,7 @@ class OrderCreate(BaseModel):
 
     type: OrderType = OrderType.MARKET # 안 보내면 시장가
     target_price: Optional[Decimal] = None # 지정가일 때만 필수 # Change to Decimal
+    stop_price: Optional[Decimal] = None # STOP_LOSS일 때 필수
 
 class OrderResponse(BaseModel):
     order_id: str
@@ -24,6 +25,7 @@ class OrderResponse(BaseModel):
     type: Optional[str] = None
     quantity: Optional[float] = None
     target_price: Optional[float] = None
+    stop_price: Optional[float] = None
     price: Optional[float] = None
     unfilled_quantity: Optional[float] = None
     created_at: Optional[datetime] = None
