@@ -2,6 +2,10 @@ import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
+    DEBUG : bool = True
+    ENVIRONMENT: str = "development"  # production, staging, development
+    RATE_LIMIT_ENABLED: bool = False
+
     # 1. DB 설정 (기본값은 로컬용이나, Docker 환경변수가 있으면 덮어씌워짐)
     DATABASE_URL: str = "postgresql://devuser:devpass@localhost:5432/dev_db"
     

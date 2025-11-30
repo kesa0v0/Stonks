@@ -2,8 +2,10 @@ import pytest
 import asyncio
 import json
 from unittest.mock import AsyncMock
+import sqlalchemy
+from decimal import Decimal
 from backend.services.trade_service import execute_trade
-from backend.services.common.event_hook import publish_event
+from backend.core.event_hook import publish_event
 
 class DummyRedis:
     def __init__(self):
@@ -13,10 +15,10 @@ class DummyRedis:
 
 @pytest.mark.asyncio
 async def test_post_trade_event_hook(monkeypatch):
-        class DummyUser:
-            def __init__(self):
-                self.dividend_rate = 0.0
-        dummy_user = DummyUser()
+    class DummyUser:
+        def __init__(self):
+            self.dividend_rate = 0.0
+    dummy_user = DummyUser()
     # Dummy DB, Redis, 기타 파라미터 준비
     db = AsyncMock()
     db.commit = AsyncMock()
@@ -26,17 +28,32 @@ async def test_post_trade_event_hook(monkeypatch):
     order_id = "22222222-2222-2222-2222-222222222222"
     ticker_id = "AAPL"
     side = "BUY"
-    quantity = 1.0
+    quantity = Decimal("1.0")
 
 
-    monkeypatch.setattr("backend.services.trade_service.get_current_price", AsyncMock(return_value=100.0))
-    monkeypatch.setattr("backend.services.trade_service.get_trading_fee_rate", AsyncMock(return_value=0.01))
-    monkeypatch.setattr("backend.services.trade_service.select", AsyncMock())
+    monkeypatch.setattr("backend.services.trade_service.get_current_price", AsyncMock(return_value=Decimal("100.0")))
+    monkeypatch.setattr("backend.services.trade_service.get_trading_fee_rate", AsyncMock(return_value=Decimal("0.01")))
+    # Provide a lightweight fake Statement object that implements
+    # `.where()` and `.with_for_update()` and stringifies to include
+    # the model name so our dummy_execute can detect which model is queried.
+    class FakeStmt:
+        def __init__(self, model):
+            self.model = model
+        def where(self, *a, **k):
+            return self
+        def with_for_update(self):
+            return self
+        def __str__(self):
+            return f"Select({getattr(self.model, '__name__', str(self.model))})"
+
+    monkeypatch.setattr(
+        "backend.services.trade_service.select",
+        lambda *a, **k: FakeStmt(a[0]) if a else FakeStmt(None),
+    )
     monkeypatch.setattr("backend.services.trade_service.update_user_persona", AsyncMock())
     monkeypatch.setattr("backend.services.trade_service.func", AsyncMock())
 
     # 더미 모델 객체 생성
-    from decimal import Decimal
     from backend.core.enums import OrderStatus, OrderType, OrderSide
 
 
@@ -99,4 +116,4 @@ async def test_post_trade_event_hook(monkeypatch):
     assert event["user_id"] == user_id
     assert event["ticker_id"] == ticker_id
     assert event["side"] == side
-    assert event["quantity"] == quantity
+    assert event["quantity"] == float(quantity)

@@ -7,6 +7,8 @@ ROOT = str(Path(__file__).resolve().parents[2])
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+
+from fastapi_limiter import FastAPILimiter
 import pytest
 import pytest_asyncio
 from unittest.mock import MagicMock, AsyncMock, patch 
@@ -28,6 +30,13 @@ import redis.asyncio as async_redis
 from decimal import Decimal 
 from backend.core.cache import get_redis 
 import json 
+
+
+# 6. FastAPILimiter 초기화 (테스트 환경)
+@pytest_asyncio.fixture(autouse=True)
+async def fastapi_limiter_init(mock_external_services):
+    # Redis mock 인스턴스 사용
+    await FastAPILimiter.init(mock_external_services["redis"])
 
 # Helper function to convert Decimals to string for JSON serialization
 def convert_decimals_to_str(obj):
