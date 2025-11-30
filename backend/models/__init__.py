@@ -8,6 +8,8 @@ from .ranking import UserPersona
 from .dividend import DividendHistory
 from .season import Season
 from .wallet_transaction_history import WalletTransactionHistory
+from .order_status_history import OrderStatusHistory
+from .portfolio_history import PortfolioHistory
 from backend.core.database import Base
 
 
@@ -23,4 +25,6 @@ __all__ = [
     "DividendHistory",
     "Season",
     "WalletTransactionHistory",
+    "OrderStatusHistory",
+    "PortfolioHistory",
 ]

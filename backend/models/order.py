@@ -6,6 +6,8 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from backend.core.database import Base
 from backend.core.enums import OrderType, OrderSide, OrderStatus
+from sqlalchemy import event
+from backend.models.order_status_history import OrderStatusHistory
 
 
 class Order(Base):
@@ -48,3 +50,43 @@ class Order(Base):
 
     user = relationship("User", back_populates="orders")
     ticker = relationship("Ticker")
+
+
+# Order Status audit hooks
+@event.listens_for(Order, "after_insert")
+def order_after_insert(mapper, connection, target):
+    try:
+        reason = getattr(target, "last_update_reason", None) or getattr(target, "fail_reason", None)
+        connection.execute(
+            OrderStatusHistory.__table__.insert().values(
+                order_id=target.id,
+                user_id=target.user_id,
+                prev_status=None,
+                new_status=target.status,
+                reason=reason,
+            )
+        )
+    except Exception:
+        # don't block main flow on audit issues
+        pass
+
+
+@event.listens_for(Order, "after_update")
+def order_after_update(mapper, connection, target):
+    try:
+        hist = target.__dict__.get("_sa_instance_state").attrs["status"].history
+        if hist.has_changes():
+            prev_status = hist.deleted[0] if hist.deleted else None
+            new_status = target.status
+            reason = getattr(target, "last_update_reason", None) or getattr(target, "fail_reason", None)
+            connection.execute(
+                OrderStatusHistory.__table__.insert().values(
+                    order_id=target.id,
+                    user_id=target.user_id,
+                    prev_status=prev_status,
+                    new_status=new_status,
+                    reason=reason,
+                )
+            )
+    except Exception:
+        pass
