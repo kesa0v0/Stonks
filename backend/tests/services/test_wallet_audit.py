@@ -3,6 +3,8 @@ from decimal import Decimal
 from sqlalchemy import select
 
 from backend.models import Wallet, WalletTransactionHistory
+from backend.services.common.wallet import add_balance
+from backend.core.constants import WALLET_REASON_DEPOSIT
 
 
 @pytest.mark.asyncio
@@ -30,6 +32,17 @@ async def test_wallet_balance_update_creates_history(db_session, test_user):
     assert Decimal(hist.prev_balance) == Decimal(prev_balance)
     assert Decimal(hist.new_balance) == Decimal(wallet.balance)
     assert hist.reason == "unit-test:deposit"
+
+    # Also verify helper sets reason and audits
+    add_balance(wallet, Decimal("10"), WALLET_REASON_DEPOSIT)
+    await db_session.commit()
+    q2 = await db_session.execute(
+        select(WalletTransactionHistory)
+        .where(WalletTransactionHistory.wallet_id == wallet.id)
+        .order_by(WalletTransactionHistory.created_at.desc())
+    )
+    hist2 = q2.scalars().first()
+    assert hist2 is not None and hist2.reason == WALLET_REASON_DEPOSIT
 
 
 @pytest.mark.asyncio

@@ -6,6 +6,8 @@ import redis.asyncio as async_redis
 
 from backend.models import Portfolio, Wallet
 from backend.services.common.price import get_current_price
+from backend.services.common.wallet import add_balance
+from backend.core.constants import WALLET_REASON_ADJUSTMENT
 
 async def liquidate_user_assets(
     db: AsyncSession, 
@@ -30,7 +32,7 @@ async def liquidate_user_assets(
             current_price = portfolio.average_price
         
         proceeds = portfolio.quantity * current_price
-        wallet.balance += proceeds
+        add_balance(wallet, proceeds, WALLET_REASON_ADJUSTMENT)
         total_proceeds += proceeds
         
         await db.delete(portfolio) # 포트폴리오 삭제

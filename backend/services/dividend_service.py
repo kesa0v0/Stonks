@@ -4,6 +4,8 @@ from decimal import Decimal
 import logging
 
 from backend.models import User, Wallet, Portfolio, Ticker, DividendHistory
+from backend.services.common.wallet import add_balance, sub_balance
+from backend.core.constants import WALLET_REASON_DIVIDEND
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +67,7 @@ async def process_dividend(db: AsyncSession, payer_user: User, pnl: Decimal):
     if total_dividend <= 0:
         return
 
-    payer_wallet.balance -= total_dividend
+    sub_balance(payer_wallet, total_dividend, WALLET_REASON_DIVIDEND)
     logger.info(f"Dividend collected from {payer_user.nickname}: {total_dividend} KRW")
 
     # 5. 배당금 분배
@@ -85,7 +87,7 @@ async def process_dividend(db: AsyncSession, payer_user: User, pnl: Decimal):
         receiver_wallet = res.scalars().first()
         
         if receiver_wallet:
-            receiver_wallet.balance += payout
+            add_balance(receiver_wallet, payout, WALLET_REASON_DIVIDEND)
             
             # 기록
             history = DividendHistory(

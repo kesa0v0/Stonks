@@ -15,6 +15,11 @@ from backend.services.ranking_service import update_user_persona
 from backend.services.dividend_service import process_dividend
 from backend.services.common.price import get_current_price
 from backend.services.common.config import get_trading_fee_rate
+from backend.services.common.wallet import add_balance, sub_balance
+from backend.core.constants import (
+    WALLET_REASON_TRADE_BUY,
+    WALLET_REASON_TRADE_SELL,
+)
 
 # 로깅 설정
 logger = logging.getLogger(__name__)
@@ -122,7 +127,7 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
                 logger.warning(f"Trade failed: Insufficient balance for user {user_id}")
                 return False
             
-            wallet.balance -= total_cost
+            sub_balance(wallet, total_cost, WALLET_REASON_TRADE_BUY)
             
             # [PnL 계산] 숏 포지션 상환 (Closing Short)
             if current_qty < 0:
@@ -166,7 +171,7 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
             net_income = trade_amount - fee # 수수료 차감 후 입금액
             
             # 지갑에 돈 입금
-            wallet.balance += net_income
+            add_balance(wallet, net_income, WALLET_REASON_TRADE_SELL)
             
             # [PnL 계산] 롱 포지션 청산 (Closing Long)
             if current_qty > 0:

@@ -9,6 +9,8 @@ from backend.core import constants
 from backend.models import User, Portfolio, Wallet, Ticker
 from backend.services.common.asset import liquidate_user_assets
 from backend.services.common.price import get_current_price
+from backend.services.common.wallet import set_balance
+from backend.core.constants import WALLET_REASON_LIQUIDATION_RESET
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +87,6 @@ async def check_and_liquidate_user(
         # 시스템 보정: 마이너스면 0으로 채워줌? (대회니까 구제)
         if wallet.balance < 0:
             logger.info(f"User {user_id} balance negative ({wallet.balance}) -> Reset to 0 by system insurance.")
-            wallet.balance = Decimal("0")
+            set_balance(wallet, Decimal("0"), WALLET_REASON_LIQUIDATION_RESET)
             
         await db.commit()

@@ -14,6 +14,8 @@ from backend.core.exceptions import (
 )
 from backend.models import User, Ticker, Portfolio, MarketType, Currency, TickerSource, Wallet
 from backend.schemas.human import IpoCreate, BurnCreate
+from backend.services.common.wallet import add_balance
+from backend.core.constants import WALLET_REASON_HUMAN_DISTRIBUTION
 
 async def process_bailout(db: AsyncSession, user_id: UUID):
     """
@@ -73,7 +75,7 @@ async def process_bailout(db: AsyncSession, user_id: UUID):
         wallet = Wallet(user_id=user_id, balance=0)
         db.add(wallet)
         
-    wallet.balance += Decimal(final_amount)
+    add_balance(wallet, Decimal(final_amount), WALLET_REASON_HUMAN_DISTRIBUTION)
     
     await db.commit()
     

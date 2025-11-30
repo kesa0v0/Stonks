@@ -26,3 +26,15 @@ MARGIN_MAINTENANCE_RATE = Decimal("0.05")  # 순자산이 공매도 평가액의
 
 # --- Defaults ---
 DEFAULT_TRADING_FEE_RATE = "0.001"
+
+# --- Wallet Audit Reasons (standardized) ---
+WALLET_REASON_DEPOSIT = "deposit"
+WALLET_REASON_WITHDRAW = "withdraw"
+WALLET_REASON_TRADE_BUY = "trade:buy"
+WALLET_REASON_TRADE_SELL = "trade:sell"
+WALLET_REASON_DIVIDEND = "dividend"
+WALLET_REASON_SEASON_REWARD = "season:reward"
+WALLET_REASON_HUMAN_DISTRIBUTION = "human:distribution"
+WALLET_REASON_LIQUIDATION_RESET = "liquidation:reset"
+WALLET_REASON_FEE = "fee"
+WALLET_REASON_ADJUSTMENT = "adjustment"
