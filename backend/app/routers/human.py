@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from backend.core.rate_limit_config import get_rate_limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
@@ -9,7 +10,7 @@ from backend.services.human_service import process_bailout, process_ipo, process
 
 router = APIRouter(prefix="/human", tags=["human_etf"])
 
-@router.post("/bailout")
+@router.post("/bailout", dependencies=[Depends(get_rate_limiter("/human/bailout"))])
 async def request_bailout(
     db: AsyncSession = Depends(get_db),
     user_id: UUID = Depends(get_current_user_id)
@@ -21,7 +22,7 @@ async def request_bailout(
     """
     return await process_bailout(db, user_id)
 
-@router.post("/ipo")
+@router.post("/ipo", dependencies=[Depends(get_rate_limiter("/human/ipo"))])
 async def create_ipo(
     ipo_in: IpoCreate,
     db: AsyncSession = Depends(get_db),
@@ -35,7 +36,7 @@ async def create_ipo(
     """
     return await process_ipo(db, user_id, ipo_in)
 
-@router.post("/burn")
+@router.post("/burn", dependencies=[Depends(get_rate_limiter("/human/burn"))])
 async def burn_shares(
     burn_in: BurnCreate,
     db: AsyncSession = Depends(get_db),

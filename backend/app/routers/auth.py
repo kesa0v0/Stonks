@@ -1,5 +1,6 @@
 from typing import Any
 from fastapi import APIRouter, Depends
+from backend.core.rate_limit_config import get_rate_limiter
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 import redis.asyncio as async_redis
@@ -14,7 +15,7 @@ from backend.services.auth_service import authenticate_user, refresh_access_toke
 
 router = APIRouter(tags=["authentication"])
 
-@router.get("/login/me", response_model=UserResponse)
+@router.get("/login/me", response_model=UserResponse, dependencies=[Depends(get_rate_limiter("/login/me"))])
 async def read_current_user_me(
     current_user: User = Depends(get_current_user)
 ):
@@ -23,7 +24,7 @@ async def read_current_user_me(
     """
     return current_user
 
-@router.post("/login/access-token", response_model=Token)
+@router.post("/login/access-token", response_model=Token, dependencies=[Depends(get_rate_limiter("/login/access-token"))])
 async def login_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
@@ -34,7 +35,7 @@ async def login_access_token(
     """
     return await authenticate_user(db, redis_client, form_data)
 
-@router.post("/login/refresh", response_model=Token)
+@router.post("/login/refresh", response_model=Token, dependencies=[Depends(get_rate_limiter("/login/refresh"))])
 async def refresh_token(
     request: RefreshTokenRequest,
     db: AsyncSession = Depends(get_db),
@@ -45,7 +46,7 @@ async def refresh_token(
     """
     return await refresh_access_token(db, redis_client, request)
 
-@router.post("/logout")
+@router.post("/logout", dependencies=[Depends(get_rate_limiter("/logout"))])
 async def logout(
     request: LogoutRequest = None,
     token: str = Depends(oauth2_scheme),

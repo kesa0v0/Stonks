@@ -1,5 +1,6 @@
 from typing import List
 from fastapi import APIRouter, Depends, Security, Query
+from backend.core.rate_limit_config import get_rate_limiter
 import redis.asyncio as async_redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,14 +20,14 @@ from backend.services.market_service import (
 
 router = APIRouter(prefix="/market", tags=["market"])
 
-@router.get("/status", response_model=MarketStatusResponse)
+@router.get("/status", response_model=MarketStatusResponse, dependencies=[Depends(get_rate_limiter("/market/status"))])
 async def get_market_status():
     """
     현재 각 시장(KRX, US, CRYPTO)의 운영 상태를 반환합니다.
     """
     return await get_all_market_status()
 
-@router.get("/tickers", response_model=List[TickerResponse])
+@router.get("/tickers", response_model=List[TickerResponse], dependencies=[Depends(get_rate_limiter("/market/tickers"))])
 async def get_tickers(
     db: AsyncSession = Depends(get_db)
 ):
@@ -35,7 +36,7 @@ async def get_tickers(
     """
     return await get_active_tickers(db)
 
-@router.get("/search", response_model=List[TickerResponse])
+@router.get("/search", response_model=List[TickerResponse], dependencies=[Depends(get_rate_limiter("/market/search"))])
 async def search_tickers(
     query: str = Query(..., min_length=1, description="종목 이름 또는 심볼 검색어"),
     limit: int = Query(10, ge=1, le=100),
@@ -47,7 +48,7 @@ async def search_tickers(
     return await search_tickers_by_name(db, query, limit)
 
 
-@router.get("/candles/{ticker_id}", response_model=List[CandleResponse])
+@router.get("/candles/{ticker_id}", response_model=List[CandleResponse], dependencies=[Depends(get_rate_limiter("/market/candles/{ticker_id}"))])
 async def get_candles(
     ticker_id: str,
     interval: str = Query("1m", pattern="^(1m|1d)$"), # 1m 또는 1d 만 허용
@@ -60,7 +61,7 @@ async def get_candles(
     """
     return await get_candle_history(db, ticker_id, interval, limit)
 
-@router.get("/orderbook/{ticker_id}", response_model=OrderBookResponse)
+@router.get("/orderbook/{ticker_id}", response_model=OrderBookResponse, dependencies=[Depends(get_rate_limiter("/market/orderbook/{ticker_id}"))])
 async def get_orderbook(
     ticker_id: str,
     db: AsyncSession = Depends(get_db)
@@ -71,7 +72,7 @@ async def get_orderbook(
     """
     return await get_orderbook_data(db, ticker_id)
 
-@router.get("/price/{ticker_id}", response_model=CurrentPriceResponse, dependencies=[Security(get_current_user_by_api_key)])
+@router.get("/price/{ticker_id}", response_model=CurrentPriceResponse, dependencies=[Security(get_current_user_by_api_key), Depends(get_rate_limiter("/market/price/{ticker_id}"))])
 async def get_ticker_current_price(
     ticker_id: str,
     redis_client: async_redis.Redis = Depends(get_redis)
@@ -90,7 +91,7 @@ async def get_ticker_current_price(
     
     return CurrentPriceResponse(ticker_id=ticker_id, price=price)
 
-@router.get("/price-any/{ticker_id}", response_model=CurrentPriceResponse)
+@router.get("/price-any/{ticker_id}", response_model=CurrentPriceResponse, dependencies=[Depends(get_rate_limiter("/market/price-any/{ticker_id}"))])
 async def get_ticker_current_price_multi_auth(
     ticker_id: str,
     redis_client: async_redis.Redis = Depends(get_redis),

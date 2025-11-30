@@ -13,6 +13,7 @@ from sqlalchemy import text
 from backend.create_test_user import create_test_user
 from backend.create_tickers import init_tickers
 from backend.app.routers import market, order, auth, admin, api_key, me, ranking, human
+from backend.core.rate_limit import init_rate_limiter
 from backend.core.exceptions import StonksError
 from backend.app.exception_handlers import stonks_exception_handler
 
@@ -20,6 +21,8 @@ from backend.app.exception_handlers import stonks_exception_handler
 async def lifespan(app: FastAPI):
     # Startup logic replacing deprecated on_event
     try:
+        # fastapi-limiter 초기화 (Redis)
+        await init_rate_limiter()
         # 1. DB 연결 대기
         await wait_for_db()
 

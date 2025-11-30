@@ -1,6 +1,7 @@
 import redis.asyncio as async_redis
 from typing import List
 from fastapi import APIRouter, Depends, Query
+from backend.core.rate_limit_config import get_rate_limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import date
 from uuid import UUID
@@ -21,7 +22,7 @@ from backend.services.user_service import (
 
 router = APIRouter(prefix="/me", tags=["me"])
 
-@router.get("/portfolio", response_model=PortfolioResponse)
+@router.get("/portfolio", response_model=PortfolioResponse, dependencies=[Depends(get_rate_limiter("/me/portfolio"))])
 async def get_my_portfolio(
     db: AsyncSession = Depends(get_db),
     user_id: UUID = Depends(get_current_user_id),
@@ -32,7 +33,7 @@ async def get_my_portfolio(
     """
     return await get_user_portfolio(db, user_id, redis)
 
-@router.get("/pnl", response_model=PnLResponse)
+@router.get("/pnl", response_model=PnLResponse, dependencies=[Depends(get_rate_limiter("/me/pnl"))])
 async def get_my_pnl(
     start: date = Query(..., description="Start date (YYYY-MM-DD)"),
     end: date = Query(..., description="End date (YYYY-MM-DD)"),
@@ -44,7 +45,7 @@ async def get_my_pnl(
     """
     return await get_user_pnl(db, user_id, start, end)
 
-@router.get("/orders", response_model=List[OrderListResponse])
+@router.get("/orders", response_model=List[OrderListResponse], dependencies=[Depends(get_rate_limiter("/me/orders"))])
 async def get_my_orders(
     db: AsyncSession = Depends(get_db),
     user_id: UUID = Depends(get_current_user_id)
@@ -54,7 +55,7 @@ async def get_my_orders(
     """
     return await get_user_orders(db, user_id)
 
-@router.get("/orders/open", response_model=List[OrderListResponse])
+@router.get("/orders/open", response_model=List[OrderListResponse], dependencies=[Depends(get_rate_limiter("/me/orders/open"))])
 async def get_my_open_orders(
     db: AsyncSession = Depends(get_db),
     user_id: UUID = Depends(get_current_user_id)
@@ -64,7 +65,7 @@ async def get_my_open_orders(
     """
     return await get_user_open_orders(db, user_id)
 
-@router.get("/orders/{order_id}", response_model=OrderResponse)
+@router.get("/orders/{order_id}", response_model=OrderResponse, dependencies=[Depends(get_rate_limiter("/me/orders/{order_id}"))])
 async def get_my_order_detail(
     order_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -76,7 +77,7 @@ async def get_my_order_detail(
     return await get_user_order_detail(db, user_id, order_id)
 
 
-@router.post("/bankruptcy")
+@router.post("/bankruptcy", dependencies=[Depends(get_rate_limiter("/me/bankruptcy"))])
 async def file_bankruptcy(
     db: AsyncSession = Depends(get_db),
     user_id: UUID = Depends(get_current_user_id),

@@ -1,6 +1,7 @@
 from uuid import UUID
 import redis.asyncio as async_redis
 from fastapi import APIRouter, Depends
+from backend.core.rate_limit_config import get_rate_limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.database import get_db
@@ -11,7 +12,7 @@ from backend.services.order_service import place_order, cancel_order_logic
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
-@router.post("", response_model=OrderResponse)
+@router.post("", response_model=OrderResponse, dependencies=[Depends(get_rate_limiter("/orders"))])
 async def create_order(
     order: OrderCreate, 
     db: AsyncSession = Depends(get_db),

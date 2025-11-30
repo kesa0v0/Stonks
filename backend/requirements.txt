@@ -27,3 +27,5 @@ alembic
 
 pytz
 pydantic[email]
+
+fastapi-limiter
