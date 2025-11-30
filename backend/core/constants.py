@@ -21,5 +21,8 @@ HUMAN_STOCK_ISSUED_ON_BANKRUPTCY = 1000
 API_KEY_LENGTH = 40
 API_KEY_PREFIX_LENGTH = 12
 
+# --- Margin / Liquidation ---
+MARGIN_MAINTENANCE_RATE = Decimal("0.05")  # 순자산이 공매도 평가액의 5% 미만이면 청산
+
 # --- Defaults ---
 DEFAULT_TRADING_FEE_RATE = "0.001"
