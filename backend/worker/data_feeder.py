@@ -4,6 +4,7 @@ import redis.asyncio as redis
 import ccxt.pro as ccxt  # or ccxt for standard
 import ccxt.async_support as ccxt_async  # 비동기 지원 모듈
 
+from backend.core.event_hook import publish_event
 from backend.core.config import settings
 
 # 수집할 대상 목록
@@ -41,8 +42,17 @@ async def fetch_and_publish():
                     # Redis 저장 & 발행
                     await r.set(f"price:{ticker_id}", json.dumps(data))
                     await r.publish("market_updates", json.dumps(data))
-                    
-                    print(f"✅ {symbol}: {price:,.0f} KRW")
+
+                    # Price Update Hook: 가격 변동 이벤트 발행
+                    event = {
+                        "type": "price_updated",
+                        "ticker_id": ticker_id,
+                        "price": price,
+                        "timestamp": ticker['timestamp']
+                    }
+                    await publish_event(r, event)
+
+                    print(f"✅ {symbol}: {price:,.0f} KRW (event published)")
 
             except Exception as e:
                 print(f"❌ Error: {e}")

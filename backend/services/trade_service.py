@@ -10,6 +10,7 @@ from uuid import UUID
 from backend.models import User, Wallet, Portfolio, Order, Ticker
 from backend.core.enums import OrderStatus, OrderSide, OrderType
 from backend.core.config import settings
+from backend.core.event_hook import publish_event
 from backend.services.ranking_service import update_user_persona
 from backend.services.dividend_service import process_dividend
 from backend.services.common.price import get_current_price
@@ -235,7 +236,6 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
         logger.info(f"Trade Executed: {side} {quantity} {ticker_id} @ {current_price} (Fee: {fee}) for user {user_id}")
 
         # Post-Trade Event Hook: 거래 이벤트 발행
-        from backend.services.common.event_hook import publish_event
         event = {
             "type": "trade_executed",
             "user_id": str(user_id),
