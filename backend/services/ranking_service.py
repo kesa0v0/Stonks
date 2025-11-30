@@ -8,6 +8,7 @@ from typing import List
 from backend.models import UserPersona, User
 from backend.core.enums import OrderType
 from backend.schemas.ranking import RankingEntry, HallOfFameResponse
+from backend.services.season_service import get_active_season
 
 async def update_user_persona(
     db: AsyncSession, 
@@ -19,7 +20,12 @@ async def update_user_persona(
     """
     주문 체결 시 사용자의 페르소나(통계)를 업데이트합니다.
     """
-    stmt = select(UserPersona).where(UserPersona.user_id == user_id)
+    season = await get_active_season(db)
+    
+    stmt = select(UserPersona).where(
+        UserPersona.user_id == user_id,
+        UserPersona.season_id == season.id
+    )
     result = await db.execute(stmt)
     persona = result.scalars().first()
     
@@ -27,6 +33,7 @@ async def update_user_persona(
         # 명시적으로 초기값 할당하여 NoneType 에러 방지
         persona = UserPersona(
             user_id=user_id,
+            season_id=season.id,
             total_trade_count=0,
             win_count=0,
             loss_count=0,
@@ -91,10 +98,12 @@ async def update_user_persona(
 
 async def get_hall_of_fame_data(db: AsyncSession) -> HallOfFameResponse:
     """
-    명예의 전당: 각 부문별 1위 유저를 모아서 반환합니다.
+    명예의 전당: 각 부문별 1위 유저를 모아서 반환합니다. (현재 시즌 기준)
     """
+    season = await get_active_season(db)
+    
     # 모든 유저 페르소나 조회 (데이터가 많아지면 개별 쿼리로 최적화 필요)
-    stmt = select(UserPersona, User).join(User, UserPersona.user_id == User.id)
+    stmt = select(UserPersona, User).join(User, UserPersona.user_id == User.id).where(UserPersona.season_id == season.id)
     result = await db.execute(stmt)
     rows = result.all()
     
@@ -145,12 +154,17 @@ async def get_hall_of_fame_data(db: AsyncSession) -> HallOfFameResponse:
 async def get_rankings_data(
     db: AsyncSession,
     ranking_type: str,
-    limit: int
+    limit: int,
+    season_id: int = None
 ) -> List[RankingEntry]:
     """
     랭킹 조회 로직
     """
-    stmt = select(UserPersona, User).join(User, UserPersona.user_id == User.id)
+    if season_id is None:
+        season = await get_active_season(db)
+        season_id = season.id
+
+    stmt = select(UserPersona, User).join(User, UserPersona.user_id == User.id).where(UserPersona.season_id == season_id)
     
     # DB 정렬 가능한 타입들
     if ranking_type == "pnl":

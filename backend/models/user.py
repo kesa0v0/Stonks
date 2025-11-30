@@ -1,6 +1,6 @@
 # backend/models/user.py
 import uuid
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Numeric, Integer
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Numeric, Integer, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -15,6 +15,8 @@ class User(Base):
     nickname = Column(String(50), nullable=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    badges = Column(JSON, default=[], nullable=False) # [{"title": "S1 Winner", "date": ...}]
 
     # OAuth info
     provider = Column(String(20), default="local", nullable=False)  # e.g., "local", "discord"

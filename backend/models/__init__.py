@@ -6,6 +6,7 @@ from .api_key import ApiKey
 from .candle import Candle
 from .ranking import UserPersona
 from .dividend import DividendHistory
+from .season import Season
 from backend.core.database import Base
 
 
@@ -18,5 +19,6 @@ __all__ = [
     "ApiKey",
     "Candle",
     "UserPersona",
-    "DividendHistory"
+    "DividendHistory",
+    "Season"
 ]

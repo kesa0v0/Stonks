@@ -9,6 +9,7 @@ class UserPersona(Base):
     __tablename__ = "user_personas"
 
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True)
+    season_id = Column(Integer, ForeignKey("seasons.id"), primary_key=True, default=1)
 
     # 1. 매매 기본 스탯
     total_trade_count = Column(Integer, default=0, nullable=False) # 매매 중독도
