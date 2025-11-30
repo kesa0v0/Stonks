@@ -7,6 +7,7 @@ from .candle import Candle
 from .ranking import UserPersona
 from .dividend import DividendHistory
 from .season import Season
+from .wallet_transaction_history import WalletTransactionHistory
 from backend.core.database import Base
 
 
@@ -20,5 +21,6 @@ __all__ = [
     "Candle",
     "UserPersona",
     "DividendHistory",
-    "Season"
+    "Season",
+    "WalletTransactionHistory",
 ]
