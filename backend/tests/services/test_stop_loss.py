@@ -20,7 +20,8 @@ async def test_stop_loss_order_placement(db_session, mock_external_services, tes
         "type": OrderType.STOP_LOSS,
         "quantity": Decimal("1.0"),
         "target_price": None,
-        "stop_price": Decimal("90.0") # 현재가 100 가정, 90 이하로 떨어지면 손절
+        "stop_price": Decimal("90.0"), # 현재가 100 가정, 90 이하로 떨어지면 손절
+        "trailing_gap": None # AttributeError 방지
     })
     
     # Mock Portfolio (보유량 있어야 매도 주문 가능)

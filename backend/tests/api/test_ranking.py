@@ -74,6 +74,12 @@ async def test_ranking_service_update(db_session):
 
 @pytest.mark.asyncio
 async def test_ranking_api(client: AsyncClient, db_session):
+    # ForeignKey 오류 방지: season 생성
+    from backend.models import Season
+    import datetime
+    season = Season(id=1, name="Test Season", start_date=datetime.date(2025, 1, 1), end_date=datetime.date(2025, 12, 31))
+    db_session.add(season)
+    await db_session.commit()
     """
     Test GET /rankings endpoint with multiple users.
     """
@@ -174,6 +180,12 @@ async def test_hall_of_fame(client: AsyncClient, db_session):
     """
     Test GET /rankings/hall-of-fame endpoint.
     """
+    # ForeignKey 오류 방지: season 생성
+    from backend.models import Season
+    import datetime
+    season = Season(id=1, name="Test Season", start_date=datetime.date(2025, 1, 1), end_date=datetime.date(2025, 12, 31))
+    db_session.add(season)
+    await db_session.commit()
     # 1. Setup Users
     user_a = User(id=uuid.uuid4(), email="a@h.com", hashed_password="pw", nickname="ProfitKing", is_active=True)
     # Profit King
@@ -220,6 +232,12 @@ async def test_ranking_api_extended(client: AsyncClient, db_session):
     """
     Test extended ranking types: profit_factor, market_ratio.
     """
+    # ForeignKey 오류 방지: season 생성
+    from backend.models import Season
+    import datetime
+    season = Season(id=1, name="Test Season", start_date=datetime.date(2025, 1, 1), end_date=datetime.date(2025, 12, 31))
+    db_session.add(season)
+    await db_session.commit()
     user_a = User(id=uuid.uuid4(), email="a@e.com", hashed_password="pw", nickname="Efficient", is_active=True)
     # Profit: 1000, Loss: 100 => PF = 10.0
     # Market: 1, Total: 10 => Ratio = 10%
