@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from backend.core import constants
 from backend.core.exceptions import (
     MarketPriceNotFoundError, 
     InsufficientSharesError, 
@@ -56,14 +57,14 @@ async def place_order(
     balance = wallet.balance if wallet else Decimal(0) # Ensure Decimal
 
     # [수수료율 조회]
-    fee_rate_str = await redis.get("config:trading_fee_rate")
+    fee_rate_str = await redis.get(constants.REDIS_KEY_TRADING_FEE_RATE)
     # Convert to Decimal, assuming Redis stores it as string/bytes
-    fee_rate = Decimal(fee_rate_str.decode()) if fee_rate_str else Decimal("0.001") 
+    fee_rate = Decimal(fee_rate_str.decode()) if fee_rate_str else Decimal(constants.DEFAULT_TRADING_FEE_RATE) 
 
     # [시장가 주문 사전 가격 조회]
     current_price = Decimal(0) # Use Decimal
     if order.type == OrderType.MARKET:
-        price_data = await redis.get(f"price:{order.ticker_id}")
+        price_data = await redis.get(f"{constants.REDIS_PREFIX_PRICE}{order.ticker_id}")
         if not price_data:
              raise MarketPriceNotFoundError("현재 시세 정보를 가져올 수 없습니다.")
         # Convert to Decimal

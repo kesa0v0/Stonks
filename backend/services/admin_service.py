@@ -3,6 +3,7 @@ import redis.asyncio as async_redis
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from backend.core import constants
 from backend.core.exceptions import TickerAlreadyExistsError, TickerNotFoundError
 from backend.models import Ticker
 from backend.schemas.market import TickerCreate, TickerUpdate, TickerResponse
@@ -21,7 +22,7 @@ async def update_trading_fee_config(redis_client: async_redis.Redis, fee_update:
     """
     거래 수수료율을 수정합니다.
     """
-    await redis_client.set("config:trading_fee_rate", str(fee_update.fee_rate))
+    await redis_client.set(constants.REDIS_KEY_TRADING_FEE_RATE, str(fee_update.fee_rate))
     return {
         "message": "Trading fee rate updated successfully",
         "fee_rate": fee_update.fee_rate
@@ -36,8 +37,8 @@ async def set_admin_test_price(redis_client: async_redis.Redis, update: PriceUpd
         "price": update.price,
         "timestamp": "ADMIN_MANUAL_UPDATE"
     }
-    await redis_client.set(f"price:{update.ticker_id}", json.dumps(price_data))
-    await redis_client.publish("market_updates", json.dumps(price_data))
+    await redis_client.set(f"{constants.REDIS_PREFIX_PRICE}{update.ticker_id}", json.dumps(price_data))
+    await redis_client.publish(constants.REDIS_CHANNEL_MARKET_UPDATES, json.dumps(price_data))
     return {"status": "ok", "message": f"Price of {update.ticker_id} set to {update.price}"}
 
 async def create_new_ticker(db: AsyncSession, ticker_in: TickerCreate) -> Ticker:

@@ -10,7 +10,7 @@ from jose import jwt, JWTError, ExpiredSignatureError
 from pydantic import ValidationError
 from uuid import UUID
 
-from backend.core import security
+from backend.core import security, constants
 from backend.core.config import settings
 from backend.core.exceptions import InvalidCredentialsError, UserInactiveError, UserNotFoundError
 from backend.models import User
@@ -46,7 +46,7 @@ async def authenticate_user(
     state_value = json.dumps({"jti": refresh_jti, "exp": int(refresh_exp.timestamp())})
     try:
         if ttl > 0:
-            await redis_client.setex(f"refresh:{user.id}", ttl, state_value)
+            await redis_client.setex(f"{constants.REDIS_PREFIX_REFRESH}{user.id}", ttl, state_value)
     except Exception:
         # Fail-open: authentication still succeeds even if state store fails
         pass
@@ -68,7 +68,7 @@ async def refresh_access_token(
     Refresh access token using a refresh token
     """
     # Check Blacklist - use await
-    if await redis_client.exists(f"blacklist:{request.refresh_token}"):
+    if await redis_client.exists(f"{constants.REDIS_PREFIX_BLACKLIST}{request.refresh_token}"):
         raise InvalidCredentialsError("Refresh token has been revoked")
 
     try:
@@ -89,7 +89,7 @@ async def refresh_access_token(
     # Reuse detection: compare against stored JTI
     stored_state_raw = None
     try:
-        stored_state_raw = await redis_client.get(f"refresh:{user_id}")
+        stored_state_raw = await redis_client.get(f"{constants.REDIS_PREFIX_REFRESH}{user_id}")
     except Exception:
         stored_state_raw = None  # Fail-open
 
@@ -109,15 +109,15 @@ async def refresh_access_token(
             if exp:
                 ttl_old = exp - int(datetime.utcnow().timestamp())
                 if ttl_old > 0:
-                    await redis_client.setex(f"blacklist:{request.refresh_token}", ttl_old, "true")
+                    await redis_client.setex(f"{constants.REDIS_PREFIX_BLACKLIST}{request.refresh_token}", ttl_old, "true")
         except Exception:
             pass
         # Invalidate current stored chain as precaution
         try:
             if hasattr(redis_client, "delete"):
-                await redis_client.delete(f"refresh:{user_id}")
+                await redis_client.delete(f"{constants.REDIS_PREFIX_REFRESH}{user_id}")
             else:
-                await redis_client.setex(f"refresh:{user_id}", 5, json.dumps({"revoked": True}))
+                await redis_client.setex(f"{constants.REDIS_PREFIX_REFRESH}{user_id}", 5, json.dumps({"revoked": True}))
         except Exception:
             pass
         raise InvalidCredentialsError("Refresh token reuse detected")
@@ -137,7 +137,7 @@ async def refresh_access_token(
         if old_exp:
             ttl_old = old_exp - int(datetime.utcnow().timestamp())
             if ttl_old > 0:
-                await redis_client.setex(f"blacklist:{request.refresh_token}", ttl_old, "true")
+                await redis_client.setex(f"{constants.REDIS_PREFIX_BLACKLIST}{request.refresh_token}", ttl_old, "true")
     except Exception:
         pass
 
@@ -149,7 +149,7 @@ async def refresh_access_token(
     new_state_value = json.dumps({"jti": new_jti, "exp": int(new_refresh_exp.timestamp())})
     try:
         if ttl_new > 0:
-            await redis_client.setex(f"refresh:{user.id}", ttl_new, new_state_value)
+            await redis_client.setex(f"{constants.REDIS_PREFIX_REFRESH}{user.id}", ttl_new, new_state_value)
     except Exception:
         pass
 
@@ -178,7 +178,7 @@ async def logout_user(
         if exp:
             ttl = exp - int(datetime.utcnow().timestamp())
             if ttl > 0:
-                await redis_client.setex(f"blacklist:{token}", ttl, "true")
+                await redis_client.setex(f"{constants.REDIS_PREFIX_BLACKLIST}{token}", ttl, "true")
     except JWTError:
         pass # Already invalid
         
@@ -190,7 +190,7 @@ async def logout_user(
             if exp_r:
                 ttl_r = exp_r - int(datetime.utcnow().timestamp())
                 if ttl_r > 0:
-                    await redis_client.setex(f"blacklist:{request.refresh_token}", ttl_r, "true")
+                    await redis_client.setex(f"{constants.REDIS_PREFIX_BLACKLIST}{request.refresh_token}", ttl_r, "true")
         except JWTError:
             pass
 
@@ -198,10 +198,10 @@ async def logout_user(
     if user_id_for_state:
         try:
             if hasattr(redis_client, "delete"):
-                await redis_client.delete(f"refresh:{user_id_for_state}")
+                await redis_client.delete(f"{constants.REDIS_PREFIX_REFRESH}{user_id_for_state}")
             else:
                 # Fallback: short TTL marker
-                await redis_client.setex(f"refresh:{user_id_for_state}", 5, json.dumps({"revoked": True}))
+                await redis_client.setex(f"{constants.REDIS_PREFIX_REFRESH}{user_id_for_state}", 5, json.dumps({"revoked": True}))
         except Exception:
             pass
             

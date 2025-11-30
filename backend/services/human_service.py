@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
+from backend.core import constants
 from backend.core.exceptions import (
     BailoutNotAllowedError, 
     NoSharesToBailoutError, 
@@ -42,11 +43,8 @@ async def process_bailout(db: AsyncSession, user_id: UUID):
         raise NoSharesToBailoutError()
 
     # 3. 구제 금융 금액 산정 (The Evaluation)
-    BASE_AMOUNT = 100000 # 10만 원
-    PENALTY_PER_COUNT = 0.2 # 회당 20% 차감
-    
     # 신용도 패널티 적용 (최대 90%까지만 깎임)
-    penalty_factor = max(0.1, 1.0 - (user.bankruptcy_count * PENALTY_PER_COUNT))
+    penalty_factor = max(0.1, 1.0 - (user.bankruptcy_count * constants.HUMAN_BAILOUT_PENALTY_PER_COUNT))
     
     # 활동 점수 (임시: 1.0 ~ 1.2 랜덤)
     activity_bonus = random.uniform(1.0, 1.2)
@@ -55,7 +53,7 @@ async def process_bailout(db: AsyncSession, user_id: UUID):
     luck_factor = random.uniform(0.7, 1.3)
     
     # 총 매입액 계산
-    total_bailout = BASE_AMOUNT * penalty_factor * activity_bonus * luck_factor
+    total_bailout = constants.HUMAN_BAILOUT_BASE_AMOUNT * penalty_factor * activity_bonus * luck_factor
     total_bailout = round(total_bailout) # 정수 반올림
     
     # 최소 보장액 (주당 10원)
@@ -84,7 +82,7 @@ async def process_bailout(db: AsyncSession, user_id: UUID):
         "sold_quantity": qty,
         "bailout_amount": final_amount,
         "factors": {
-            "base": BASE_AMOUNT,
+            "base": constants.HUMAN_BAILOUT_BASE_AMOUNT,
             "penalty_factor": round(penalty_factor, 2),
             "activity_bonus": round(activity_bonus, 2),
             "luck_factor": round(luck_factor, 2)
@@ -110,7 +108,7 @@ async def process_ipo(db: AsyncSession, user_id: UUID, ipo_in: IpoCreate):
     user = user_result.scalars().first()
     
     # 파산자 배당률 체크
-    if user.is_bankrupt and ipo_in.dividend_rate < 0.5:
+    if user.is_bankrupt and ipo_in.dividend_rate < constants.HUMAN_DIVIDEND_RATE_MIN:
         raise InvalidDividendRateError()
 
     # 배당률 업데이트
@@ -172,7 +170,7 @@ async def process_burn(db: AsyncSession, user_id: UUID, burn_in: BurnCreate):
     portfolio.quantity -= burn_qty
     
     # 0이면 삭제
-    if portfolio.quantity <= Decimal("1e-8"):
+    if portfolio.quantity <= constants.HUMAN_BURN_THRESHOLD:
         await db.delete(portfolio)
         # Flush to ensure deletion is counted in next query
         await db.flush() 
@@ -184,7 +182,7 @@ async def process_burn(db: AsyncSession, user_id: UUID, burn_in: BurnCreate):
     total_shares = total_res.scalar() or Decimal(0)
     
     is_delisted = False
-    if total_shares <= Decimal("1e-8"):
+    if total_shares <= constants.HUMAN_DELIST_THRESHOLD:
         # 해방!
         is_delisted = True
         

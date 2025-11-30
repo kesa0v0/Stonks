@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi.openapi.utils import get_openapi
 from fastapi.middleware.cors import CORSMiddleware
 from backend.core.config import settings
+from backend.core import constants
 from backend.core.database import Base, engine, wait_for_db
 from sqlalchemy import text
 from backend.create_test_user import create_test_user
@@ -113,7 +114,7 @@ async def websocket_endpoint(websocket: WebSocket):
         decode_responses=True
     )
     pubsub = r.pubsub()
-    await pubsub.subscribe("market_updates") # 워커가 쏘는 채널 구독
+    await pubsub.subscribe(constants.REDIS_CHANNEL_MARKET_UPDATES) # 워커가 쏘는 채널 구독
 
     print("🟢 Client Connected to WebSocket")
 

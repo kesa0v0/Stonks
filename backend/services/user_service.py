@@ -6,6 +6,7 @@ import redis.asyncio as async_redis
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, update, delete
 
+from backend.core import constants
 from backend.core.exceptions import OrderNotFoundError, PermissionDeniedError, BankruptcyNotAllowedError
 from backend.models import User, Wallet, Portfolio, Ticker, Order, MarketType, Currency, TickerSource
 from backend.schemas.portfolio import PortfolioResponse, AssetResponse, PnLResponse
@@ -259,7 +260,7 @@ async def process_bankruptcy(
     new_portfolio = Portfolio(
         user_id=user_id,
         ticker_id=ticker_id,
-        quantity=1000,
+        quantity=constants.HUMAN_STOCK_ISSUED_ON_BANKRUPTCY,
         average_price=0 # Cost Basis 0원으로 설정
     )
     db.add(new_portfolio)
@@ -273,5 +274,5 @@ async def process_bankruptcy(
         "message": "Bankruptcy filed. Assets liquidated.",
         "balance": wallet.balance,
         "is_bankrupt": True,
-        "human_stock_issued": 1000
+        "human_stock_issued": constants.HUMAN_STOCK_ISSUED_ON_BANKRUPTCY
     }
