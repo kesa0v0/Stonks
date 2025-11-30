@@ -2,8 +2,8 @@ import json
 import redis.asyncio as async_redis
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from fastapi import HTTPException
 
+from backend.core.exceptions import TickerAlreadyExistsError, TickerNotFoundError
 from backend.models import Ticker
 from backend.schemas.market import TickerCreate, TickerUpdate, TickerResponse
 from backend.schemas.admin import FeeUpdate, PriceUpdate
@@ -46,7 +46,7 @@ async def create_new_ticker(db: AsyncSession, ticker_in: TickerCreate) -> Ticker
     """
     existing = await db.execute(select(Ticker).where(Ticker.id == ticker_in.id))
     if existing.scalars().first():
-        raise HTTPException(status_code=400, detail=f"Ticker ID {ticker_in.id} already exists.")
+        raise TickerAlreadyExistsError(f"Ticker ID {ticker_in.id} already exists.")
 
     ticker = Ticker(
         id=ticker_in.id, # 입력받은 id 사용
@@ -65,7 +65,7 @@ async def update_existing_ticker(db: AsyncSession, ticker_id: str, ticker_in: Ti
     ticker = result.scalars().first()
     
     if not ticker:
-        raise HTTPException(status_code=404, detail="Ticker not found")
+        raise TickerNotFoundError()
     
     update_data = ticker_in.model_dump(exclude_unset=True)
     for key, value in update_data.items():
@@ -83,7 +83,7 @@ async def delete_existing_ticker(db: AsyncSession, ticker_id: str):
     ticker = result.scalars().first()
     
     if not ticker:
-        raise HTTPException(status_code=404, detail="Ticker not found")
+        raise TickerNotFoundError()
         
     await db.delete(ticker)
     await db.commit()

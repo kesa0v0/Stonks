@@ -1,10 +1,16 @@
 from decimal import Decimal
 import random
 from uuid import UUID
-from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
+from backend.core.exceptions import (
+    BailoutNotAllowedError, 
+    NoSharesToBailoutError, 
+    HumanETFAlreadyListedError, 
+    InvalidDividendRateError, 
+    InsufficientSharesToBurnError
+)
 from backend.models import User, Ticker, Portfolio, MarketType, Currency, TickerSource, Wallet
 from backend.schemas.human import IpoCreate, BurnCreate
 
@@ -20,7 +26,7 @@ async def process_bailout(db: AsyncSession, user_id: UUID):
     user = user_result.scalars().first()
     
     if not user or not user.is_bankrupt:
-        raise HTTPException(status_code=400, detail="Only bankrupt users can request a bailout.")
+        raise BailoutNotAllowedError()
 
     ticker_id = f"HUMAN-{user_id}"
 
@@ -33,7 +39,7 @@ async def process_bailout(db: AsyncSession, user_id: UUID):
     portfolio = result.scalars().first()
 
     if not portfolio or portfolio.quantity <= 0:
-        raise HTTPException(status_code=400, detail="No shares found to bailout.")
+        raise NoSharesToBailoutError()
 
     # 3. 구제 금융 금액 산정 (The Evaluation)
     BASE_AMOUNT = 100000 # 10만 원
@@ -97,7 +103,7 @@ async def process_ipo(db: AsyncSession, user_id: UUID, ipo_in: IpoCreate):
     ticker_id = f"HUMAN-{user_id}"
     existing_ticker = await db.execute(select(Ticker).where(Ticker.id == ticker_id))
     if existing_ticker.scalars().first():
-        raise HTTPException(status_code=400, detail="You have already listed your Human ETF.")
+        raise HumanETFAlreadyListedError()
         
     # 2. 유저 정보 조회
     user_result = await db.execute(select(User).where(User.id == user_id))
@@ -105,7 +111,7 @@ async def process_ipo(db: AsyncSession, user_id: UUID, ipo_in: IpoCreate):
     
     # 파산자 배당률 체크
     if user.is_bankrupt and ipo_in.dividend_rate < 0.5:
-        raise HTTPException(status_code=400, detail="Bankrupt users must set dividend rate to at least 50%.")
+        raise InvalidDividendRateError()
 
     # 배당률 업데이트
     user.dividend_rate = Decimal(str(ipo_in.dividend_rate))
@@ -160,7 +166,7 @@ async def process_burn(db: AsyncSession, user_id: UUID, burn_in: BurnCreate):
     burn_qty = Decimal(str(burn_in.quantity))
     
     if not portfolio or portfolio.quantity < burn_qty:
-        raise HTTPException(status_code=400, detail="Insufficient shares to burn.")
+        raise InsufficientSharesToBurnError()
         
     # 2. 차감
     portfolio.quantity -= burn_qty

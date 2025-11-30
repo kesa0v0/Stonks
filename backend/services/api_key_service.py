@@ -2,9 +2,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from uuid import UUID
 import secrets
-from fastapi import HTTPException
 
 from backend.core import security
+from backend.core.exceptions import ApiKeyNotFoundError, ApiKeyRevokedError
 from backend.models import ApiKey, User
 from backend.schemas.api_key import ApiKeyCreateResponse, ApiKeyRotateResponse, ApiKeyCreateRequest
 
@@ -39,7 +39,7 @@ async def revoke_user_api_key(db: AsyncSession, user_id: UUID, key_id: UUID):
     result = await db.execute(select(ApiKey).where(ApiKey.id == key_id, ApiKey.user_id == user_id))
     api_key = result.scalars().first()
     if not api_key:
-        raise HTTPException(status_code=404, detail="API Key not found")
+        raise ApiKeyNotFoundError()
     api_key.is_active = False
     await db.commit()
 
@@ -47,9 +47,9 @@ async def rotate_user_api_key(db: AsyncSession, user_id: UUID, key_id: UUID) -> 
     result = await db.execute(select(ApiKey).where(ApiKey.id == key_id, ApiKey.user_id == user_id))
     api_key = result.scalars().first()
     if not api_key:
-        raise HTTPException(status_code=404, detail="API Key not found")
+        raise ApiKeyNotFoundError()
     if not api_key.is_active:
-        raise HTTPException(status_code=400, detail="API Key is revoked")
+        raise ApiKeyRevokedError("API Key is revoked")
     new_plain = _generate_api_key()
     api_key.key_prefix = new_plain[:PREFIX_LENGTH]
     api_key.hashed_key = security.hash_api_key(new_plain)

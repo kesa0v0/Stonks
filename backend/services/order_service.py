@@ -5,10 +5,19 @@ import redis.asyncio as async_redis
 from uuid import UUID
 from decimal import Decimal
 from datetime import datetime, timezone
-from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from backend.core.exceptions import (
+    MarketPriceNotFoundError, 
+    InsufficientSharesError, 
+    InvalidLimitOrderPriceError, 
+    InsufficientBalanceError, 
+    OrderSystemError, 
+    OrderNotFoundError, 
+    PermissionDeniedError, 
+    OrderNotCancellableError
+)
 from backend.models import Order, Portfolio, Wallet
 from backend.core.enums import OrderType, OrderSide, OrderStatus
 from backend.schemas.order import OrderCreate
@@ -56,7 +65,7 @@ async def place_order(
     if order.type == OrderType.MARKET:
         price_data = await redis.get(f"price:{order.ticker_id}")
         if not price_data:
-             raise HTTPException(status_code=400, detail=f"현재 시세 정보를 가져올 수 없습니다.")
+             raise MarketPriceNotFoundError("현재 시세 정보를 가져올 수 없습니다.")
         # Convert to Decimal
         current_price = Decimal(str(json.loads(price_data)['price']))
 
@@ -65,10 +74,7 @@ async def place_order(
         # A. 롱 포지션 청산 (보유 수량 > 0)
         if available_qty > Decimal(0):
             if available_qty < order.quantity:
-                raise HTTPException(
-                    status_code=400, 
-                    detail=f"보유 수량이 부족하여 매도할 수 없습니다. (보유: {available_qty}, 요청: {order.quantity})"
-                )
+                raise InsufficientSharesError(float(available_qty), float(order.quantity), f"보유 수량이 부족하여 매도할 수 없습니다. (보유: {available_qty}, 요청: {order.quantity})")
         # B. 공매도 (보유 수량 <= 0 또는 숏 포지션)
         else:
             required_margin = Decimal(0) # Use Decimal
@@ -76,7 +82,7 @@ async def place_order(
             # 지정가 공매도
             if order.type == OrderType.LIMIT:
                 if not order.target_price or order.target_price <= Decimal(0):
-                     raise HTTPException(status_code=400, detail="지정가 주문에는 유효한 목표 가격이 필요합니다.")
+                     raise InvalidLimitOrderPriceError("지정가 주문에는 유효한 목표 가격이 필요합니다.")
                 required_margin = order.target_price * order.quantity
             
             # 시장가 공매도
@@ -85,10 +91,7 @@ async def place_order(
 
             # 공매도 증거금에는 수수료 포함 안 함 (매도 시 돈이 들어오므로)
             if balance < required_margin:
-                 raise HTTPException(
-                    status_code=400, 
-                    detail=f"공매도 증거금이 부족합니다. (필요: {required_margin}, 보유: {balance})"
-                )
+                 raise InsufficientBalanceError(float(required_margin), float(balance), message=f"공매도 증거금이 부족합니다. (필요: {required_margin}, 보유: {balance})")
 
     # 2) 매수(BUY) 주문 시 검증
     elif order.side == OrderSide.BUY:
@@ -97,7 +100,7 @@ async def place_order(
         # 지정가 매수
         if order.type == OrderType.LIMIT:
             if not order.target_price or order.target_price <= Decimal(0):
-                 raise HTTPException(status_code=400, detail="지정가 주문에는 유효한 목표 가격이 필요합니다.")
+                 raise InvalidLimitOrderPriceError("지정가 주문에는 유효한 목표 가격이 필요합니다.")
             required_amount = (order.target_price * order.quantity) * (Decimal(1) + fee_rate) # Use Decimal(1)
             
         # 시장가 매수
@@ -105,15 +108,12 @@ async def place_order(
             required_amount = (current_price * order.quantity) * (Decimal(1) + fee_rate) # Use Decimal(1)
 
         if balance < required_amount:
-             raise HTTPException(
-                status_code=400, 
-                detail=f"매수 잔액이 부족합니다 (수수료 {fee_rate*Decimal(100)}% 포함). (필요: {required_amount}, 보유: {balance})"
-            )
+             raise InsufficientBalanceError(float(required_amount), float(balance), message=f"매수 잔액이 부족합니다 (수수료 {fee_rate*Decimal(100)}% 포함). (필요: {required_amount}, 보유: {balance})")
 
     # [분기 1] 지정가(LIMIT) 주문인 경우 -> DB에 저장만 하고 끝냄 (매칭 대기)
     if order.type == OrderType.LIMIT:
         if not order.target_price or order.target_price <= Decimal(0):
-             raise HTTPException(status_code=400, detail="지정가 주문에는 유효한 목표 가격이 필요합니다.")
+             raise InvalidLimitOrderPriceError("지정가 주문에는 유효한 목표 가격이 필요합니다.")
 
         new_order = Order(
             id=uuid.UUID(order_id),
@@ -165,7 +165,7 @@ async def place_order(
             )
             
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"주문 시스템 오류가 발생했습니다: {str(e)}")
+        raise OrderSystemError(str(e))
 
     return {
         "order_id": order_id,
@@ -186,15 +186,15 @@ async def cancel_order_logic(
     order_obj = result.scalars().first()
 
     if not order_obj:
-        raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
+        raise OrderNotFoundError("주문을 찾을 수 없습니다.")
 
     # 소유자 확인
     if str(order_obj.user_id) != str(user_uuid):
-        raise HTTPException(status_code=403, detail="권한이 없습니다.")
+        raise PermissionDeniedError("권한이 없습니다.")
 
     # 상태 확인: PENDING만 취소 가능
     if order_obj.status != OrderStatus.PENDING:
-        raise HTTPException(status_code=400, detail=f"취소 불가한 주문 상태입니다: {order_obj.status}")
+        raise OrderNotCancellableError(str(order_obj.status), f"취소 불가한 주문 상태입니다: {order_obj.status}")
 
     # 취소 처리
     order_obj.status = OrderStatus.CANCELLED

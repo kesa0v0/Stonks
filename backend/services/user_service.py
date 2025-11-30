@@ -5,8 +5,8 @@ from typing import List, Dict, Optional, Any
 import redis.asyncio as async_redis
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, update, delete
-from fastapi import HTTPException
 
+from backend.core.exceptions import OrderNotFoundError, PermissionDeniedError, BankruptcyNotAllowedError
 from backend.models import User, Wallet, Portfolio, Ticker, Order, MarketType, Currency, TickerSource
 from backend.schemas.portfolio import PortfolioResponse, AssetResponse, PnLResponse
 from backend.schemas.order import OrderResponse
@@ -147,10 +147,10 @@ async def get_user_order_detail(db: AsyncSession, user_id: UUID, order_id: UUID)
     order_obj = result.scalars().first()
 
     if not order_obj:
-        raise HTTPException(status_code=404, detail="주문을 찾을 수 없습니다.")
+        raise OrderNotFoundError("주문을 찾을 수 없습니다.")
 
     if str(order_obj.user_id) != str(user_id):
-        raise HTTPException(status_code=403, detail="권한이 없습니다.")
+        raise PermissionDeniedError("권한이 없습니다.")
 
     return {
         "order_id": str(order_obj.id),
@@ -200,7 +200,7 @@ async def process_bankruptcy(
     total_asset_value = cash_balance + total_position_value
     
     if total_asset_value > 0:
-        raise HTTPException(status_code=400, detail=f"총 자산이 0 이하일 때만 파산 신청이 가능합니다. 현재 총 자산: {total_asset_value}")
+        raise BankruptcyNotAllowedError(total_asset_value, f"총 자산이 0 이하일 때만 파산 신청이 가능합니다. 현재 총 자산: {total_asset_value}")
         
     # 1. 미체결 주문 취소 처리
     await db.execute(

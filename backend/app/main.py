@@ -12,6 +12,8 @@ from sqlalchemy import text
 from backend.create_test_user import create_test_user
 from backend.create_tickers import init_tickers
 from backend.app.routers import market, order, auth, admin, api_key, me, ranking, human
+from backend.core.exceptions import StonksError
+from backend.app.exception_handlers import stonks_exception_handler
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -81,6 +83,8 @@ app.add_middleware(
     allow_methods=["*"],          # 모든 HTTP Method 허용 (GET, POST...)
     allow_headers=["*"],          # 모든 Header 허용
 )
+
+app.add_exception_handler(StonksError, stonks_exception_handler)
 
 @app.get("/")
 def read_root():

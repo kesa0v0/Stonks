@@ -5,13 +5,14 @@ from typing import Dict, Any, Optional
 import redis.asyncio as async_redis
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from fastapi import HTTPException, status
+from fastapi import status
 from jose import jwt, JWTError, ExpiredSignatureError
 from pydantic import ValidationError
 from uuid import UUID
 
 from backend.core import security
 from backend.core.config import settings
+from backend.core.exceptions import InvalidCredentialsError, UserInactiveError, UserNotFoundError
 from backend.models import User
 from backend.schemas.token import RefreshTokenRequest, LogoutRequest
 
@@ -29,13 +30,9 @@ async def authenticate_user(
     
     # Check if user exists and has a password (local user)
     if not user or not user.hashed_password or not security.verify_password(form_data.password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise InvalidCredentialsError("Incorrect email or password")
     if not user.is_active:
-        raise HTTPException(status_code=400, detail="Inactive user")
+        raise UserInactiveError()
         
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     
@@ -72,10 +69,7 @@ async def refresh_access_token(
     """
     # Check Blacklist - use await
     if await redis_client.exists(f"blacklist:{request.refresh_token}"):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Refresh token has been revoked",
-        )
+        raise InvalidCredentialsError("Refresh token has been revoked")
 
     try:
         payload = jwt.decode(
@@ -86,20 +80,11 @@ async def refresh_access_token(
         presented_jti: str = payload.get("jti")
 
         if user_id is None or token_type != "refresh" or presented_jti is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid refresh token",
-            )
+            raise InvalidCredentialsError("Invalid refresh token")
     except ExpiredSignatureError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Refresh token has expired",
-        )
+        raise InvalidCredentialsError("Refresh token has expired")
     except (JWTError, ValidationError):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token",
-        )
+        raise InvalidCredentialsError("Invalid refresh token")
 
     # Reuse detection: compare against stored JTI
     stored_state_raw = None
@@ -110,10 +95,7 @@ async def refresh_access_token(
 
     if not stored_state_raw:
         # Missing state => either already rotated or logged out
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Refresh token not recognized or already rotated",
-        )
+        raise InvalidCredentialsError("Refresh token not recognized or already rotated")
 
     try:
         stored_state = json.loads(stored_state_raw if isinstance(stored_state_raw, str) else stored_state_raw.decode())
@@ -138,17 +120,14 @@ async def refresh_access_token(
                 await redis_client.setex(f"refresh:{user_id}", 5, json.dumps({"revoked": True}))
         except Exception:
             pass
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Refresh token reuse detected",
-        )
+        raise InvalidCredentialsError("Refresh token reuse detected")
         
     user = await user_repo.get(db, id=UUID(user_id))
     
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise UserNotFoundError()
     if not user.is_active:
-        raise HTTPException(status_code=400, detail="Inactive user")
+        raise UserInactiveError()
         
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     
