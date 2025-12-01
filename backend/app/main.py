@@ -153,14 +153,14 @@ async def websocket_endpoint(websocket: WebSocket):
         await r.close()
 
 
-app.include_router(auth.router)
-app.include_router(me.router) # 순서: Auth -> Me -> Order -> Market
-app.include_router(order.router)
-app.include_router(market.router)
-app.include_router(ranking.router)
-app.include_router(human.router)
-app.include_router(admin.router)
-app.include_router(api_key.router)
+app.include_router(auth.router, prefix="/api/v1/auth")
+app.include_router(me.router, prefix="/api/v1")
+app.include_router(order.router, prefix="/api/v1")
+app.include_router(market.router, prefix="/api/v1")
+app.include_router(ranking.router, prefix="/api/v1")
+app.include_router(human.router, prefix="/api/v1")
+app.include_router(admin.router, prefix="/api/v1")
+app.include_router(api_key.router, prefix="/api/v1")
 
 # --- Custom OpenAPI to include API Key security scheme ---
 def custom_openapi():

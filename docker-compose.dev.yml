@@ -185,5 +185,17 @@ services:
       redis:
         condition: service_started
 
+  # 9. 부하 테스트 도구 (Locust)
+  locust:
+    image: locustio/locust
+    container_name: locust-dev
+    ports:
+      - "8089:8089" # 웹 인터페이스 포트
+    volumes:
+      - ./backend/tests/load:/mnt/locust
+    command: -f /mnt/locust/locustfile.py
+    environment:
+      - LOCUST_HOST=http://api:8000 # API 서버 주소 (Docker Network)
+
 volumes:
   dev_postgres_data:
