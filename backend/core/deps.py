@@ -141,12 +141,22 @@ async def get_current_user_by_api_key(
             except Exception:
                 pass
 
+            # Optimize: Update DB last_used_at only if enough time passed (e.g., 5 minutes)
+            # Key to track last DB update time
+            update_track_key = f"apikey:last_db_update:{candidate.id}"
             try:
-                await db.execute(
-                    update(ApiKey).where(ApiKey.id == candidate.id).values(last_used_at=datetime.utcnow())
-                )
-                await db.commit()
-            except Exception:
+                # set nx=True: 키가 없을 때만 설정 (즉, 최근에 업데이트 안 함)
+                # ex=300: 5분(300초) 후에 만료. 만료되면 다시 DB 업데이트 수행.
+                should_update = await redis_client.set(update_track_key, "1", ex=300, nx=True)
+                
+                if should_update:
+                    await db.execute(
+                        update(ApiKey).where(ApiKey.id == candidate.id).values(last_used_at=datetime.utcnow())
+                    )
+                    await db.commit()
+            except Exception as e:
+                # DB 업데이트 실패는 API 호출을 막으면 안 됨 (Logging only)
+                print(f"Failed to update api key usage: {e}")
                 pass
 
             user_result = await db.execute(select(User).where(User.id == candidate.user_id))
