@@ -29,6 +29,11 @@ async def margin_watcher():
     
     logger.info("🔥 Margin Watcher Started... Waiting for market updates.")
 
+    # 헬퍼 함수: 각 청산 작업이 고유한 DB 세션을 가지도록 함
+    async def _check_and_liquidate_user_with_session(user_id: UUID, redis_client: async_redis.Redis):
+        async with AsyncSessionLocal() as db:
+            await check_and_liquidate_user(db, user_id, redis_client)
+
     try:
         async for message in pubsub.listen():
             if message['type'] == 'message':
@@ -39,34 +44,31 @@ async def margin_watcher():
                     if not ticker_id:
                         continue
                         
-                    # 가격이 변한 Ticker에 대해 숏 포지션(qty < 0)을 가진 유저 조회
-                    # 매번 DB 연결을 생성하는 비용이 들지만, 워커는 Long-running process이므로 
-                    # Session 생명주기 관리를 위해 건별로 생성/닫기 함.
-                    # 부하가 크다면 Connection Pool 활용 및 Batch 처리 고려.
+                    # 가격이 변한 Ticker에 대해 숏 포지션을 가진 유저 조회
+                    # 이 쿼리 자체는 메인 루프에서 한 번만 실행 (DB 커넥션 오버헤드 최소화)
                     async with AsyncSessionLocal() as db:
                         stmt = select(Portfolio.user_id).where(
                             Portfolio.ticker_id == ticker_id,
                             Portfolio.quantity < 0
                         ).distinct()
-                        
                         result = await db.execute(stmt)
                         user_ids = result.scalars().all()
                         
                         if user_ids:
-                            # logger.info(f"Checking margin for {len(user_ids)} users holding short on {ticker_id}")
+                            logger.info(f"Checking margin for {len(user_ids)} users holding short on {ticker_id}")
                             
-                            # 병렬 처리 (너무 많으면 chunking 필요)
+                            # 각 청산 작업은 독립적인 DB 세션을 사용하여 병렬 처리
                             tasks = [
-                                check_and_liquidate_user(db, uid, redis_client) 
+                                _check_and_liquidate_user_with_session(uid, redis_client) 
                                 for uid in user_ids
                             ]
                             await asyncio.gather(*tasks)
                             
                 except Exception as e:
-                    logger.error(f"Error processing market update: {e}")
+                    logger.error(f"Error processing market update: {e}", exc_info=True)
                     
     except Exception as e:
-        logger.error(f"Margin Watcher crashed: {e}")
+        logger.error(f"Margin Watcher crashed: {e}", exc_info=True)
     finally:
         await pubsub.close()
         await redis_client.close()

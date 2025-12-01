@@ -2,16 +2,21 @@ import pytest
 from httpx import AsyncClient
 from backend.models import Portfolio
 from decimal import Decimal
+from backend.core.security import create_access_token
 
 @pytest.mark.asyncio
-async def test_get_ticker_price(client: AsyncClient, test_ticker, mock_external_services):
+async def test_get_ticker_price(client: AsyncClient, test_ticker, test_user, mock_external_services):
     """
     Test retrieving current price for a ticker.
     """
     # Mock Redis has "price:TEST-COIN" -> 100.0 (from conftest)
     
+    # Generate token for authentication
+    token = create_access_token(subject=test_user)
+    headers = {"Authorization": f"Bearer {token}"}
+    
     # Integrated endpoint supports session token
-    response = await client.get(f"/api/v1/market/price/{test_ticker}")
+    response = await client.get(f"/api/v1/market/price/{test_ticker}", headers=headers)
     
     assert response.status_code == 200
     data = response.json()
