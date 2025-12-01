@@ -15,7 +15,8 @@ from backend.create_tickers import init_tickers
 from backend.app.routers import market, order, auth, admin, api_key, me, ranking, human
 from backend.core.rate_limit import init_rate_limiter
 from backend.core.exceptions import StonksError
-from backend.app.exception_handlers import stonks_exception_handler
+from backend.app.exception_handlers import stonks_exception_handler, general_exception_handler
+from prometheus_fastapi_instrumentator import Instrumentator
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -74,6 +75,9 @@ app = FastAPI(
     openapi_tags=tags_metadata # 태그 순서 적용
 )
 
+# Prometheus Metrics (Expose /metrics)
+Instrumentator().instrument(app).expose(app)
+
 # CORS 설정: 허용할 출처(Origin) 목록
 origins = [
     "http://localhost:5173",      # 로컬 개발 프론트엔드
@@ -89,6 +93,7 @@ app.add_middleware(
 )
 
 app.add_exception_handler(StonksError, stonks_exception_handler)
+app.add_exception_handler(Exception, general_exception_handler)
 
 @app.get("/")
 def read_root():

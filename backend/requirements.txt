@@ -29,3 +29,6 @@ pytz
 pydantic[email]
 
 fastapi-limiter
+
+# Observability
+prometheus-fastapi-instrumentator

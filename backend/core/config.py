@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     DISCORD_CLIENT_SECRET: str = ""
     DISCORD_REDIRECT_URI: str = "http://localhost:5173/auth/discord/callback"
 
+    # 5. Observability
+    NTFY_URL: str = "https://ntfy.sh"
+    NTFY_TOPIC: str = "stonks_dev_errors"
+    NTFY_ENABLED: bool = True
+
     DEBUG: bool = True
 
     @property

@@ -7,6 +7,7 @@ from decimal import Decimal
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from prometheus_client import Counter
 
 from backend.core import constants
 from backend.core.exceptions import (
@@ -23,6 +24,8 @@ from backend.models import Order, Portfolio, Wallet
 from backend.core.enums import OrderType, OrderSide, OrderStatus
 from backend.schemas.order import OrderCreate
 from backend.core.config import settings
+
+ORDER_COUNTER = Counter('stonks_orders_created_total', 'Total orders created', ['side', 'type'])
 
 async def place_order(
     db: AsyncSession, 
@@ -230,6 +233,8 @@ async def place_order(
             OrderType.STOP_LIMIT: f"Stop-Limit order placed (Trigger: {order.stop_price}, Limit: {order.target_price})",
             OrderType.TRAILING_STOP: f"Trailing Stop order placed (Gap: {order.trailing_gap}, Initial Stop: {stop_price})"
         }
+
+        ORDER_COUNTER.labels(side=order.side.value, type=order.type.value).inc()
         
         return {
             "order_id": order_id,
@@ -267,6 +272,8 @@ async def place_order(
             
     except Exception as e:
         raise OrderSystemError(str(e))
+
+    ORDER_COUNTER.labels(side=order.side.value, type=order.type.value).inc()
 
     return {
         "order_id": order_id,
