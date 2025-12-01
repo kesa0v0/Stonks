@@ -5,11 +5,15 @@ from sqlalchemy import select
 
 from backend.core import constants
 from backend.core.exceptions import TickerAlreadyExistsError, TickerNotFoundError
-from backend.models import Ticker
+from backend.models import Ticker, User
 from backend.schemas.market import TickerCreate, TickerUpdate, TickerResponse
 from backend.schemas.admin import FeeUpdate, PriceUpdate
+from backend.schemas.user import UserResponse
+from uuid import UUID
+from typing import List
 
 from backend.services.common.config import get_trading_fee_rate
+from backend.services.user_service import process_bankruptcy
 
 async def get_current_trading_fee(redis_client: async_redis.Redis) -> dict:
     """
@@ -90,3 +94,41 @@ async def delete_existing_ticker(db: AsyncSession, ticker_id: str):
     await db.commit()
     
     return {"message": f"Ticker {ticker_id} deleted successfully"}
+
+async def get_all_users(db: AsyncSession, skip: int = 0, limit: int = 100) -> List[User]:
+    """
+    전체 유저 목록을 조회합니다.
+    """
+    result = await db.execute(select(User).offset(skip).limit(limit))
+    return result.scalars().all()
+
+async def force_user_bankruptcy(db: AsyncSession, redis_client: async_redis.Redis, user_id: UUID):
+    """
+    유저를 강제로 파산 처리합니다.
+    """
+    return await process_bankruptcy(db, user_id, redis_client, force=True)
+
+async def post_system_notice(redis_client: async_redis.Redis, message: str):
+    """
+    전체 공지사항을 Redis에 게시합니다.
+    """
+    await redis_client.set("system_notice", message)
+    # 필요한 경우 Pub/Sub으로 실시간 전파 가능
+    return {"message": "Notice posted", "content": message}
+
+async def update_user_status(db: AsyncSession, user_id: UUID, is_active: bool):
+    """
+    유저의 활성 상태(Ban 여부)를 변경합니다.
+    """
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalars().first()
+    
+    if not user:
+        raise ValueError("User not found")
+        
+    user.is_active = is_active
+    await db.commit()
+    await db.refresh(user)
+    
+    status_msg = "Active" if is_active else "Banned"
+    return {"message": f"User status updated to {status_msg}", "is_active": user.is_active}

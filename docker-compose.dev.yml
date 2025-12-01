@@ -197,5 +197,21 @@ services:
     environment:
       - LOCUST_HOST=http://api:8000 # API 서버 주소 (Docker Network)
 
+  # 10. 관리자 대시보드 (Streamlit)
+  admin_dashboard:
+    image: python:3.11-slim
+    container_name: admin-dashboard
+    working_dir: /app
+    volumes:
+      - ./admin_dashboard:/app
+    command: >
+      bash -c "pip install -r requirements.txt && streamlit run app.py --server.port 8501 --server.address 0.0.0.0"
+    ports:
+      - "8501:8501"
+    environment:
+      - API_URL=http://api:8000/api/v1 # Docker Network 내부 통신
+    depends_on:
+      - api
+
 volumes:
   dev_postgres_data:

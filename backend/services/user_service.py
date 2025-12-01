@@ -175,8 +175,9 @@ async def get_user_order_detail(db: AsyncSession, user_id: UUID, order_id: UUID)
 async def process_bankruptcy(
     db: AsyncSession, 
     user_id: UUID, 
-    redis: async_redis.Redis
-) -> Dict[str, Any]:
+    redis: async_redis.Redis,
+    force: bool = False
+):
     """
     [파산 신청]
     """
@@ -200,7 +201,7 @@ async def process_bankruptcy(
     
     total_asset_value = cash_balance + total_position_value
     
-    if total_asset_value > 0:
+    if not force and total_asset_value > 0:
         raise BankruptcyNotAllowedError(total_asset_value, f"총 자산이 0 이하일 때만 파산 신청이 가능합니다. 현재 총 자산: {total_asset_value}")
         
     # 1. 미체결 주문 취소 처리
