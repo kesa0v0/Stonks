@@ -36,6 +36,14 @@ class Settings(BaseSettings):
     NTFY_TOPIC: str = "stonks_dev_errors"
     NTFY_ENABLED: bool = True
 
+    # 6. Backup & Storage (MinIO/S3)
+    S3_ENDPOINT_URL: str = "http://minio:9000" # Docker 내부 통신용
+    S3_ACCESS_KEY: str = "minioadmin"
+    S3_SECRET_KEY: str = "minioadmin"
+    S3_BUCKET_NAME: str = "stonks-backups"
+    BACKUP_RETENTION_DAYS: int = 30 # 로컬/S3 백업 파일 보관 기간
+    CANDLE_RETENTION_DAYS: int = 90 # DB 내 1분봉 보관 기간
+
     DEBUG: bool = True
 
     @property

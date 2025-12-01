@@ -32,3 +32,6 @@ fastapi-limiter
 
 # Observability
 prometheus-fastapi-instrumentator
+
+# Storage
+boto3

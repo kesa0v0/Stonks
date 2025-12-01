@@ -6,6 +6,9 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from contextlib import asynccontextmanager
 from fastapi.openapi.utils import get_openapi
 from fastapi.middleware.cors import CORSMiddleware
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+
 from backend.core.config import settings
 from backend.core import constants
 from backend.core.database import Base, engine, wait_for_db
@@ -17,41 +20,48 @@ from backend.core.rate_limit import init_rate_limiter
 from backend.core.exceptions import StonksError
 from backend.app.exception_handlers import stonks_exception_handler, general_exception_handler
 from prometheus_fastapi_instrumentator import Instrumentator
+from backend.worker.maintenance import perform_db_backup, cleanup_old_candles
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup logic replacing deprecated on_event
+    scheduler = AsyncIOScheduler()
+    
     try:
         # fastapi-limiter 초기화 (Redis)
         await init_rate_limiter()
         # 1. DB 연결 대기
         await wait_for_db()
+        
+        # 2. 스케줄러 설정 (백업 & 청소)
+        if settings.ENVIRONMENT != "test": # 테스트 환경에선 스킵
+            # 매일 새벽 3:00 KST (UTC 18:00) - 백업
+            # 여기선 간단히 서버 시간 기준 03:00으로 설정 (Docker Timezone 주의)
+            scheduler.add_job(perform_db_backup, CronTrigger(hour=3, minute=0))
+            
+            # 매주 일요일 새벽 4:00 - 오래된 데이터 정리
+            scheduler.add_job(cleanup_old_candles, CronTrigger(day_of_week='sun', hour=4, minute=0))
+            
+            scheduler.start()
+            print("[lifespan] Scheduler started for maintenance tasks")
 
-        # 2. 테이블 생성 (Alembic을 쓰지만 개발 편의를 위해 남겨둘 수 있음. 
-        #    단, Alembic이 있으면 보통 생략하거나 Alembic을 호출함. 여기선 안전하게 유지)
-        #    * Alembic 사용 시에는 이 라인을 지워도 되지만, 초기 개발 시 편리함을 위해 둠.
-        #    * 단, Alembic revision이 꼬일 수 있으니 주의.
-        # async with engine.begin() as conn:
-        #     await conn.run_sync(Base.metadata.create_all)
-        
-        # if settings.DEBUG:
-        #     print("[lifespan] DB tables ensured (create_all)")
-        
+        # 3. 초기 데이터 시딩 (개발 환경)
         if settings.DEBUG:
             try:
-                # 데이터 시딩
                 tasks = [create_test_user(), init_tickers()]
                 await asyncio.gather(*tasks)
                 print("[lifespan] Dev seed completed (test user, tickers)")
             except Exception as se:
                 print(f"[lifespan] Dev seed failed: {se}")
+                
     except Exception as e:
         print(f"[lifespan] Startup failure: {e}")
-        # DB 연결 실패 시 앱 구동을 멈추려면 여기서 raise e
     
     # Yield control to allow application to serve
     yield
-    # Shutdown logic (none yet; placeholder for future resource cleanup)
+    
+    # Shutdown logic
+    scheduler.shutdown()
     if settings.DEBUG:
         print("[lifespan] Shutdown complete")
 
