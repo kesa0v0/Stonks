@@ -45,6 +45,10 @@ async def place_order(
     
     # [검증] 유효성 체크 (공매도 방지 및 잔고 확인)
     
+    # [자전거래 방지] 본인이 발행한 HUMAN ETF 매매 금지
+    if order.ticker_id == f"HUMAN_{user_uuid}":
+        raise PermissionDeniedError("자신의 Human ETF는 거래할 수 없습니다.")
+
     # 포트폴리오 및 지갑 정보 미리 조회 (공매도 로직을 위해) - 비동기
     portfolio_result = await db.execute(
         select(Portfolio).where(

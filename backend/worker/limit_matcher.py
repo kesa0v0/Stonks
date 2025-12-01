@@ -44,10 +44,12 @@ async def match_orders():
                     Order.type == OrderType.LIMIT,
                     Order.target_price <= current_price
                 )
+                
+                limit_buys = (await db.execute(limit_buy_stmt)).scalars().all()
+                limit_sells = (await db.execute(limit_sell_stmt)).scalars().all()
 
                 # --- 2. STOP_LOSS 주문 매칭 (신규 로직) ---
                 # Stop Buy (숏 포지션 청산): 가격이 stop_price 이상으로 오르면 발동
-                # 예: 숏 진입가 10,000원 -> 11,000원 오면 손절 (Stop Buy 11,000) -> 현재가 11,005원이면 발동
                 stop_buy_stmt = select(Order).where(
                     Order.ticker_id == ticker_id,
                     Order.status == OrderStatus.PENDING,
@@ -57,7 +59,6 @@ async def match_orders():
                 )
 
                 # Stop Sell (롱 포지션 청산): 가격이 stop_price 이하로 떨어지면 발동
-                # 예: 롱 진입가 10,000원 -> 9,000원 오면 손절 (Stop Sell 9,000) -> 현재가 8,995원이면 발동
                 stop_sell_stmt = select(Order).where(
                     Order.ticker_id == ticker_id,
                     Order.status == OrderStatus.PENDING,
@@ -65,6 +66,31 @@ async def match_orders():
                     Order.type == OrderType.STOP_LOSS,
                     Order.stop_price >= current_price
                 )
+                
+                stop_buys = (await db.execute(stop_buy_stmt)).scalars().all()
+                stop_sells = (await db.execute(stop_sell_stmt)).scalars().all()
+
+                # --- 3. TAKE_PROFIT 주문 매칭 (신규 로직) ---
+                # TP Buy: 가격이 stop_price 이하로 떨어지면 발동 (숏 익절)
+                tp_buy_stmt = select(Order).where(
+                    Order.ticker_id == ticker_id,
+                    Order.status == OrderStatus.PENDING,
+                    Order.side == OrderSide.BUY,
+                    Order.type == OrderType.TAKE_PROFIT,
+                    Order.stop_price >= current_price
+                )
+                
+                # TP Sell: 가격이 stop_price 이상으로 오르면 발동 (롱 익절)
+                tp_sell_stmt = select(Order).where(
+                    Order.ticker_id == ticker_id,
+                    Order.status == OrderStatus.PENDING,
+                    Order.side == OrderSide.SELL,
+                    Order.type == OrderType.TAKE_PROFIT,
+                    Order.stop_price <= current_price
+                )
+                
+                tp_buys = (await db.execute(tp_buy_stmt)).scalars().all()
+                tp_sells = (await db.execute(tp_sell_stmt)).scalars().all()
 
                 # --- 4. STOP_LIMIT 주문 매칭 (Trigger Only) ---
                 # 발동되면 MARKET 주문처럼 바로 체결되는게 아니라, LIMIT 주문으로 변환됨 (PENDING 유지, Type 변경)
