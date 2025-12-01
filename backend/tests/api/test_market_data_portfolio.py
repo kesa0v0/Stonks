@@ -10,8 +10,8 @@ async def test_get_ticker_price(client: AsyncClient, test_ticker, mock_external_
     """
     # Mock Redis has "price:TEST-COIN" -> 100.0 (from conftest)
     
-    # Let's use the `price-any` endpoint which allows any authenticated user (including session token)
-    response = await client.get(f"/api/v1/market/price-any/{test_ticker}")
+    # Integrated endpoint supports session token
+    response = await client.get(f"/api/v1/market/price/{test_ticker}")
     
     assert response.status_code == 200
     data = response.json()

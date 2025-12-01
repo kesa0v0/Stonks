@@ -90,6 +90,37 @@ async def get_current_user(
         
     return user
 
+async def get_current_user_optional(
+    db: AsyncSession = Depends(get_db),
+    token: str = Depends(oauth2_scheme),
+    redis_client: async_redis.Redis = Depends(get_redis) 
+) -> Optional[User]:
+    """
+    get_current_user와 동일하지만, 인증 실패 시 에러를 내지 않고 None을 반환합니다.
+    단, oauth2_scheme 자체가 토큰이 없으면 401을 낼 수 있으므로 auto_error=False 처리된 스키마가 필요합니다.
+    """
+    # 여기서는 간단히 try-except로 감싸서 재사용
+    try:
+        return await get_current_user(db, token, redis_client)
+    except HTTPException:
+        return None
+
+# oauth2_scheme는 auto_error=True(기본값)이므로, 토큰이 아예 없으면 get_current_user 호출 전에 401이 뜹니다.
+# 따라서 auto_error=False인 스키마를 별도로 정의해야 합니다.
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/login/access-token", auto_error=False)
+
+async def get_current_user_optional_strict(
+    db: AsyncSession = Depends(get_db),
+    token: Optional[str] = Depends(oauth2_scheme_optional),
+    redis_client: async_redis.Redis = Depends(get_redis) 
+) -> Optional[User]:
+    if not token:
+        return None
+    try:
+        return await get_current_user(db, token, redis_client)
+    except HTTPException:
+        return None
+
 async def get_current_user_id(
     current_user: User = Depends(get_current_user)
 ) -> UUID:
@@ -167,7 +198,7 @@ async def get_current_user_by_api_key(
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API Key")
 
 async def get_current_user_any(
-    bearer_user: Optional[User] = Depends(get_current_user),
+    bearer_user: Optional[User] = Depends(get_current_user_optional_strict),
     x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
     db: AsyncSession = Depends(get_db),
     redis_client: async_redis.Redis = Depends(get_redis)

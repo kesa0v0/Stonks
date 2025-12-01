@@ -72,13 +72,15 @@ async def get_orderbook(
     """
     return await get_orderbook_data(db, ticker_id)
 
-@router.get("/price/{ticker_id}", response_model=CurrentPriceResponse, dependencies=[Security(get_current_user_by_api_key), Depends(get_rate_limiter("/market/price/{ticker_id}"))])
+@router.get("/price/{ticker_id}", response_model=CurrentPriceResponse, dependencies=[Depends(get_rate_limiter("/market/price/{ticker_id}"))])
 async def get_ticker_current_price(
     ticker_id: str,
-    redis_client: async_redis.Redis = Depends(get_redis)
+    redis_client: async_redis.Redis = Depends(get_redis),
+    _user=Depends(get_current_user_any)
 ):
     """
     특정 티커의 현재 시장 가격을 조회합니다.
+    인증: Bearer Token (로그인) 또는 X-API-Key 모두 지원.
     """
     price = await get_current_price_info(redis_client, ticker_id)
     
@@ -89,15 +91,4 @@ async def get_ticker_current_price(
             message=f"Price data not available for {ticker_id}"
         )
     
-    return CurrentPriceResponse(ticker_id=ticker_id, price=price)
-
-@router.get("/price-any/{ticker_id}", response_model=CurrentPriceResponse, dependencies=[Depends(get_rate_limiter("/market/price-any/{ticker_id}"))])
-async def get_ticker_current_price_multi_auth(
-    ticker_id: str,
-    redis_client: async_redis.Redis = Depends(get_redis),
-    _user=Depends(get_current_user_any)
-):
-    price = await get_current_price_info(redis_client, ticker_id)
-    if price is None:
-        return CurrentPriceResponse(ticker_id=ticker_id, price=None, message=f"Price data not available for {ticker_id}")
     return CurrentPriceResponse(ticker_id=ticker_id, price=price)
