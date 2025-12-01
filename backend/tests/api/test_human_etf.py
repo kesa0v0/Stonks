@@ -18,7 +18,7 @@ async def test_create_ipo(client: AsyncClient, db_session, test_user):
         "initial_price": 500.0,
         "dividend_rate": 0.1
     }
-    response = await client.post("/human/ipo", json=payload)
+    response = await client.post("/api/v1/human/ipo", json=payload)
     assert response.status_code == 200
     data = response.json()
     ticker_id = f"HUMAN-{test_user}"
@@ -43,7 +43,7 @@ async def test_create_ipo(client: AsyncClient, db_session, test_user):
     assert float(user.dividend_rate) == 0.1
     
     # 4. Verify Duplicate IPO Failure
-    response = await client.post("/human/ipo", json=payload)
+    response = await client.post("/api/v1/human/ipo", json=payload)
     assert response.status_code == 400
     assert "already listed" in response.json()["detail"]
 
@@ -72,7 +72,7 @@ async def test_bankrupt_ipo(client: AsyncClient, db_session):
             "initial_price": 0.0,
             "dividend_rate": 0.1 # Less than 0.5
         }
-        response = await client.post("/human/ipo", json=payload_fail)
+        response = await client.post("/api/v1/human/ipo", json=payload_fail)
         assert response.status_code == 400
         assert "dividend rate" in response.json()["detail"]
         
@@ -82,7 +82,7 @@ async def test_bankrupt_ipo(client: AsyncClient, db_session):
             "initial_price": 0.0,
             "dividend_rate": 0.5
         }
-        response = await client.post("/human/ipo", json=payload_ok)
+        response = await client.post("/api/v1/human/ipo", json=payload_ok)
         assert response.status_code == 200
         
         ticker_id = f"HUMAN-{user_id}"
@@ -206,11 +206,11 @@ async def test_burn_shares(client: AsyncClient, db_session):
     try:
         # 2. IPO (1000 shares)
         ipo_payload = {"quantity": 1000.0, "initial_price": 0.0, "dividend_rate": 0.5}
-        await client.post("/human/ipo", json=ipo_payload)
+        await client.post("/api/v1/human/ipo", json=ipo_payload)
         
         # 3. Partial Burn (500 shares)
         burn_payload = {"quantity": 500.0}
-        response = await client.post("/human/burn", json=burn_payload)
+        response = await client.post("/api/v1/human/burn", json=burn_payload)
         assert response.status_code == 200
         data = response.json()
         assert data["is_delisted"] is False
@@ -220,7 +220,7 @@ async def test_burn_shares(client: AsyncClient, db_session):
         assert user.is_bankrupt is True # Still bankrupt
         
         # 4. Full Burn (Remaining 500 shares)
-        response = await client.post("/human/burn", json=burn_payload)
+        response = await client.post("/api/v1/human/burn", json=burn_payload)
         assert response.status_code == 200
         data = response.json()
         assert data["is_delisted"] is True

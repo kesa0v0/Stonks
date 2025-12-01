@@ -10,7 +10,7 @@ async def test_bankruptcy_flow(client: AsyncClient, db_session, test_user):
     # 1. Setup: Login and ensure initial state
     # Login
     login_data = {"username": "test@test.com", "password": "test1234"}
-    response = await client.post("/login/access-token", data=login_data)
+    response = await client.post("/api/v1/auth/login/access-token", data=login_data)
     token = response.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -25,7 +25,7 @@ async def test_bankruptcy_flow(client: AsyncClient, db_session, test_user):
     await db_session.commit()
 
     # 2. File Bankruptcy
-    response = await client.post("/me/bankruptcy", headers=headers)
+    response = await client.post("/api/v1/me/bankruptcy", headers=headers)
     assert response.status_code == 200, response.text
     data = response.json()
     assert float(data["balance"]) == -50000.0 # Balance should be initial negative value
@@ -58,7 +58,7 @@ async def test_bankruptcy_flow(client: AsyncClient, db_session, test_user):
     assert ticker.market_type == MarketType.HUMAN
 
     # 4. Request Bailout (Safety Net)
-    response = await client.post("/human/bailout", headers=headers)
+    response = await client.post("/api/v1/human/bailout", headers=headers)
     assert response.status_code == 200, response.text
     data = response.json()
     assert data["message"] == "Bailout successful. System bought your shares."
@@ -80,7 +80,7 @@ async def test_bankruptcy_flow(client: AsyncClient, db_session, test_user):
 async def test_bankruptcy_flow_fail_if_positive_assets(client: AsyncClient, db_session, test_user):
     # Login
     login_data = {"username": "test@test.com", "password": "test1234"}
-    response = await client.post("/login/access-token", data=login_data)
+    response = await client.post("/api/v1/auth/login/access-token", data=login_data)
     token = response.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -95,7 +95,7 @@ async def test_bankruptcy_flow_fail_if_positive_assets(client: AsyncClient, db_s
     await db_session.commit()
 
     # Attempt to file bankruptcy
-    response = await client.post("/me/bankruptcy", headers=headers)
+    response = await client.post("/api/v1/me/bankruptcy", headers=headers)
     assert response.status_code == 400
     assert "총 자산이 0 이하일 때만 파산 신청이 가능합니다." in response.json()["detail"]
 
@@ -104,7 +104,7 @@ async def test_bankruptcy_flow_fail_if_positive_assets(client: AsyncClient, db_s
 async def test_bailout_validation(client: AsyncClient, db_session, test_user):
     # Login
     login_data = {"username": "test@test.com", "password": "test1234"}
-    response = await client.post("/login/access-token", data=login_data)
+    response = await client.post("/api/v1/auth/login/access-token", data=login_data)
     token = response.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -115,7 +115,7 @@ async def test_bailout_validation(client: AsyncClient, db_session, test_user):
     user.is_bankrupt = False
     await db_session.commit()
 
-    response = await client.post("/human/bailout", headers=headers)
+    response = await client.post("/api/v1/human/bailout", headers=headers)
     assert response.status_code == 400
     assert "Only bankrupt users" in response.json()["detail"]
 
@@ -130,6 +130,6 @@ async def test_bailout_validation(client: AsyncClient, db_session, test_user):
         await db_session.delete(p)
     await db_session.commit()
 
-    response = await client.post("/human/bailout", headers=headers)
+    response = await client.post("/api/v1/human/bailout", headers=headers)
     assert response.status_code == 400
     assert "No shares found" in response.json()["detail"]

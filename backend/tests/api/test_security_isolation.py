@@ -31,7 +31,7 @@ async def test_order_cancellation_isolation(client: AsyncClient, db_session, tes
 
     # 2. User B tries to cancel User A's order
     headers = {"Authorization": f"Bearer {another_user_token}"}
-    response = await client.post(f"/orders/{order_id}/cancel", headers=headers)
+    response = await client.post(f"/api/v1/orders/{order_id}/cancel", headers=headers)
 
     # 3. Expect Failure
     assert response.status_code in [403, 404]
@@ -63,7 +63,7 @@ async def test_order_detail_isolation(client: AsyncClient, db_session, test_user
 
     # 2. User B tries to access User A's order
     headers = {"Authorization": f"Bearer {another_user_token}"}
-    response = await client.get(f"/orders/{order_id}", headers=headers)
+    response = await client.get(f"/api/v1/orders/{order_id}", headers=headers)
 
     # 3. Expect Failure
     assert response.status_code in [403, 404]
@@ -80,7 +80,7 @@ async def test_portfolio_isolation(client: AsyncClient, db_session, test_user, a
     
     # 2. User B (another_user) has 500,000 KRW (set in conftest)
     headers = {"Authorization": f"Bearer {another_user_token}"}
-    response = await client.get("/me/portfolio", headers=headers) # Changed from /portfolio
+    response = await client.get("/api/v1/me/portfolio", headers=headers) # Changed from /portfolio
     
     assert response.status_code == 200
     data = response.json()

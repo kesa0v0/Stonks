@@ -39,7 +39,7 @@ async def test_create_limit_order_insufficient_balance(client: AsyncClient, db_s
     payload = payload_json_converter(payload)
 
     # 3. Execute
-    response = await client.post("/orders", json=payload)
+    response = await client.post("/api/v1/orders", json=payload)
 
     # 4. Assert
     assert response.status_code == 400
@@ -88,7 +88,7 @@ async def test_create_short_sell_limit_order_insufficient_margin(client: AsyncCl
     payload = payload_json_converter(payload)
 
     # 3. Execute
-    response = await client.post("/orders", json=payload)
+    response = await client.post("/api/v1/orders", json=payload)
     assert response.status_code == 400
     assert "공매도 증거금이 부족합니다" in response.json()["detail"]
     # Updated assertion to match actual output format
@@ -128,7 +128,7 @@ async def test_create_sell_order_insufficient_holdings(client: AsyncClient, db_s
     # Convert Decimals to string for JSON serialization
     payload = payload_json_converter(payload)
     
-    response = await client.post("/orders", json=payload)
+    response = await client.post("/api/v1/orders", json=payload)
     assert response.status_code == 400
     assert "보유 수량이 부족하여" in response.json()["detail"]
     # Updated assertion to match actual output format
@@ -151,7 +151,7 @@ async def test_create_order_invalid_input(client: AsyncClient, test_ticker, payl
     # Convert Decimals to string for JSON serialization
     payload = payload_json_converter(payload)
     
-    response = await client.post("/orders", json=payload)
+    response = await client.post("/api/v1/orders", json=payload)
     # 422 Unprocessable Entity (Pydantic validation)
     assert response.status_code == 422 
     
@@ -161,7 +161,7 @@ async def test_create_order_invalid_input(client: AsyncClient, test_ticker, payl
     # Convert Decimals to string for JSON serialization
     payload = payload_json_converter(payload) # Convert again for new payload
     
-    response = await client.post("/orders", json=payload)
+    response = await client.post("/api/v1/orders", json=payload)
     # This now correctly asserts 400 because order.py explicitly raises HTTPException(400)
     assert response.status_code == 400
 
@@ -179,12 +179,12 @@ async def test_get_order_detail_success(client: AsyncClient, db_session: AsyncSe
         "quantity": "1.0",
         "target_price": "100.0"
     }
-    response = await client.post("/orders", json=payload)
+    response = await client.post("/api/v1/orders", json=payload)
     assert response.status_code == 200
     order_id = response.json()["order_id"]
 
     # 2. 상세 조회 (API 경로 변경)
-    detail_resp = await client.get(f"/me/orders/{order_id}")
+    detail_resp = await client.get(f"/api/v1/me/orders/{order_id}")
     assert detail_resp.status_code == 200
     data = detail_resp.json()
     assert data["order_id"] == order_id
@@ -201,7 +201,7 @@ async def test_get_order_detail_not_found(client: AsyncClient, test_user):
     import uuid
     fake_id = str(uuid.uuid4())
     # API 경로 변경
-    resp = await client.get(f"/me/orders/{fake_id}")
+    resp = await client.get(f"/api/v1/me/orders/{fake_id}")
     assert resp.status_code == 404
     assert "주문을 찾을 수 없습니다" in resp.json()["detail"]
 
@@ -218,12 +218,12 @@ async def test_get_order_detail_forbidden(client: AsyncClient, db_session: Async
         "quantity": "1.0",
         "target_price": "100.0"
     }
-    response = await client.post("/orders", json=payload)
+    response = await client.post("/api/v1/orders", json=payload)
     assert response.status_code == 200
     order_id = response.json()["order_id"]
 
     # 2. 타인 토큰으로 조회 (API 경로 변경)
     headers = {"Authorization": f"Bearer {another_user_token}"}
-    resp = await client.get(f"/me/orders/{order_id}", headers=headers)
+    resp = await client.get(f"/api/v1/me/orders/{order_id}", headers=headers)
     assert resp.status_code == 403
     assert "권한이 없습니다" in resp.json()["detail"]

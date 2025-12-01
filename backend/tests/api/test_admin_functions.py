@@ -8,7 +8,7 @@ async def test_admin_get_fee(client: AsyncClient, admin_user_token):
     Test that an admin user can get the trading fee.
     """
     headers = {"Authorization": f"Bearer {admin_user_token}"}
-    response = await client.get("/admin/fee", headers=headers)
+    response = await client.get("/api/v1/admin/fee", headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert "fee_rate" in data
@@ -22,14 +22,14 @@ async def test_admin_update_fee(client: AsyncClient, admin_user_token, mock_exte
     """
     headers = {"Authorization": f"Bearer {admin_user_token}"}
     new_fee_rate = 0.0025
-    response = await client.put("/admin/fee", headers=headers, json={"fee_rate": new_fee_rate})
+    response = await client.put("/api/v1/admin/fee", headers=headers, json={"fee_rate": new_fee_rate})
     assert response.status_code == 200
     data = response.json()
     assert data["message"] == "Trading fee rate updated successfully"
     assert data["fee_rate"] == new_fee_rate
 
     # Verify the update by getting the fee again
-    response = await client.get("/admin/fee", headers=headers)
+    response = await client.get("/api/v1/admin/fee", headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert data["fee_rate"] == new_fee_rate
@@ -45,7 +45,7 @@ async def test_admin_access_forbidden_for_regular_user(client: AsyncClient, anot
     Test that a regular user cannot access admin endpoints.
     """
     headers = {"Authorization": f"Bearer {another_user_token}"}
-    response = await client.get("/admin/fee", headers=headers)
+    response = await client.get("/api/v1/admin/fee", headers=headers)
     assert response.status_code == 403
     assert "The user doesn't have enough privileges" in response.json()["detail"]
 
@@ -89,7 +89,7 @@ async def test_admin_access_unauthenticated(db_session, mock_external_services):
     # throw 401.
     
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as anonymous_client:
-        response = await anonymous_client.get("/admin/fee")
+        response = await anonymous_client.get("/api/v1/admin/fee")
         assert response.status_code == 401
         assert "Not authenticated" in response.json()["detail"] # Expect JWT validation failure
         
@@ -104,9 +104,9 @@ async def test_admin_update_fee_invalid_value(client: AsyncClient, admin_user_to
     headers = {"Authorization": f"Bearer {admin_user_token}"}
     
     # Too low
-    response = await client.put("/admin/fee", headers=headers, json={"fee_rate": -0.01})
+    response = await client.put("/api/v1/admin/fee", headers=headers, json={"fee_rate": -0.01})
     assert response.status_code == 422 # Unprocessable Entity
     
     # Too high
-    response = await client.put("/admin/fee", headers=headers, json={"fee_rate": 1.1})
+    response = await client.put("/api/v1/admin/fee", headers=headers, json={"fee_rate": 1.1})
     assert response.status_code == 422 # Unprocessable Entity

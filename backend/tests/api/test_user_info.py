@@ -16,13 +16,13 @@ async def test_get_current_user_info(client: AsyncClient, test_user):
         "username": "test@test.com",
         "password": "test1234"
     }
-    response = await client.post("/login/access-token", data=login_data)
+    response = await client.post("/api/v1/auth/login/access-token", data=login_data)
     assert response.status_code == 200
     access_token = response.json()["access_token"]
 
     # 2. Access /login/me with the access token
     headers = {"Authorization": f"Bearer {access_token}"}
-    response = await client.get("/login/me", headers=headers)
+    response = await client.get("/api/v1/auth/login/me", headers=headers)
     assert response.status_code == 200
     
     user_info = response.json()
@@ -53,7 +53,7 @@ async def test_get_current_user_info_unauthenticated(db_session, mock_external_s
     app.dependency_overrides[get_redis] = override_get_redis_for_unauth
     
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as anonymous_client:
-        response = await anonymous_client.get("/login/me")
+        response = await anonymous_client.get("/api/v1/auth/login/me")
         assert response.status_code == 401
         assert "Not authenticated" in response.json()["detail"]
     

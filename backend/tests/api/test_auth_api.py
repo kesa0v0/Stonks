@@ -14,7 +14,7 @@ async def test_login_access_token(client: AsyncClient, test_user):
         "password": "test1234"
     }
     
-    response = await client.post("/login/access-token", data=login_data)
+    response = await client.post("/api/v1/auth/login/access-token", data=login_data)
     
     assert response.status_code == 200, f"Login failed: {response.text}"
     tokens = response.json()
@@ -39,14 +39,14 @@ async def test_refresh_token(client: AsyncClient, test_user, mock_external_servi
         "username": "test@test.com",
         "password": "test1234"
     }
-    response = await client.post("/login/access-token", data=login_data)
+    response = await client.post("/api/v1/auth/login/access-token", data=login_data)
     assert response.status_code == 200
     tokens = response.json()
     refresh_token = tokens["refresh_token"]
     
     # 2. Use refresh token
     refresh_data = {"refresh_token": refresh_token}
-    response = await client.post("/login/refresh", json=refresh_data)
+    response = await client.post("/api/v1/auth/login/refresh", json=refresh_data)
     
     assert response.status_code == 200
     new_tokens = response.json()
@@ -59,7 +59,7 @@ async def test_login_wrong_password(client: AsyncClient, test_user):
         "username": "test@test.com",
         "password": "wrongpassword"
     }
-    response = await client.post("/login/access-token", data=login_data)
+    response = await client.post("/api/v1/auth/login/access-token", data=login_data)
     assert response.status_code == 401
     assert "Incorrect email or password" in response.json()["detail"]
 
@@ -76,13 +76,13 @@ async def test_logout(client: AsyncClient, test_user, mock_external_services):
 
     # 2. Login
     login_data = {"username": "test@test.com", "password": "test1234"}
-    response = await client.post("/login/access-token", data=login_data)
+    response = await client.post("/api/v1/auth/login/access-token", data=login_data)
     assert response.status_code == 200
     token = response.json()["access_token"]
     
     # 3. Logout
     headers = {"Authorization": f"Bearer {token}"}
-    response = await client.post("/logout", headers=headers)
+    response = await client.post("/api/v1/auth/logout", headers=headers)
     assert response.status_code == 200
     
     # Verify Redis interaction
@@ -91,7 +91,7 @@ async def test_logout(client: AsyncClient, test_user, mock_external_services):
     
     # 4. Verify Access Denied (Redis should now have the token)
     # Changed from /orders to /me/orders
-    response = await client.get("/me/orders", headers=headers)
+    response = await client.get("/api/v1/me/orders", headers=headers)
     
     assert response.status_code == 401
     assert "Token has been revoked" in response.json()["detail"]
@@ -104,7 +104,7 @@ async def test_logout_refresh_token(client: AsyncClient, test_user, mock_externa
     """
     # 1. Login
     login_data = {"username": "test@test.com", "password": "test1234"}
-    response = await client.post("/login/access-token", data=login_data)
+    response = await client.post("/api/v1/auth/login/access-token", data=login_data)
     tokens = response.json()
     access_token = tokens["access_token"]
     refresh_token = tokens["refresh_token"]
@@ -112,7 +112,7 @@ async def test_logout_refresh_token(client: AsyncClient, test_user, mock_externa
     # 2. Logout with refresh token
     headers = {"Authorization": f"Bearer {access_token}"}
     logout_data = {"refresh_token": refresh_token}
-    response = await client.post("/logout", headers=headers, json=logout_data)
+    response = await client.post("/api/v1/auth/logout", headers=headers, json=logout_data)
     assert response.status_code == 200
     
     # 3. Try to refresh
@@ -128,7 +128,7 @@ async def test_logout_refresh_token(client: AsyncClient, test_user, mock_externa
     # So mock_exists will find it and return 1.
     
     refresh_data = {"refresh_token": refresh_token}
-    response = await client.post("/login/refresh", json=refresh_data)
+    response = await client.post("/api/v1/auth/login/refresh", json=refresh_data)
     
     assert response.status_code == 401
     assert "Refresh token has been revoked" in response.json()["detail"]

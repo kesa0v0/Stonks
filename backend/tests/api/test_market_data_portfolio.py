@@ -11,7 +11,7 @@ async def test_get_ticker_price(client: AsyncClient, test_ticker, mock_external_
     # Mock Redis has "price:TEST-COIN" -> 100.0 (from conftest)
     
     # Let's use the `price-any` endpoint which allows any authenticated user (including session token)
-    response = await client.get(f"/market/price-any/{test_ticker}")
+    response = await client.get(f"/api/v1/market/price-any/{test_ticker}")
     
     assert response.status_code == 200
     data = response.json()
@@ -38,7 +38,7 @@ async def test_get_portfolio_structure(client: AsyncClient, db_session, test_use
     # Profit = 1000 - 900 = 100
     # Rate = 100 / 900 = 11.11%
     
-    response = await client.get("/me/portfolio") # Changed from /portfolio
+    response = await client.get("/api/v1/me/portfolio") # Changed from /portfolio
     
     assert response.status_code == 200
     data = response.json()
@@ -63,7 +63,7 @@ async def test_get_portfolio_empty(client: AsyncClient, test_user):
     """
     Test portfolio response when user has no assets.
     """
-    response = await client.get("/me/portfolio") # Changed from /portfolio
+    response = await client.get("/api/v1/me/portfolio") # Changed from /portfolio
     
     assert response.status_code == 200
     data = response.json()

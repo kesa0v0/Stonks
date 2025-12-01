@@ -19,7 +19,7 @@ async def test_admin_create_ticker(client: AsyncClient, db_session, admin_user_t
         "is_active": True
     }
     
-    response = await client.post("/admin/tickers", json=payload, headers=headers)
+    response = await client.post("/api/v1/admin/tickers", json=payload, headers=headers)
     assert response.status_code == 200
     data = response.json()
     
@@ -42,7 +42,7 @@ async def test_admin_update_ticker(client: AsyncClient, db_session, admin_user_t
         "name": "Tesla Inc." # Update name
     }
     
-    response = await client.put("/admin/tickers/US-TSLA", json=payload, headers=headers)
+    response = await client.put("/api/v1/admin/tickers/US-TSLA", json=payload, headers=headers)
     assert response.status_code == 200
     data = response.json()
     
@@ -62,11 +62,11 @@ async def test_admin_delete_ticker(client: AsyncClient, db_session, admin_user_t
     headers = {"Authorization": f"Bearer {admin_user_token}"}
     
     # 2. Delete
-    response = await client.delete("/admin/tickers/DELETE-ME", headers=headers)
+    response = await client.delete("/api/v1/admin/tickers/DELETE-ME", headers=headers)
     assert response.status_code == 200
     
     # 3. Verify deletion
-    response = await client.get("/market/search", params={"query": "DEL"})
+    response = await client.get("/api/v1/market/search", params={"query": "DEL"})
     # It might return empty list or 404 depending on search implementation, 
     # but since we deleted it, search should not find it.
     assert response.status_code == 200
@@ -87,5 +87,5 @@ async def test_admin_ticker_permission(client: AsyncClient, another_user_token):
         "currency": "KRW"
     }
     
-    response = await client.post("/admin/tickers", json=payload, headers=headers)
+    response = await client.post("/api/v1/admin/tickers", json=payload, headers=headers)
     assert response.status_code == 403

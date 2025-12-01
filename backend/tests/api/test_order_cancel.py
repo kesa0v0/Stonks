@@ -29,7 +29,7 @@ async def test_cancel_pending_order_success(client: AsyncClient, db_session: Asy
     db_session.add(order)
     await db_session.commit()
 
-    response = await client.post(f"/orders/{order_id}/cancel")
+    response = await client.post(f"/api/v1/orders/{order_id}/cancel")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "CANCELLED"
@@ -72,7 +72,7 @@ async def test_cancel_order_not_owner_forbidden(client: AsyncClient, db_session:
     db_session.add(order)
     await db_session.commit()
 
-    response = await client.post(f"/orders/{order_id}/cancel")
+    response = await client.post(f"/api/v1/orders/{order_id}/cancel")
     assert response.status_code == 403
 
 
@@ -113,9 +113,9 @@ async def test_cancel_non_pending_order_blocked(client: AsyncClient, db_session:
     await db_session.commit()
 
     # FILLED 주문 취소 시도
-    resp1 = await client.post(f"/orders/{filled_order_id}/cancel")
+    resp1 = await client.post(f"/api/v1/orders/{filled_order_id}/cancel")
     assert resp1.status_code == 400
 
     # 이미 CANCELLED인 주문 취소 시도
-    resp2 = await client.post(f"/orders/{cancelled_order_id}/cancel")
+    resp2 = await client.post(f"/api/v1/orders/{cancelled_order_id}/cancel")
     assert resp2.status_code == 400

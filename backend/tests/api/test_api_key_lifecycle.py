@@ -9,7 +9,7 @@ async def test_api_key_lifecycle(client: AsyncClient, db_session, test_user):
     Test full lifecycle of API Key: Create -> List -> Rotate -> Revoke -> Verify Usage
     """
     # 1. Create API Key
-    response = await client.post("/api-keys/", json={"name": "My Trading Bot"})
+    response = await client.post("/api/v1/api-keys/", json={"name": "My Trading Bot"})
     assert response.status_code == 200
     data = response.json()
     assert "api_key" in data
@@ -19,7 +19,7 @@ async def test_api_key_lifecycle(client: AsyncClient, db_session, test_user):
     key_id = data["key_id"]
 
     # 2. List API Keys
-    response = await client.get("/api-keys/")
+    response = await client.get("/api/v1/api-keys/")
     assert response.status_code == 200
     data = response.json()
     assert len(data["items"]) >= 1
@@ -45,33 +45,33 @@ async def test_api_key_lifecycle(client: AsyncClient, db_session, test_user):
     # But get_current_user_by_api_key is a DIFFERENT dependency.
     # So we need to ensure get_current_user_by_api_key works correctly with DB.
     
-    response = await client.get("/market/price/UNKNOWN", headers=headers)
+    response = await client.get("/api/v1/market/price/UNKNOWN", headers=headers)
     # If key is valid, it should return 200 (with null price) or 404 depending on logic.
     # The code returns 200 with message if not found.
     assert response.status_code == 200 
     
     # 4. Rotate API Key
-    response = await client.post(f"/api-keys/{key_id}/rotate")
+    response = await client.post(f"/api/v1/api-keys/{key_id}/rotate")
     assert response.status_code == 200
     new_key = response.json()["api_key"]
     assert new_key != created_key
     
     # Verify old key fails
     headers_old = {"X-API-Key": created_key}
-    response = await client.get("/market/price/UNKNOWN", headers=headers_old)
+    response = await client.get("/api/v1/market/price/UNKNOWN", headers=headers_old)
     assert response.status_code == 401
     
     # Verify new key works
     headers_new = {"X-API-Key": new_key}
-    response = await client.get("/market/price/UNKNOWN", headers=headers_new)
+    response = await client.get("/api/v1/market/price/UNKNOWN", headers=headers_new)
     assert response.status_code == 200
 
     # 5. Revoke API Key
-    response = await client.delete(f"/api-keys/{key_id}")
+    response = await client.delete(f"/api/v1/api-keys/{key_id}")
     assert response.status_code == 204
     
     # Verify new key fails after revoke
-    response = await client.get("/market/price/UNKNOWN", headers=headers_new)
+    response = await client.get("/api/v1/market/price/UNKNOWN", headers=headers_new)
     assert response.status_code == 401
     assert "Invalid API Key" in response.json()["detail"]
     

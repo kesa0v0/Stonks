@@ -144,7 +144,7 @@ async def test_get_my_pnl_api(client, db_session, test_user, test_ticker):
     start_date = today.strftime("%Y-%m-%d")
     end_date = today.strftime("%Y-%m-%d")
     
-    response = await client.get(f"/me/pnl?start={start_date}&end={end_date}")
+    response = await client.get(f"/api/v1/me/pnl?start={start_date}&end={end_date}")
     
     assert response.status_code == 200
     data = response.json()

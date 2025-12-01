@@ -26,7 +26,7 @@ async def test_expired_access_token(client: AsyncClient, test_user, mock_externa
     
     try:
         # Use any protected endpoint (Changed from /orders to /me/orders)
-        response = await client.get("/me/orders", headers=headers)
+        response = await client.get("/api/v1/me/orders", headers=headers)
         assert response.status_code == 401
         assert "Token has expired" in response.json()["detail"]
     finally:
@@ -48,7 +48,7 @@ async def test_tampered_access_token(client: AsyncClient, test_user, mock_extern
         
     try:
         # Changed from /orders to /me/orders
-        response = await client.get("/me/orders", headers=headers)
+        response = await client.get("/api/v1/me/orders", headers=headers)
         assert response.status_code == 401
         assert "Could not validate credentials" in response.json()["detail"]
     finally:
@@ -63,7 +63,7 @@ async def test_expired_refresh_token(client: AsyncClient, test_user, mock_extern
     refresh_data = {"refresh_token": token}
     
     # Refresh endpoint handles validation itself (no override issue)
-    response = await client.post("/login/refresh", json=payload_json_converter(refresh_data)) # Convert payload
+    response = await client.post("/api/v1/auth/login/refresh", json=payload_json_converter(refresh_data)) # Convert payload
     assert response.status_code == 401
     assert "Refresh token has expired" in response.json()["detail"]
 
@@ -76,7 +76,7 @@ async def test_tampered_refresh_token(client: AsyncClient, test_user, mock_exter
     tampered_token = token + "junk"
     refresh_data = {"refresh_token": tampered_token}
     
-    response = await client.post("/login/refresh", json=payload_json_converter(refresh_data)) # Convert payload
+    response = await client.post("/api/v1/auth/login/refresh", json=payload_json_converter(refresh_data)) # Convert payload
     assert response.status_code == 401
     assert "Invalid refresh token" in response.json()["detail"]
 
@@ -98,7 +98,7 @@ async def test_login_inactive_user(client: AsyncClient, db_session: AsyncSession
     # 2. Try login
     login_data = {"username": "inactive@test.com", "password": "test1234"}
     # No need to convert login_data for login endpoints, as username/password are strings
-    response = await client.post("/login/access-token", data=login_data)
+    response = await client.post("/api/v1/auth/login/access-token", data=login_data)
     
     # 3. Assert
     assert response.status_code == 400

@@ -60,7 +60,7 @@ async def test_login_access_token_with_no_password_user(client: AsyncClient, db_
         "password": "anypassword"  # This password should not matter
     }
 
-    response = await client.post("/login/access-token", data=login_data)
+    response = await client.post("/api/v1/auth/login/access-token", data=login_data)
     
     # Expect a 401 Unauthorized because the user has no password for verification
     assert response.status_code == 401
@@ -77,7 +77,7 @@ async def test_login_access_token_with_local_user(client: AsyncClient, test_user
         "username": "test@test.com",
         "password": "test1234"
     }
-    response = await client.post("/login/access-token", data=login_data)
+    response = await client.post("/api/v1/auth/login/access-token", data=login_data)
     
     assert response.status_code == 200
     tokens = response.json()

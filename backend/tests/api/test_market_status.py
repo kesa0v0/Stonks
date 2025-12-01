@@ -21,7 +21,7 @@ async def test_market_status_krx_open(client: AsyncClient):
         mock_datetime.now.return_value = mock_now
         mock_datetime.side_effect = datetime # 다른 메서드는 그대로 동작하게
         
-        response = await client.get("/market/status")
+        response = await client.get("/api/v1/market/status")
         assert response.status_code == 200
         data = response.json()
         
@@ -43,7 +43,7 @@ async def test_market_status_us_open(client: AsyncClient):
         mock_datetime.now.return_value = mock_now
         mock_datetime.side_effect = datetime
         
-        response = await client.get("/market/status")
+        response = await client.get("/api/v1/market/status")
         assert response.status_code == 200
         data = response.json()
         
@@ -64,7 +64,7 @@ async def test_market_status_weekend(client: AsyncClient):
         mock_datetime.now.return_value = mock_now
         mock_datetime.side_effect = datetime
 
-        response = await client.get("/market/status")
+        response = await client.get("/api/v1/market/status")
         data = response.json()
         
         assert data["krx"] == "CLOSED"

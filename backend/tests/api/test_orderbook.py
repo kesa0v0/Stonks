@@ -49,7 +49,7 @@ async def test_get_orderbook(client: AsyncClient, db_session, test_ticker, test_
     await db_session.commit()
     
     # 2. Call API
-    response = await client.get(f"/market/orderbook/{ticker_id}")
+    response = await client.get(f"/api/v1/market/orderbook/{ticker_id}")
     
     assert response.status_code == 200
     data = response.json()
@@ -79,7 +79,7 @@ async def test_get_orderbook_empty(client: AsyncClient, test_ticker):
     """
     Test empty orderbook.
     """
-    response = await client.get(f"/market/orderbook/{test_ticker}")
+    response = await client.get(f"/api/v1/market/orderbook/{test_ticker}")
     
     assert response.status_code == 200
     data = response.json()

@@ -145,7 +145,7 @@ async def test_ranking_api(client: AsyncClient, db_session):
     await db_session.commit()
     
     # 2. Test PnL Ranking (Ace -> Champ -> Bomb)
-    response = await client.get("/rankings/pnl")
+    response = await client.get("/api/v1/rankings/pnl")
     assert response.status_code == 200
     data = response.json()
     assert data[0]["nickname"] == "Ace"
@@ -154,20 +154,20 @@ async def test_ranking_api(client: AsyncClient, db_session):
     assert data[2]["nickname"] == "Bomb"
     
     # 3. Test Loss Ranking (Bomb -> others)
-    response = await client.get("/rankings/loss")
+    response = await client.get("/api/v1/rankings/loss")
     assert response.status_code == 200
     data = response.json()
     assert data[0]["nickname"] == "Bomb"
     
     # 4. Test Volume Ranking (Bomb -> Ace -> Champ)
-    response = await client.get("/rankings/volume")
+    response = await client.get("/api/v1/rankings/volume")
     assert response.status_code == 200
     data = response.json()
     assert data[0]["nickname"] == "Bomb"
     assert data[0]["value"] == 100.0
     
     # 5. Test Win Rate Ranking (Champ 100% -> Ace 75% -> Bomb 20%)
-    response = await client.get("/rankings/win_rate")
+    response = await client.get("/api/v1/rankings/win_rate")
     assert response.status_code == 200
     data = response.json()
     assert data[0]["nickname"] == "Champ"
@@ -218,7 +218,7 @@ async def test_hall_of_fame(client: AsyncClient, db_session):
     await db_session.commit()
     
     # 2. Call API
-    response = await client.get("/rankings/hall-of-fame")
+    response = await client.get("/api/v1/rankings/hall-of-fame")
     assert response.status_code == 200
     data = response.json()
     
@@ -260,14 +260,14 @@ async def test_ranking_api_extended(client: AsyncClient, db_session):
     await db_session.commit()
     
     # 1. Profit Factor (Efficient > Impatient)
-    response = await client.get("/rankings/profit_factor")
+    response = await client.get("/api/v1/rankings/profit_factor")
     assert response.status_code == 200
     data = response.json()
     assert data[0]["nickname"] == "Efficient"
     assert data[0]["value"] == 10.0
     
     # 2. Market Ratio (Impatient > Efficient)
-    response = await client.get("/rankings/market_ratio")
+    response = await client.get("/api/v1/rankings/market_ratio")
     assert response.status_code == 200
     data = response.json()
     assert data[0]["nickname"] == "Impatient"

@@ -17,7 +17,7 @@ async def test_get_tickers(client: AsyncClient, db_session): # test_ticker fixtu
     db_session.add_all([ticker1, ticker2, ticker3])
     await db_session.commit()
 
-    response = await client.get("/market/tickers")
+    response = await client.get("/api/v1/market/tickers")
     
     assert response.status_code == 200
     tickers = response.json()
@@ -48,52 +48,52 @@ async def test_search_tickers(client: AsyncClient, db_session):
     await db_session.commit()
 
     # Case 1: Search by full symbol (case-insensitive)
-    response = await client.get("/market/search", params={"query": "goog"})
+    response = await client.get("/api/v1/market/search", params={"query": "goog"})
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 1
     assert data[0]["symbol"] == "GOOG"
 
     # Case 2: Search by partial name (case-insensitive)
-    response = await client.get("/market/search", params={"query": "soft"})
+    response = await client.get("/api/v1/market/search", params={"query": "soft"})
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 1
     assert data[0]["name"] == "Microsoft Corp"
 
     # Case 3: Search by part of symbol
-    response = await client.get("/market/search", params={"query": "tc"})
+    response = await client.get("/api/v1/market/search", params={"query": "tc"})
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 1
     assert data[0]["symbol"] == "BTC/KRW"
     
     # Case 4: Search with multiple matches
-    response = await client.get("/market/search", params={"query": "Apple"})
+    response = await client.get("/api/v1/market/search", params={"query": "Apple"})
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 1 # 'Apple Inc' (name) or 'APL' (symbol) - only one with 'Apple' name
     assert data[0]["name"] == "Apple"
 
     # Case 5: Inactive ticker should not be returned
-    response = await client.get("/market/search", params={"query": "InFocus"})
+    response = await client.get("/api/v1/market/search", params={"query": "InFocus"})
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 0 # Inactive ticker should not be returned
 
     # Case 6: No matching results
-    response = await client.get("/market/search", params={"query": "XYZ"})
+    response = await client.get("/api/v1/market/search", params={"query": "XYZ"})
     assert response.status_code == 200
     assert response.json() == []
 
     # Case 7: Limit parameter
-    response = await client.get("/market/search", params={"query": "c", "limit": 1}) # "c" matches MicroSoft and Bitcoin
+    response = await client.get("/api/v1/market/search", params={"query": "c", "limit": 1}) # "c" matches MicroSoft and Bitcoin
     assert response.status_code == 200
     data = response.json() # Update data variable
     assert len(data) == 1
     
     # Case 8: Invalid query (too short)
-    response = await client.get("/market/search", params={"query": ""})
+    response = await client.get("/api/v1/market/search", params={"query": ""})
     assert response.status_code == 422
 
 
@@ -122,7 +122,7 @@ async def test_get_candles(client: AsyncClient, db_session, test_ticker):
     await db_session.commit()
     
     # 2. Request candles
-    response = await client.get(f"/market/candles/{test_ticker}", params={"interval": "1m", "limit": 3})
+    response = await client.get(f"/api/v1/market/candles/{test_ticker}", params={"interval": "1m", "limit": 3})
     
     assert response.status_code == 200
     data = response.json()
@@ -150,7 +150,7 @@ async def test_get_candles_invalid_interval(client: AsyncClient, test_ticker):
     """
     Test validation error for invalid interval.
     """
-    response = await client.get(f"/market/candles/{test_ticker}", params={"interval": "1h"}) # 1h is not allowed
+    response = await client.get(f"/api/v1/market/candles/{test_ticker}", params={"interval": "1h"}) # 1h is not allowed
     assert response.status_code == 422 # Unprocessable Entity
 
 @pytest.mark.asyncio
@@ -166,6 +166,6 @@ async def test_get_candles_empty(client: AsyncClient, test_ticker):
     # Let's assume isolation. If not, we might get data.
     # To be safe, we can query a non-existent ticker, but the API doesn't 404 on empty, just returns [].
     
-    response = await client.get(f"/market/candles/NON_EXISTENT_TICKER", params={"interval": "1m"})
+    response = await client.get(f"/api/v1/market/candles/NON_EXISTENT_TICKER", params={"interval": "1m"})
     assert response.status_code == 200
     assert response.json() == []
