@@ -16,7 +16,7 @@ async def test_get_ticker_price(client: AsyncClient, test_ticker, mock_external_
     assert response.status_code == 200
     data = response.json()
     assert data["ticker_id"] == test_ticker
-    assert data["price"] == 100.0
+    assert float(data["price"]) == 100.0
 
 @pytest.mark.asyncio
 async def test_get_portfolio_structure(client: AsyncClient, db_session, test_user, test_ticker):
@@ -48,10 +48,10 @@ async def test_get_portfolio_structure(client: AsyncClient, db_session, test_use
     asset = data["assets"][0]
     
     assert asset["ticker_id"] == test_ticker
-    assert asset["quantity"] == 10.0
-    assert asset["current_price"] == 100.0
-    assert asset["total_value"] == 1000.0
-    assert asset["profit_rate"] == 11.11
+    assert float(asset["quantity"]) == 10.0
+    assert float(asset["current_price"]) == 100.0
+    assert float(asset["total_value"]) == 1000.0
+    assert float(asset["profit_rate"]) == 11.11
     
     # Check Total Asset Value
     # Cash (100,000,000) + Stock (1,000) = 100,001,000

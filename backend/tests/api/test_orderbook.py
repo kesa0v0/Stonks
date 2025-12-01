@@ -60,19 +60,19 @@ async def test_get_orderbook(client: AsyncClient, db_session, test_ticker, test_
     # Expect: 100.0 (qty 15), 99.0 (qty 20)
     bids = data["bids"]
     assert len(bids) == 2
-    assert bids[0]["price"] == 100.0
-    assert bids[0]["quantity"] == 15.0
-    assert bids[1]["price"] == 99.0
-    assert bids[1]["quantity"] == 20.0
+    assert float(bids[0]["price"]) == 100.0
+    assert float(bids[0]["quantity"]) == 15.0
+    assert float(bids[1]["price"]) == 99.0
+    assert float(bids[1]["quantity"]) == 20.0
     
     # 4. Verify Asks
     # Expect: 101.0 (qty 8), 102.0 (qty 15)
     asks = data["asks"]
     assert len(asks) == 2
-    assert asks[0]["price"] == 101.0
-    assert asks[0]["quantity"] == 8.0
-    assert asks[1]["price"] == 102.0
-    assert asks[1]["quantity"] == 15.0
+    assert float(asks[0]["price"]) == 101.0
+    assert float(asks[0]["quantity"]) == 8.0
+    assert float(asks[1]["price"]) == 102.0
+    assert float(asks[1]["quantity"]) == 15.0
 
 @pytest.mark.asyncio
 async def test_get_orderbook_empty(client: AsyncClient, test_ticker):

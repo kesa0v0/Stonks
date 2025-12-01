@@ -1,10 +1,11 @@
 from typing import Optional, Dict
 from pydantic import BaseModel
+from backend.schemas.common import DecimalStr
 
 class RankingEntry(BaseModel):
     rank: int
     nickname: str
-    value: float
+    value: DecimalStr
     extra_info: Optional[dict] = None
 
 class HallOfFameResponse(BaseModel):

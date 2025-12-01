@@ -26,13 +26,13 @@ async def test_admin_update_fee(client: AsyncClient, admin_user_token, mock_exte
     assert response.status_code == 200
     data = response.json()
     assert data["message"] == "Trading fee rate updated successfully"
-    assert data["fee_rate"] == new_fee_rate
+    assert float(data["fee_rate"]) == new_fee_rate
 
     # Verify the update by getting the fee again
     response = await client.get("/api/v1/admin/fee", headers=headers)
     assert response.status_code == 200
     data = response.json()
-    assert data["fee_rate"] == new_fee_rate
+    assert float(data["fee_rate"]) == new_fee_rate
 
     # Verify directly from Redis mock
     mock_redis = mock_external_services["redis"]

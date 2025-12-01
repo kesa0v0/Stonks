@@ -2,6 +2,7 @@ from enum import Enum
 from typing import List, Optional
 from pydantic import BaseModel, ConfigDict
 from backend.models.asset import MarketType, Currency, TickerSource
+from backend.schemas.common import DecimalStr
 
 class MarketState(str, Enum):
     OPEN = "OPEN"
@@ -45,12 +46,12 @@ class TickerResponse(BaseModel):
 
 class CurrentPriceResponse(BaseModel):
     ticker_id: str
-    price: float | None = None
+    price: DecimalStr | None = None
     message: str | None = None
 
 class OrderBookEntry(BaseModel):
-    price: float
-    quantity: float
+    price: DecimalStr
+    quantity: DecimalStr
 
 class OrderBookResponse(BaseModel):
     ticker_id: str

@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from decimal import Decimal
 from uuid import UUID
 from backend.core.enums import OrderType, OrderSide
+from backend.schemas.common import DecimalStr
 
 
 class OrderCreate(BaseModel):
@@ -31,12 +32,12 @@ class OrderResponse(BaseModel):
     ticker_id: Optional[str] = None
     side: Optional[str] = None
     type: Optional[str] = None
-    quantity: Optional[float] = None
-    target_price: Optional[float] = None
-    stop_price: Optional[float] = None
-    trailing_gap: Optional[float] = None
-    price: Optional[float] = None
-    unfilled_quantity: Optional[float] = None
+    quantity: Optional[DecimalStr] = None
+    target_price: Optional[DecimalStr] = None
+    stop_price: Optional[DecimalStr] = None
+    trailing_gap: Optional[DecimalStr] = None
+    price: Optional[DecimalStr] = None
+    unfilled_quantity: Optional[DecimalStr] = None
     created_at: Optional[datetime] = None
     cancelled_at: Optional[datetime] = None
     fail_reason: Optional[str] = None
@@ -54,8 +55,8 @@ class OrderListResponse(BaseModel):
     ticker_id: str
     side: str
     status: str
-    quantity: float
-    price: Optional[float] = None
+    quantity: DecimalStr
+    price: Optional[DecimalStr] = None
     created_at: datetime
 
     model_config = ConfigDict(

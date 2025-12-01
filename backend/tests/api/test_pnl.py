@@ -151,4 +151,4 @@ async def test_get_my_pnl_api(client, db_session, test_user, test_ticker):
     
     assert data["start_date"] == start_date
     assert data["end_date"] == end_date
-    assert data["realized_pnl"] == 50.0 # 100 - 50 = 50
+    assert float(data["realized_pnl"]) == 50.0 # 100 - 50 = 50

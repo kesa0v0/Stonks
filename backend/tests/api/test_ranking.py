@@ -149,7 +149,7 @@ async def test_ranking_api(client: AsyncClient, db_session):
     assert response.status_code == 200
     data = response.json()
     assert data[0]["nickname"] == "Ace"
-    assert data[0]["value"] == 10000.0
+    assert float(data[0]["value"]) == 10000.0
     assert data[1]["nickname"] == "Champ"
     assert data[2]["nickname"] == "Bomb"
     
@@ -164,16 +164,16 @@ async def test_ranking_api(client: AsyncClient, db_session):
     assert response.status_code == 200
     data = response.json()
     assert data[0]["nickname"] == "Bomb"
-    assert data[0]["value"] == 100.0
+    assert float(data[0]["value"]) == 100.0
     
     # 5. Test Win Rate Ranking (Champ 100% -> Ace 75% -> Bomb 20%)
     response = await client.get("/api/v1/rankings/win_rate")
     assert response.status_code == 200
     data = response.json()
     assert data[0]["nickname"] == "Champ"
-    assert data[0]["value"] == 100.0
+    assert float(data[0]["value"]) == 100.0
     assert data[1]["nickname"] == "Ace"
-    assert data[1]["value"] == 75.0
+    assert float(data[1]["value"]) == 75.0
 
 @pytest.mark.asyncio
 async def test_hall_of_fame(client: AsyncClient, db_session):
@@ -264,12 +264,12 @@ async def test_ranking_api_extended(client: AsyncClient, db_session):
     assert response.status_code == 200
     data = response.json()
     assert data[0]["nickname"] == "Efficient"
-    assert data[0]["value"] == 10.0
+    assert float(data[0]["value"]) == 10.0
     
     # 2. Market Ratio (Impatient > Efficient)
     response = await client.get("/api/v1/rankings/market_ratio")
     assert response.status_code == 200
     data = response.json()
     assert data[0]["nickname"] == "Impatient"
-    assert data[0]["value"] == 90.0
+    assert float(data[0]["value"]) == 90.0
 
