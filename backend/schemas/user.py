@@ -1,6 +1,7 @@
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, ConfigDict, EmailStr
 from uuid import UUID
+from backend.schemas.common import DecimalStr
 
 class UserCreate(BaseModel):
     email: EmailStr
@@ -17,5 +18,14 @@ class UserResponse(BaseModel):
     email: str
     nickname: str
     is_active: bool
+    badges: List[Dict[str, Any]]
+    
+    model_config = ConfigDict(from_attributes=True)
+
+class UserProfileResponse(BaseModel):
+    id: UUID
+    nickname: str
+    badges: List[Dict[str, Any]]
+    profit_rate: Optional[DecimalStr] = None # 공개 여부에 따라 달라짐
     
     model_config = ConfigDict(from_attributes=True)

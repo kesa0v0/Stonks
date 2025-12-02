@@ -15,7 +15,7 @@ from backend.core.database import Base, engine, wait_for_db
 from sqlalchemy import text
 from backend.create_test_user import create_test_user
 from backend.create_tickers import init_tickers
-from backend.app.routers import market, order, auth, admin, api_key, me, ranking, human
+from backend.app.routers import market, order, auth, admin, api_key, me, ranking, human, users
 from backend.core.rate_limit import init_rate_limiter
 from backend.core.exceptions import StonksError
 from backend.app.exception_handlers import stonks_exception_handler, general_exception_handler
@@ -75,6 +75,7 @@ tags_metadata = [
     {"name": "human_etf", "description": "Human ETF & Bankruptcy"},
     {"name": "admin", "description": "Admin Operations"},
     {"name": "api_key", "description": "API Key Management"},
+    {"name": "users", "description": "User Profiles"},
 ]
 
 app = FastAPI(
@@ -161,6 +162,7 @@ app.include_router(ranking.router, prefix="/api/v1")
 app.include_router(human.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
 app.include_router(api_key.router, prefix="/api/v1")
+app.include_router(users.router, prefix="/api/v1") # New users router
 
 # --- Custom OpenAPI to include API Key security scheme ---
 def custom_openapi():

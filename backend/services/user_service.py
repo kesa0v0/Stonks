@@ -7,10 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, update, delete
 
 from backend.core import constants
-from backend.core.exceptions import OrderNotFoundError, PermissionDeniedError, BankruptcyNotAllowedError
+from backend.core.exceptions import OrderNotFoundError, PermissionDeniedError, BankruptcyNotAllowedError, UserNotFoundError
 from backend.models import User, Wallet, Portfolio, Ticker, Order, MarketType, Currency, TickerSource
 from backend.schemas.portfolio import PortfolioResponse, AssetResponse, PnLResponse
 from backend.schemas.order import OrderResponse
+from backend.schemas.user import UserProfileResponse # Import new schema
 from backend.core.enums import OrderStatus
 from backend.services.common.asset import liquidate_user_assets
 from backend.services.common.price import get_current_price
@@ -277,3 +278,44 @@ async def process_bankruptcy(
         "is_bankrupt": True,
         "human_stock_issued": constants.HUMAN_STOCK_ISSUED_ON_BANKRUPTCY
     }
+
+async def get_user_profile(
+    db: AsyncSession,
+    user_id: UUID
+) -> UserProfileResponse:
+    """
+    특정 유저의 프로필 정보 (닉네임, 뱃지, 수익률 등)를 조회합니다.
+    """
+    user_result = await db.execute(
+        select(User)
+        .where(User.id == user_id)
+    )
+    user = user_result.scalars().first()
+
+    if not user:
+        raise UserNotFoundError("User not found.")
+
+    # Calculate profit rate for all time
+    start_date = user.created_at.date() if user.created_at else date(2020, 1, 1) # Fallback to a very old date
+    end_date = date.today()
+
+    pnl_response = await get_user_pnl(db, user_id, start_date, end_date)
+    
+    # Placeholder for profit_rate calculation
+    # In a real system, this would be a more sophisticated calculation
+    # involving initial capital, deposits, withdrawals, and current portfolio value.
+    # For now, let's use a simplified approach for demonstration.
+    # Assuming an arbitrary initial capital for ROI calculation.
+    initial_capital_for_roi_calc = 1_000_000 # Example: 1 million KRW starting capital (hypothetical)
+
+    profit_rate_percent = None
+    if pnl_response.realized_pnl is not None and initial_capital_for_roi_calc > 0:
+        profit_rate_percent = (pnl_response.realized_pnl / initial_capital_for_roi_calc) * 100
+        profit_rate_percent = f"{profit_rate_percent:.2f}" # Format to two decimal places
+
+    return UserProfileResponse(
+        id=user.id,
+        nickname=user.nickname,
+        badges=user.badges or [], # Ensure it's a list even if DB returns None
+        profit_rate=profit_rate_percent
+    )
