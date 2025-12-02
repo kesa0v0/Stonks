@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard';
 import Leaderboards from './pages/Leaderboards';
 import Portfolio from './pages/Portfolio';
 import HumanETF from './pages/HumanETF';
+import Market from './pages/Market';
 import Login from './pages/Login';
 import OAuthCallback from './pages/OAuthCallback';
 import RequireAuth from './components/RequireAuth';
@@ -25,7 +26,7 @@ export default function App() {
 
           {/* App pages (protected) */}
           <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
-          <Route path="/market" element={<RequireAuth><Dashboard /></RequireAuth>} />
+          <Route path="/market" element={<RequireAuth><Market /></RequireAuth>} />
           <Route path="/leaderboard" element={<RequireAuth><Leaderboards /></RequireAuth>} />
           <Route path="/portfolio" element={<RequireAuth><Portfolio /></RequireAuth>} />
           <Route path="/human" element={<RequireAuth><HumanETF /></RequireAuth>} />

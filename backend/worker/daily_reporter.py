@@ -73,7 +73,7 @@ async def send_daily_report():
     try:
         template = await get_message_template(redis, "daily_report")
     finally:
-        await redis.close()
+        await redis.aclose()
     msg = template.format(**data)
     await send_discord_webhook(msg, human_channel=False)
 

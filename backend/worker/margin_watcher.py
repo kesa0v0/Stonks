@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from uuid import UUID
 import redis.asyncio as async_redis
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select

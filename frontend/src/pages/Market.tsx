@@ -1,0 +1,208 @@
+import { useState, useEffect } from 'react';
+import api from '../api/client';
+import DashboardLayout from '../components/DashboardLayout';
+import type { OrderBookResponse } from '../interfaces';
+
+const toNumber = (v: string) => {
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+export default function Dashboard() {
+  const [tickerId] = useState('CRYPTO-COIN-ETH'); // 기본값 ETH
+  const [orderBook, setOrderBook] = useState<OrderBookResponse | null>(null);
+  const [price, setPrice] = useState<number>(3500); // 임시 초기값
+  const [amount, setAmount] = useState<string>('');
+  const [side, setSide] = useState<'BUY' | 'SELL'>('BUY');
+
+  // 데이터 로드 (호가창)
+  useEffect(() => {
+    const fetchOrderBook = async () => {
+      try {
+        const data = await api.get(`market/orderbook/${tickerId}`).json<OrderBookResponse>();
+        setOrderBook(data);
+      } catch (err) {
+        console.error("Failed to fetch orderbook", err);
+      }
+    };
+    
+    // 1초마다 호가창 갱신 (실제론 웹소켓 권장)
+    fetchOrderBook();
+    const interval = setInterval(fetchOrderBook, 1000);
+    return () => clearInterval(interval);
+  }, [tickerId]);
+
+  // 주문 제출 핸들러
+  const handleOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.post('orders', {
+        json: {
+          ticker_id: tickerId,
+          side: side,
+          type: 'LIMIT', // 예시로 지정가 주문
+          quantity: toNumber(amount),
+          target_price: price
+        }
+      });
+      alert("Order Placed Successfully!");
+      setAmount('');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Order Failed';
+      alert(message);
+    }
+  };
+
+  return (
+    <DashboardLayout>
+      {/* Header Bar */}
+      <header className="flex items-center justify-between border-b border-[#314368] pb-4 mb-6">
+        <div className="flex items-center gap-4">
+          <div className="w-10 h-10 rounded-full bg-[#222f49] flex items-center justify-center text-[#0d59f2]">
+            <span className="material-symbols-outlined text-2xl">currency_bitcoin</span>
+          </div>
+          <div>
+            <h1 className="text-white text-xl font-bold leading-tight">ETH / KRW</h1>
+            <p className="text-[#90a4cb] text-sm">Ethereum</p>
+          </div>
+        </div>
+        <div className="flex gap-4">
+          <div className="text-right hidden sm:block">
+            <p className="text-[#90a4cb] text-xs uppercase font-bold">24h Change</p>
+            <p className="text-[#00FF41] font-mono font-bold">+1.2%</p>
+          </div>
+          <div className="text-right hidden sm:block">
+            <p className="text-[#90a4cb] text-xs uppercase font-bold">24h Volume</p>
+            <p className="text-white font-mono font-bold">15.2B</p>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Grid */}
+      <div className="grid grid-cols-12 gap-6 h-[calc(100vh-180px)] min-h-[600px]">
+        
+        {/* Left Column: Chart (Mock Image for now) */}
+        <div className="col-span-12 lg:col-span-8 flex flex-col gap-6">
+          <div className="flex-1 rounded-xl border border-[#314368] bg-[#101623] p-4 flex flex-col">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-white font-bold">Price Chart</h3>
+              <div className="flex gap-2">
+                {['1H', '4H', '1D', '1W'].map(t => (
+                  <button key={t} className="px-3 py-1 rounded text-xs font-bold text-[#90a4cb] hover:bg-[#222f49] hover:text-white transition-colors">
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Chart Placeholder */}
+            <div className="flex-1 w-full bg-[#182234] rounded-lg flex items-center justify-center border border-[#314368]/30 relative overflow-hidden group">
+               <div className="absolute inset-0 opacity-20 bg-[url('https://www.tradingview.com/static/images/desktop-landing/chart.png')] bg-cover bg-center grayscale group-hover:grayscale-0 transition-all duration-500"></div>
+               <p className="text-[#90a4cb] z-10 font-medium">Interactive Chart Area</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Column: OrderBook & Trade Form */}
+        <div className="col-span-12 lg:col-span-4 flex flex-col gap-6">
+          
+          {/* Order Book */}
+          <div className="flex-[3] rounded-xl border border-[#314368] bg-[#101623] p-4 flex flex-col overflow-hidden">
+            <h3 className="text-white font-bold mb-3 border-b border-[#314368] pb-2">Order Book</h3>
+            <div className="flex-1 overflow-y-auto font-mono text-sm custom-scrollbar">
+              <table className="w-full">
+                <thead>
+                  <tr className="text-[#90a4cb] text-xs">
+                    <th className="text-left font-normal pb-2">Price</th>
+                    <th className="text-right font-normal pb-2">Amount</th>
+                    <th className="text-right font-normal pb-2">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* Asks (Sell Orders) - Red */}
+                  {orderBook?.asks.slice(0, 8).reverse().map((ask, i) => (
+                    <tr key={`ask-${i}`} className="hover:bg-[#2a1818] transition-colors relative">
+                      <td className="text-[#ef4444] py-1">{ask.price.toLocaleString()}</td>
+                      <td className="text-right text-white/70">{ask.quantity.toFixed(4)}</td>
+                      <td className="text-right text-white/40">{(ask.price * ask.quantity).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                  
+                  {/* Current Price Divider */}
+                  <tr className="border-y border-[#314368] bg-[#222f49]/50">
+                    <td colSpan={3} className="py-2 text-center text-lg font-bold text-white">
+                      {price.toLocaleString()} <span className="text-xs text-[#90a4cb] font-normal">KRW</span>
+                    </td>
+                  </tr>
+
+                  {/* Bids (Buy Orders) - Green (or Blue based on theme) */}
+                  {orderBook?.bids.slice(0, 8).map((bid, i) => (
+                    <tr key={`bid-${i}`} className="hover:bg-[#102a20] transition-colors relative">
+                      <td className="text-[#00FF41] py-1">{bid.price.toLocaleString()}</td>
+                      <td className="text-right text-white/70">{bid.quantity.toFixed(4)}</td>
+                      <td className="text-right text-white/40">{(bid.price * bid.quantity).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Trade Form */}
+          <div className="flex-[2] rounded-xl border border-[#314368] bg-[#101623] p-4 flex flex-col justify-center">
+            <div className="flex bg-[#182234] rounded-lg p-1 mb-4">
+              <button 
+                onClick={() => setSide('BUY')}
+                className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${side === 'BUY' ? 'bg-[#0d59f2] text-white shadow-lg' : 'text-[#90a4cb] hover:text-white'}`}
+              >
+                Buy
+              </button>
+              <button 
+                onClick={() => setSide('SELL')}
+                className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${side === 'SELL' ? 'bg-[#ef4444] text-white shadow-lg' : 'text-[#90a4cb] hover:text-white'}`}
+              >
+                Sell
+              </button>
+            </div>
+
+            <form onSubmit={handleOrder} className="flex flex-col gap-3">
+              <div>
+                <label className="text-xs font-bold text-[#90a4cb] uppercase">Price (KRW)</label>
+                <input 
+                  type="number" 
+                  className="w-full mt-1 bg-[#182234] border border-[#314368] rounded-lg px-3 py-2 text-white font-mono focus:border-[#0d59f2] focus:ring-1 focus:ring-[#0d59f2] outline-none transition-all"
+                  value={price}
+                  onChange={(e) => setPrice(parseFloat(e.target.value))}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-[#90a4cb] uppercase">Amount (ETH)</label>
+                <input 
+                  type="number" 
+                  step="0.0001"
+                  className="w-full mt-1 bg-[#182234] border border-[#314368] rounded-lg px-3 py-2 text-white font-mono focus:border-[#0d59f2] focus:ring-1 focus:ring-[#0d59f2] outline-none transition-all"
+                  placeholder="0.00"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                />
+              </div>
+              
+              <div className="mt-2 pt-3 border-t border-[#314368] flex justify-between text-sm">
+                <span className="text-[#90a4cb]">Total</span>
+                <span className="text-white font-bold">{(price * (parseFloat(amount) || 0)).toLocaleString()} KRW</span>
+              </div>
+
+              <button 
+                type="submit" 
+                className={`w-full py-3 rounded-lg font-bold text-white mt-2 transition-all hover:brightness-110 active:scale-95
+                  ${side === 'BUY' ? 'bg-[#0d59f2]' : 'bg-[#ef4444]'}`}
+              >
+                {side} ETH
+              </button>
+            </form>
+          </div>
+
+        </div>
+      </div>
+    </DashboardLayout>
+  );
+}
