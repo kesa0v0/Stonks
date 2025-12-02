@@ -7,11 +7,13 @@ import redis.asyncio as async_redis
 
 from backend.core.database import get_db
 from backend.models import User
-from backend.schemas.token import Token, RefreshTokenRequest, LogoutRequest
+from backend.schemas.token import Token, RefreshTokenRequest, LogoutRequest, DiscordExchangeRequest
 from backend.schemas.user import UserResponse
 from backend.core.cache import get_redis
 from backend.core.deps import oauth2_scheme, get_current_user
-from backend.services.auth_service import authenticate_user, refresh_access_token, logout_user
+from backend.services.auth_service import authenticate_user, refresh_access_token, logout_user, authenticate_with_discord
+from backend.core.config import settings
+from urllib.parse import urlencode
 
 router = APIRouter(tags=["authentication"])
 
@@ -56,3 +58,32 @@ async def logout(
     Logout: Blacklist the access token AND refresh token (if provided).
     """
     return await logout_user(redis_client, token, request)
+
+
+# --- Discord OAuth ---
+@router.get("/discord/authorize", dependencies=[Depends(get_rate_limiter("/discord/authorize"))])
+async def discord_authorize_url():
+    """
+    Returns the Discord OAuth2 authorization URL. Frontend can redirect to this URL.
+    """
+    params = {
+        "client_id": settings.DISCORD_CLIENT_ID,
+        "response_type": "code",
+        "redirect_uri": settings.DISCORD_REDIRECT_URI,
+        "scope": "identify email",
+        "prompt": "consent",
+    }
+    url = f"https://discord.com/api/oauth2/authorize?{urlencode(params)}"
+    return {"authorization_url": url}
+
+@router.post("/discord/exchange", response_model=Token, dependencies=[Depends(get_rate_limiter("/discord/exchange"))])
+async def discord_exchange_code(
+    req: DiscordExchangeRequest,
+    db: AsyncSession = Depends(get_db),
+    redis_client: async_redis.Redis = Depends(get_redis),
+):
+    """
+    Exchange Discord OAuth code to local tokens.
+    The `redirect_uri` should match the one used when initiating OAuth.
+    """
+    return await authenticate_with_discord(db, redis_client, req.code, req.redirect_uri)

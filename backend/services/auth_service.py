@@ -9,6 +9,7 @@ from fastapi import status
 from jose import jwt, JWTError, ExpiredSignatureError
 from pydantic import ValidationError
 from uuid import UUID
+import httpx
 
 from backend.core import security, constants
 from backend.core.config import settings
@@ -57,6 +58,102 @@ async def authenticate_user(
         ),
         "token_type": "bearer",
         "refresh_token": refresh_token
+    }
+
+async def authenticate_with_discord(
+    db: AsyncSession,
+    redis_client: async_redis.Redis,
+    code: str,
+    redirect_uri: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Exchange Discord OAuth code for user info, upsert user, and issue local tokens.
+    """
+    # 1) Exchange code → access_token
+    token_url = "https://discord.com/api/oauth2/token"
+    data = {
+        "client_id": settings.DISCORD_CLIENT_ID,
+        "client_secret": settings.DISCORD_CLIENT_SECRET,
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": redirect_uri or settings.DISCORD_REDIRECT_URI,
+    }
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    async with httpx.AsyncClient(timeout=15) as client:
+        token_res = await client.post(token_url, data=data, headers=headers)
+        if token_res.status_code >= 300:
+            raise InvalidCredentialsError("Discord token exchange failed")
+        token_json = token_res.json()
+        access_token = token_json.get("access_token")
+        if not access_token:
+            raise InvalidCredentialsError("Discord did not return access_token")
+
+        # 2) Fetch user info
+        user_res = await client.get(
+            "https://discord.com/api/users/@me",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        if user_res.status_code >= 300:
+            raise InvalidCredentialsError("Failed to fetch Discord user info")
+        du = user_res.json()
+
+    discord_id = str(du.get("id"))
+    username = du.get("global_name") or du.get("username") or "DiscordUser"
+    email = du.get("email")
+    if not email:
+        # Fallback email to satisfy NOT NULL constraint; can be updated later in profile.
+        email = f"discord_{discord_id}@placeholder.local"
+
+    # 3) Upsert user by (provider=social_id) or by email
+    user = await user_repo.get_by_social(db, provider="discord", social_id=discord_id)
+    if not user:
+        existing_by_email = await user_repo.get_by_email(db, email=email)
+        if existing_by_email:
+            # Link Discord to existing account
+            existing_by_email.provider = "discord"
+            existing_by_email.social_id = discord_id
+            if not existing_by_email.nickname:
+                existing_by_email.nickname = username[:50]
+            db.add(existing_by_email)
+            await db.commit()
+            await db.refresh(existing_by_email)
+            user = existing_by_email
+        else:
+            # Create new OAuth user (no password)
+            user = User(
+                email=email,
+                hashed_password=None,
+                nickname=username[:50],
+                is_active=True,
+                provider="discord",
+                social_id=discord_id,
+            )
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+
+    if not user.is_active:
+        raise UserInactiveError()
+
+    # 4) Issue tokens (same as local auth)
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    refresh_jti = str(uuid.uuid4())
+    refresh_token = security.create_refresh_token(subject=user.id, jti=refresh_jti)
+    refresh_exp = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    ttl = int(refresh_exp.timestamp() - datetime.utcnow().timestamp())
+    state_value = json.dumps({"jti": refresh_jti, "exp": int(refresh_exp.timestamp())})
+    try:
+        if ttl > 0:
+            await redis_client.setex(f"{constants.REDIS_PREFIX_REFRESH}{user.id}", ttl, state_value)
+    except Exception:
+        pass
+
+    return {
+        "access_token": security.create_access_token(
+            subject=user.id, expires_delta=access_token_expires
+        ),
+        "token_type": "bearer",
+        "refresh_token": refresh_token,
     }
 
 async def refresh_access_token(

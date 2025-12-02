@@ -17,3 +17,7 @@ class RefreshTokenRequest(BaseModel):
 
 class LogoutRequest(BaseModel):
     refresh_token: Optional[str] = None
+
+class DiscordExchangeRequest(BaseModel):
+    code: str
+    redirect_uri: Optional[str] = None

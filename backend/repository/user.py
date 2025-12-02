@@ -18,4 +18,10 @@ class UserRepository(BaseRepository[User, UserCreate, UserUpdate]):
     async def is_active(self, user: User) -> bool:
         return user.is_active
 
+    async def get_by_social(self, db: AsyncSession, *, provider: str, social_id: str) -> Optional[User]:
+        result = await db.execute(
+            select(User).where(User.provider == provider, User.social_id == social_id)
+        )
+        return result.scalars().first()
+
 user_repo = UserRepository(User)
