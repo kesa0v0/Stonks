@@ -12,6 +12,7 @@ from backend.core.cache import get_redis
 from backend.schemas.portfolio import PnLResponse, PortfolioResponse
 from backend.schemas.order import OrderListResponse, OrderResponse
 from backend.schemas.wallet import WalletTransactionHistory
+from backend.schemas.watchlist import WatchlistItemResponse
 from backend.repository.wallet_transaction_history import wallet_transaction_history_repo
 from backend.services.user_service import (
     get_user_portfolio,
@@ -20,6 +21,11 @@ from backend.services.user_service import (
     get_user_open_orders,
     get_user_order_detail,
     process_bankruptcy
+)
+from backend.services.watchlist_service import (
+    add_watchlist_item,
+    remove_watchlist_item,
+    get_user_watchlist
 )
 
 router = APIRouter(prefix="/me", tags=["me"])
@@ -34,6 +40,40 @@ async def get_my_portfolio(
     내 포트폴리오(보유 자산 및 현금)를 조회합니다.
     """
     return await get_user_portfolio(db, user_id, redis)
+
+@router.get("/watchlist", response_model=List[WatchlistItemResponse], dependencies=[Depends(get_rate_limiter("/me/watchlist"))])
+async def get_my_watchlist(
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
+    redis: async_redis.Redis = Depends(get_redis)
+):
+    """
+    내 관심 종목 리스트 및 간략 시세 조회
+    """
+    return await get_user_watchlist(db, user_id, redis)
+
+@router.post("/watchlist/{ticker_id}", dependencies=[Depends(get_rate_limiter("/me/watchlist/add"))])
+async def add_to_my_watchlist(
+    ticker_id: str,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id)
+):
+    """
+    관심 종목 등록
+    """
+    await add_watchlist_item(db, user_id, ticker_id)
+    return {"message": "Ticker added to watchlist"}
+
+@router.delete("/watchlist/{ticker_id}", dependencies=[Depends(get_rate_limiter("/me/watchlist/remove"))])
+async def remove_from_my_watchlist(
+    ticker_id: str,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id)
+):
+    """
+    관심 종목 해제
+    """
+    return await remove_watchlist_item(db, user_id, ticker_id)
 
 @router.get("/wallet/history", response_model=List[WalletTransactionHistory], dependencies=[Depends(get_rate_limiter("/me/wallet/history"))])
 async def get_my_wallet_history(

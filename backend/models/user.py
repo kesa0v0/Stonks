@@ -31,6 +31,7 @@ class User(Base):
     wallet = relationship("Wallet", back_populates="user", uselist=False)
     portfolios = relationship("Portfolio", back_populates="user")
     orders = relationship("Order", back_populates="user")
+    watchlists = relationship("Watchlist", back_populates="user", cascade="all, delete-orphan")
 
 class Wallet(Base):
     __tablename__ = "wallets"
