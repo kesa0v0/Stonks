@@ -1,22 +1,18 @@
 import { useMemo, useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import api from '../api/client';
 import DashboardLayout from '../components/DashboardLayout';
-import type { TickerResponse, MoverResponse, OrderBookResponse } from '../interfaces';
+import type { TickerResponse, MoverResponse } from '../interfaces';
 
-const toNumber = (v: string) => {
-  const n = parseFloat(v);
-  return Number.isFinite(n) ? n : 0;
-};
+//
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   // Categories & search
   const [category, setCategory] = useState<'ALL' | 'KRX' | 'US' | 'CRYPTO' | 'HUMAN'>('ALL');
   const [search, setSearch] = useState('');
-  const [selected, setSelected] = useState<TickerResponse | null>(null);
-  const [side, setSide] = useState<'BUY' | 'SELL'>('BUY');
-  const [amount, setAmount] = useState('');
-  const [price, setPrice] = useState<number>(0);
+  
 
   // Queries
   const tickersQ = useQuery({
@@ -43,34 +39,10 @@ export default function Dashboard() {
       (search.trim() ? (t.symbol.toLowerCase().includes(search.toLowerCase()) || t.name.toLowerCase().includes(search.toLowerCase())) : true));
   }, [tickersQ.data, category, search]);
 
-  // When selecting a ticker, fetch price + orderbook
-  const orderbookQ = useQuery({
-    queryKey: ['orderbook', selected?.id],
-    queryFn: () => api.get(`market/orderbook/${selected!.id}`).json<OrderBookResponse>(),
-    enabled: !!selected,
-    refetchInterval: selected ? 1500 : false,
-  });
-  // Optionally compute mid price for display or defaults
-
-  const placeOrder = useMutation({
-    mutationFn: async () => {
-      if (!selected) throw new Error('No ticker selected');
-      await api.post('orders', {
-        json: {
-          ticker_id: selected.id,
-          side,
-          type: 'LIMIT',
-          quantity: toNumber(amount),
-          target_price: price,
-        },
-      });
-    },
-  });
+  //
 
   const onTrade = (t: TickerResponse) => {
-    setSelected(t);
-    setAmount('');
-    setSide('BUY');
+    navigate(`/market/${t.id}`);
   };
 
   return (
@@ -155,97 +127,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Trade Modal */}
-      {selected && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setSelected(null)}>
-          <div className="w-full max-w-xl bg-[#101623] border border-[#314368] rounded-lg p-4" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-[#0bda43]">trending_up</span>
-                <p className="text-white text-base font-medium leading-normal">{selected.symbol} / {selected.currency}</p>
-              </div>
-              <button className="text-white/70 hover:text-white" onClick={() => setSelected(null)}>✕</button>
-            </div>
-
-            {/* Orderbook */}
-            <div className="rounded-lg border border-[#314368] bg-[#182234] p-3 mb-4">
-              <h3 className="text-white font-bold mb-2">Order Book</h3>
-              <div className="grid grid-cols-2 gap-2 text-sm font-mono">
-                <div>
-                  <p className="text-[#fa5538] font-semibold mb-1">Asks</p>
-                  {orderbookQ.data?.asks.slice(0, 8).reverse().map((a, i) => (
-                    <div key={`ask-${i}`} className="flex justify-between text-white/80">
-                      <span>{a.price.toLocaleString()}</span>
-                      <span>{Number(a.quantity).toFixed(4)}</span>
-                    </div>
-                  ))}
-                </div>
-                <div>
-                  <p className="text-[#0bda43] font-semibold mb-1">Bids</p>
-                  {orderbookQ.data?.bids.slice(0, 8).map((b, i) => (
-                    <div key={`bid-${i}`} className="flex justify-between text-white/80">
-                      <span>{b.price.toLocaleString()}</span>
-                      <span>{Number(b.quantity).toFixed(4)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Trade form */}
-            <div className="rounded-lg border border-[#314368] bg-[#182234] p-3">
-              <div className="flex bg-[#182234] rounded-lg p-1 mb-4 border border-[#314368]">
-                <button 
-                  onClick={() => setSide('BUY')}
-                  className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${side === 'BUY' ? 'bg-primary text-background-dark' : 'text-[#90a4cb] hover:text-white'}`}
-                >
-                  Buy
-                </button>
-                <button 
-                  onClick={() => setSide('SELL')}
-                  className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${side === 'SELL' ? 'bg-[#fa5538] text-white' : 'text-[#90a4cb] hover:text-white'}`}
-                >
-                  Sell
-                </button>
-              </div>
-
-              <form onSubmit={e => { e.preventDefault(); placeOrder.mutate(); }} className="flex flex-col gap-3">
-                <div>
-                  <label className="text-xs font-bold text-[#90a4cb] uppercase">Price ({selected.currency})</label>
-                  <input 
-                    type="number" 
-                    className="w-full mt-1 bg-[#182234] border border-[#314368] rounded-lg px-3 py-2 text-white font-mono focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
-                    value={price}
-                    onChange={(e) => setPrice(parseFloat(e.target.value))}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-[#90a4cb] uppercase">Amount</label>
-                  <input 
-                    type="number" 
-                    step="0.0001"
-                    className="w-full mt-1 bg-[#182234] border border-[#314368] rounded-lg px-3 py-2 text-white font-mono focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
-                    placeholder="0.00"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                  />
-                </div>
-                <div className="mt-2 pt-3 border-t border-[#314368] flex justify-between text-sm">
-                  <span className="text-[#90a4cb]">Total</span>
-                  <span className="text-white font-bold">{(price * (parseFloat(amount) || 0)).toLocaleString()} {selected.currency}</span>
-                </div>
-                <button 
-                  type="submit" 
-                  disabled={placeOrder.isPending}
-                  className={`w-full py-3 rounded-lg font-bold text-white mt-2 transition-all hover:brightness-110 active:scale-95 ${side === 'BUY' ? 'bg-primary text-background-dark' : 'bg-[#fa5538]'}`}
-                >
-                  {placeOrder.isPending ? 'Placing...' : `${side} ${selected.symbol}`}
-                </button>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Trade Modal disabled; Trade navigates to Market page */}
     </DashboardLayout>
   );
 }

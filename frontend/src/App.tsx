@@ -30,6 +30,7 @@ export default function App() {
           <Route path="/leaderboard" element={<RequireAuth><Leaderboards /></RequireAuth>} />
           <Route path="/portfolio" element={<RequireAuth><Portfolio /></RequireAuth>} />
           <Route path="/human" element={<RequireAuth><HumanETF /></RequireAuth>} />
+          <Route path="/market/:tickerId" element={<RequireAuth><Market /></RequireAuth>} />
 
           {/* Default & Fallback */}
           <Route path="/" element={<Navigate to="/dashboard" replace />} />

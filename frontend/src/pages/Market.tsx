@@ -1,15 +1,25 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import api from '../api/client';
 import DashboardLayout from '../components/DashboardLayout';
-import type { OrderBookResponse } from '../interfaces';
+import type { OrderBookResponse, TickerResponse } from '../interfaces';
 
 const toNumber = (v: string) => {
   const n = parseFloat(v);
   return Number.isFinite(n) ? n : 0;
 };
 
-export default function Dashboard() {
-  const [tickerId] = useState('CRYPTO-COIN-ETH'); // 기본값 ETH
+export default function Market() {
+  const { tickerId: routeTickerId } = useParams<{ tickerId: string }>();
+  const tickerId = routeTickerId ?? 'CRYPTO-COIN-ETH';
+  const tickersQ = useQuery({
+    queryKey: ['tickers'],
+    queryFn: () => api.get('market/tickers').json<TickerResponse[]>(),
+  });
+  const selectedTicker = useMemo(() => (tickersQ.data || []).find(t => t.id === tickerId), [tickersQ.data, tickerId]);
+  const symbol = selectedTicker?.symbol ?? (tickerId.split('-').pop() || tickerId);
+  const currency = selectedTicker?.currency ?? 'KRW';
   const [orderBook, setOrderBook] = useState<OrderBookResponse | null>(null);
   const [price, setPrice] = useState<number>(3500); // 임시 초기값
   const [amount, setAmount] = useState<string>('');
@@ -62,8 +72,8 @@ export default function Dashboard() {
             <span className="material-symbols-outlined text-2xl">currency_bitcoin</span>
           </div>
           <div>
-            <h1 className="text-white text-xl font-bold leading-tight">ETH / KRW</h1>
-            <p className="text-[#90a4cb] text-sm">Ethereum</p>
+            <h1 className="text-white text-xl font-bold leading-tight">{symbol} / {currency}</h1>
+            <p className="text-[#90a4cb] text-sm">{selectedTicker?.name ?? tickerId}</p>
           </div>
         </div>
         <div className="flex gap-4">
@@ -166,7 +176,7 @@ export default function Dashboard() {
 
             <form onSubmit={handleOrder} className="flex flex-col gap-3">
               <div>
-                <label className="text-xs font-bold text-[#90a4cb] uppercase">Price (KRW)</label>
+                <label className="text-xs font-bold text-[#90a4cb] uppercase">Price ({currency})</label>
                 <input 
                   type="number" 
                   className="w-full mt-1 bg-[#182234] border border-[#314368] rounded-lg px-3 py-2 text-white font-mono focus:border-[#0d59f2] focus:ring-1 focus:ring-[#0d59f2] outline-none transition-all"
@@ -175,7 +185,7 @@ export default function Dashboard() {
                 />
               </div>
               <div>
-                <label className="text-xs font-bold text-[#90a4cb] uppercase">Amount (ETH)</label>
+                <label className="text-xs font-bold text-[#90a4cb] uppercase">Amount ({symbol})</label>
                 <input 
                   type="number" 
                   step="0.0001"
@@ -188,7 +198,7 @@ export default function Dashboard() {
               
               <div className="mt-2 pt-3 border-t border-[#314368] flex justify-between text-sm">
                 <span className="text-[#90a4cb]">Total</span>
-                <span className="text-white font-bold">{(price * (parseFloat(amount) || 0)).toLocaleString()} KRW</span>
+                <span className="text-white font-bold">{(price * (parseFloat(amount) || 0)).toLocaleString()} {currency}</span>
               </div>
 
               <button 
@@ -196,7 +206,7 @@ export default function Dashboard() {
                 className={`w-full py-3 rounded-lg font-bold text-white mt-2 transition-all hover:brightness-110 active:scale-95
                   ${side === 'BUY' ? 'bg-[#0d59f2]' : 'bg-[#ef4444]'}`}
               >
-                {side} ETH
+                {side} {symbol}
               </button>
             </form>
           </div>
