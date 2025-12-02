@@ -1,6 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Dashboard from './pages/Dashboard';
+import Leaderboards from './pages/Leaderboards';
+import Portfolio from './pages/Portfolio';
+import HumanETF from './pages/HumanETF';
 import Login from './pages/Login';
 import OAuthCallback from './pages/OAuthCallback';
 import RequireAuth from './components/RequireAuth';
@@ -12,10 +15,20 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
+          {/* Auth */}
           <Route path="/login" element={<Login />} />
           <Route path="/auth/discord/callback" element={<OAuthCallback />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+
+          {/* App pages (protected) */}
+          <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
+          <Route path="/market" element={<RequireAuth><Dashboard /></RequireAuth>} />
+          <Route path="/leaderboard" element={<RequireAuth><Leaderboards /></RequireAuth>} />
+          <Route path="/portfolio" element={<RequireAuth><Portfolio /></RequireAuth>} />
+          <Route path="/human" element={<RequireAuth><HumanETF /></RequireAuth>} />
+
+          {/* Default & Fallback */}
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </BrowserRouter>
     </QueryClientProvider>

@@ -1,0 +1,67 @@
+import type { ReactNode } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+
+interface DashboardLayoutProps {
+  children: ReactNode;
+}
+
+export default function DashboardLayout({ children }: DashboardLayoutProps) {
+  const location = useLocation();
+  const getAvatarUrl = (seed: string) => `https://api.dicebear.com/7.x/pixel-art/svg?seed=${seed}`;
+
+  // 현재 경로와 일치하면 active 처리
+  const isActive = (path: string) => location.pathname === path;
+
+  return (
+    <div className="flex min-h-screen w-full flex-row bg-[#f5f6f8] dark:bg-[#101622] font-sans text-white">
+      {/* Sidebar */}
+      <aside className="flex h-screen flex-col justify-between border-r border-r-[#314368] bg-[#101623] p-4 w-64 sticky top-0 shrink-0">
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-3">
+            <div className="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10" style={{ backgroundImage: `url("${getAvatarUrl('admin')}")` }}></div>
+            <div className="flex flex-col">
+              <h1 className="text-white text-base font-medium leading-normal">CyberTrader</h1>
+              <p className="text-[#90a4cb] text-sm font-normal leading-normal">Terminal v2.0</p>
+            </div>
+          </div>
+          <nav className="flex flex-col gap-2 mt-4">
+            {/* to 속성으로 경로 연결 */}
+            <NavItem to="/dashboard" icon="bar_chart" label="Dashboard" active={isActive('/dashboard')} />
+            <NavItem to="/market" icon="storefront" label="Markets" active={isActive('/market')} />
+            <NavItem to="/leaderboard" icon="emoji_events" label="Leaderboard" active={isActive('/leaderboard')} />
+            <NavItem to="/portfolio" icon="pie_chart" label="Portfolio" active={isActive('/portfolio')} />
+            <NavItem to="/human" icon="rocket_launch" label="Human ETF" active={isActive('/human')} />
+          </nav>
+        </div>
+        <div className="flex flex-col gap-4">
+          <button className="flex w-full cursor-pointer items-center justify-center rounded-lg h-10 px-4 bg-[#0d59f2] text-white text-sm font-bold hover:bg-[#0d59f2]/90 transition-colors">
+            Connect Wallet
+          </button>
+          <div className="flex flex-col gap-1">
+            <NavItem to="/help" icon="help" label="Help Center" />
+            <NavItem to="/" icon="logout" label="Logout" />
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col p-8 bg-[#101622] overflow-y-auto h-screen">
+        <div className="flex flex-col max-w-[1200px] mx-auto w-full gap-8">
+          {children}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+// Link 컴포넌트 사용
+const NavItem = ({ to, icon, label, active = false }: { to: string, icon: string, label: string, active?: boolean }) => (
+  <Link 
+    to={to} 
+    className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
+      ${active ? 'bg-[#222f49] text-white' : 'text-white/70 hover:bg-[#222f49] hover:text-white'}`}
+  >
+    <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>{icon}</span>
+    <p className="text-sm font-medium leading-normal">{label}</p>
+  </Link>
+);

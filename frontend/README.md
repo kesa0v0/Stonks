@@ -71,3 +71,50 @@ export default defineConfig([
   },
 ])
 ```
+
+## Dev Password Login (Hidden)
+
+This project hides the email/password login form by default and only shows Discord OAuth. To reveal the hidden dev credential form you must set an environment flag and use a key combo.
+
+### 1. Enable Flag
+
+Create one of these files in `frontend/`:
+
+```text
+frontend/.env.local
+frontend/.env.development
+```
+
+Add:
+
+```bash
+VITE_API_BASE_URL=http://localhost:8000
+VITE_WS_URL=ws://localhost:8000/ws
+VITE_ENABLE_PASSWORD_LOGIN=true
+```
+
+Restart `npm run dev` after saving (Vite reads env on startup).
+
+### 2. Reveal Form
+
+On the login page press `Ctrl + Alt + D` (Windows/Linux) or `Control + Option + D` (macOS). A subtle hint text appears if the flag is active; the form toggles each time.
+
+### 3. Seed Accounts (Example)
+
+```text
+test@kesa.uk    / test1234
+admin@stonks.com / admin
+```
+
+Never keep these credentials or the flag enabled in production builds.
+
+### 4. Troubleshooting
+
+- Not showing: confirm `VITE_ENABLE_PASSWORD_LOGIN=true` and server restart.
+- Key ignored: ensure browser focus (not URL bar), try different tab.
+- Console check: temporarily `console.log(import.meta.env.VITE_ENABLE_PASSWORD_LOGIN)` in `Login.tsx`.
+- Remove in prod: omit variable or set to `false`.
+
+### 5. Hard Removal (Optional)
+
+For stronger production stripping, wrap the dev block with a build-time constant using `define` in `vite.config.ts` or a feature flag system so dead code elimination can remove it.
