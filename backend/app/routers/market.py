@@ -1,4 +1,5 @@
-from typing import List
+from typing import List, Optional
+from datetime import datetime
 from fastapi import APIRouter, Depends, Security, Query
 from backend.core.rate_limit_config import get_rate_limiter
 import redis.asyncio as async_redis
@@ -55,13 +56,24 @@ async def get_candles(
     ticker_id: str,
     interval: str = Query("1m", pattern="^(1m|1d)$"), # 1m 또는 1d 만 허용
     limit: int = Query(100, le=500), 
+    before: Optional[str] = Query(None, description="ISO format timestamp for pagination"),
     db: AsyncSession = Depends(get_db)
 ):
     """
     특정 종목의 과거 차트 데이터(분봉/일봉)를 조회합니다.
     - interval: "1m" (분봉) 또는 "1d" (일봉)
+    - before: 특정 시간 이전의 데이터 조회 (ISO string)
     """
-    return await get_candle_history(db, ticker_id, interval, limit)
+    before_dt = None
+    if before:
+        try:
+            # Handle "Z" for UTC which fromisoformat doesn't like in older Pythons
+            before_dt = datetime.fromisoformat(before.replace("Z", "+00:00"))
+        except ValueError:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail=f"Invalid timestamp format: {before}")
+
+    return await get_candle_history(db, ticker_id, interval, limit, before_dt)
 
 @router.get("/orderbook/{ticker_id}", response_model=OrderBookResponse, dependencies=[Depends(get_rate_limiter("/market/orderbook/{ticker_id}"))])
 async def get_orderbook(

@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import api from '../api/client';
 import DashboardLayout from '../components/DashboardLayout';
+import { CandleChart } from '../components/CandleChart';
 import type { OrderBookResponse, TickerResponse } from '../interfaces';
 
 const toNumber = (v: string) => {
@@ -24,6 +25,8 @@ export default function Market() {
   const [price, setPrice] = useState<number>(3500); // 임시 초기값
   const [amount, setAmount] = useState<string>('');
   const [side, setSide] = useState<'BUY' | 'SELL'>('BUY');
+  const [chartInterval, setChartInterval] = useState<'1m' | '1d'>('1m');
+  const [chartType, setChartType] = useState<'candle' | 'area'>('candle');
 
   useEffect(() => {
     try {
@@ -46,8 +49,8 @@ export default function Market() {
     
     // 1초마다 호가창 갱신 (실제론 웹소켓 권장)
     fetchOrderBook();
-    const interval = setInterval(fetchOrderBook, 1000);
-    return () => clearInterval(interval);
+    const timerId = setInterval(fetchOrderBook, 1000);
+    return () => clearInterval(timerId);
   }, [tickerId]);
 
   // 주문 제출 핸들러
@@ -99,23 +102,50 @@ export default function Market() {
       {/* Main Grid */}
       <div className="grid grid-cols-12 gap-6 h-[calc(100vh-180px)] min-h-[600px]">
         
-        {/* Left Column: Chart (Mock Image for now) */}
+        {/* Left Column: Chart */}
         <div className="col-span-12 lg:col-span-8 flex flex-col gap-6">
           <div className="flex-1 rounded-xl border border-[#314368] bg-[#101623] p-4 flex flex-col">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-white font-bold">Price Chart</h3>
-              <div className="flex gap-2">
-                {['1H', '4H', '1D', '1W'].map(t => (
-                  <button key={t} className="px-3 py-1 rounded text-xs font-bold text-[#90a4cb] hover:bg-[#222f49] hover:text-white transition-colors">
-                    {t}
+              <div className="flex gap-4">
+                {/* Interval Toggle */}
+                <div className="flex gap-2 bg-[#182234] p-1 rounded-lg">
+                  <button 
+                    onClick={() => setChartInterval('1m')}
+                    className={`px-3 py-1 rounded text-xs font-bold transition-colors ${chartInterval === '1m' ? 'bg-[#222f49] text-white shadow' : 'text-[#90a4cb] hover:text-white'}`}
+                  >
+                    1M (분봉)
                   </button>
-                ))}
+                  <button 
+                    onClick={() => setChartInterval('1d')}
+                    className={`px-3 py-1 rounded text-xs font-bold transition-colors ${chartInterval === '1d' ? 'bg-[#222f49] text-white shadow' : 'text-[#90a4cb] hover:text-white'}`}
+                  >
+                    1D (일봉)
+                  </button>
+                </div>
+
+                {/* Type Toggle */}
+                <div className="flex gap-2 bg-[#182234] p-1 rounded-lg">
+                  <button 
+                    onClick={() => setChartType('candle')}
+                    className={`p-1 rounded transition-colors ${chartType === 'candle' ? 'bg-[#222f49] text-white shadow' : 'text-[#90a4cb] hover:text-white'}`}
+                    title="Candlestick"
+                  >
+                    <span className="material-symbols-outlined text-sm">candlestick_chart</span>
+                  </button>
+                  <button 
+                    onClick={() => setChartType('area')}
+                    className={`p-1 rounded transition-colors ${chartType === 'area' ? 'bg-[#222f49] text-white shadow' : 'text-[#90a4cb] hover:text-white'}`}
+                    title="Area Line"
+                  >
+                     <span className="material-symbols-outlined text-sm">show_chart</span>
+                  </button>
+                </div>
               </div>
             </div>
-            {/* Chart Placeholder */}
-            <div className="flex-1 w-full bg-[#182234] rounded-lg flex items-center justify-center border border-[#314368]/30 relative overflow-hidden group">
-               <div className="absolute inset-0 opacity-20 bg-[url('https://www.tradingview.com/static/images/desktop-landing/chart.png')] bg-cover bg-center grayscale group-hover:grayscale-0 transition-all duration-500"></div>
-               <p className="text-[#90a4cb] z-10 font-medium">Interactive Chart Area</p>
+            {/* Chart Area */}
+            <div className="flex-1 w-full bg-[#101623] rounded-lg overflow-hidden border border-[#314368]/30 relative">
+               <CandleChart tickerId={tickerId} interval={chartInterval} chartType={chartType} />
             </div>
           </div>
         </div>
