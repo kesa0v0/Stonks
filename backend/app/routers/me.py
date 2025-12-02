@@ -11,6 +11,8 @@ from backend.core.deps import get_current_user_id
 from backend.core.cache import get_redis
 from backend.schemas.portfolio import PnLResponse, PortfolioResponse
 from backend.schemas.order import OrderListResponse, OrderResponse
+from backend.schemas.wallet import WalletTransactionHistory
+from backend.repository.wallet_transaction_history import wallet_transaction_history_repo
 from backend.services.user_service import (
     get_user_portfolio,
     get_user_pnl,
@@ -32,6 +34,19 @@ async def get_my_portfolio(
     내 포트폴리오(보유 자산 및 현금)를 조회합니다.
     """
     return await get_user_portfolio(db, user_id, redis)
+
+@router.get("/wallet/history", response_model=List[WalletTransactionHistory], dependencies=[Depends(get_rate_limiter("/me/wallet/history"))])
+async def get_my_wallet_history(
+    skip: int = 0,
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id)
+):
+    """
+    내 지갑(현금) 변동 내역을 조회합니다.
+    (입출금, 배당, 수수료, 파산 청산 등)
+    """
+    return await wallet_transaction_history_repo.get_multi_by_user_id(db, user_id=user_id, skip=skip, limit=limit)
 
 @router.get("/pnl", response_model=PnLResponse, dependencies=[Depends(get_rate_limiter("/me/pnl"))])
 async def get_my_pnl(
