@@ -11,6 +11,15 @@ export const setRefreshToken = (t: string | null) => {
   else localStorage.removeItem(refreshTokenKey);
 };
 
+let onUnauthorized: (() => void) | null = null;
+export const setOnUnauthorized = (fn: (() => void) | null) => { onUnauthorized = fn; };
+const handleUnauthorized = () => {
+  setAccessToken(null);
+  setRefreshToken(null);
+  if (onUnauthorized) onUnauthorized();
+  else if (typeof window !== 'undefined') window.location.href = '/login';
+};
+
 const baseUrl = import.meta.env.VITE_API_BASE_URL as string;
 
 const api = ky.create({
@@ -27,7 +36,10 @@ const api = ky.create({
       async (request, _options, response) => {
         if (response.status === 401) {
           const rt = getRefreshToken();
-          if (!rt) return;
+          if (!rt) {
+            handleUnauthorized();
+            return;
+          }
           try {
             const r = await ky.post(`${baseUrl}/auth/login/refresh`, {
               json: { refresh_token: rt }
@@ -36,7 +48,7 @@ const api = ky.create({
             setRefreshToken(r.refresh_token);
             return ky(request);
           } catch {
-            // fall through (unauthorized)
+            handleUnauthorized();
           }
         }
       }

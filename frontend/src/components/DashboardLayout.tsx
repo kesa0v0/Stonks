@@ -39,7 +39,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           </button>
           <div className="flex flex-col gap-1">
             <NavItem to="/help" icon="help" label="Help Center" />
-            <NavItem to="/" icon="logout" label="Logout" />
+            <NavItem to="/logout" icon="logout" label="Logout" />
           </div>
         </div>
       </aside>
