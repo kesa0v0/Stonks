@@ -55,14 +55,17 @@ async def search_tickers(
 async def get_candles(
     ticker_id: str,
     interval: str = Query("1m", pattern="^(1m|1d)$"), # 1m 또는 1d 만 허용
-    limit: int = Query(100, le=500), 
+    limit: int = Query(100, le=20000), 
     before: Optional[str] = Query(None, description="ISO format timestamp for pagination"),
+    after: Optional[str] = Query(None, description="ISO format timestamp for range start"),
     db: AsyncSession = Depends(get_db)
 ):
     """
     특정 종목의 과거 차트 데이터(분봉/일봉)를 조회합니다.
     - interval: "1m" (분봉) 또는 "1d" (일봉)
-    - before: 특정 시간 이전의 데이터 조회 (ISO string)
+    - limit: 최대 20000개
+    - before: 특정 시간 이전 (Pagination)
+    - after: 특정 시간 이후 (Range Filtering)
     """
     before_dt = None
     if before:
@@ -71,9 +74,17 @@ async def get_candles(
             before_dt = datetime.fromisoformat(before.replace("Z", "+00:00"))
         except ValueError:
             from fastapi import HTTPException
-            raise HTTPException(status_code=400, detail=f"Invalid timestamp format: {before}")
+            raise HTTPException(status_code=400, detail=f"Invalid timestamp format (before): {before}")
 
-    return await get_candle_history(db, ticker_id, interval, limit, before_dt)
+    after_dt = None
+    if after:
+        try:
+            after_dt = datetime.fromisoformat(after.replace("Z", "+00:00"))
+        except ValueError:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail=f"Invalid timestamp format (after): {after}")
+
+    return await get_candle_history(db, ticker_id, interval, limit, before_dt, after_dt)
 
 @router.get("/orderbook/{ticker_id}", response_model=OrderBookResponse, dependencies=[Depends(get_rate_limiter("/market/orderbook/{ticker_id}"))])
 async def get_orderbook(

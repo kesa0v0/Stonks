@@ -15,15 +15,19 @@ interface CandleData {
 
 interface ChartProps {
   tickerId: string;
-  interval?: '1m' | '1d';
+  range?: '1D' | '1W' | '3M' | '1Y' | '5Y';
   chartType?: 'candle' | 'area';
 }
 
-export const CandleChart = ({ tickerId, interval = '1m', chartType = 'candle' }: ChartProps) => {
+export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle' }: ChartProps) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick" | "Area"> | null>(null);
   
+  // Map range to interval
+  // 1D and 1W use 1m interval for detail. 3M+ use 1d.
+  const interval = (range === '1D' || range === '1W') ? '1m' : '1d';
+
   // State refs to avoid re-renders disrupting chart
   const isFetchingHistory = useRef(false);
   const earliestTimestamp = useRef<string | null>(null);
@@ -55,11 +59,53 @@ export const CandleChart = ({ tickerId, interval = '1m', chartType = 'candle' }:
 
     setStatus('loading');
     hasMoreHistory.current = true;
+    allDataRef.current = []; // Reset data for new range
     
+    // Calculate 'after' timestamp based on KST (UTC+9)
+    const now = new Date();
+    // KST Offset: +9 hours
+    const KST_OFFSET = 9 * 60 * 60 * 1000;
+    const nowKst = new Date(now.getTime() + KST_OFFSET);
+    
+    let fromTime = new Date();
+    let limit = 15000;
+
+    switch (range) {
+        case '1D':
+            // Start of Today KST (00:00 KST)
+            // Calculate KST midnight using UTC components of the shifted KST date
+            const kstMidnight = new Date(Date.UTC(
+                nowKst.getUTCFullYear(), 
+                nowKst.getUTCMonth(), 
+                nowKst.getUTCDate(), 
+                0, 0, 0
+            ));
+            // Convert back to absolute time (UTC) by subtracting offset
+            fromTime = new Date(kstMidnight.getTime() - KST_OFFSET);
+            break;
+        case '1W':
+            fromTime.setDate(now.getDate() - 7);
+            break;
+        case '3M':
+            fromTime.setMonth(now.getMonth() - 3);
+            break;
+        case '1Y':
+            fromTime.setFullYear(now.getFullYear() - 1);
+            break;
+        case '5Y':
+            fromTime.setFullYear(now.getFullYear() - 5);
+            break;
+    }
+
     try {
-      console.log("[CandleChart] Loading initial data for:", tickerId);
+      console.log(`[CandleChart] Loading data for ${tickerId} (${range}) from ${fromTime.toISOString()}`);
+      
       const data = await api.get(`market/candles/${tickerId}`, {
-        searchParams: { interval, limit: 300 }
+        searchParams: { 
+            interval, 
+            limit,
+            after: fromTime.toISOString() 
+        }
       }).json<CandleData[]>();
 
       if (data.length > 0) {
@@ -68,10 +114,10 @@ export const CandleChart = ({ tickerId, interval = '1m', chartType = 'candle' }:
         
         seriesRef.current.setData(unique);
         allDataRef.current = unique;
-        // Backend returns [Oldest, ..., Newest]
         earliestTimestamp.current = data[0].timestamp;
 
         if (chartRef.current) {
+            // Auto-fit content to show exactly the loaded period
             chartRef.current.timeScale().fitContent();
         }
         setStatus('ready');
@@ -84,7 +130,7 @@ export const CandleChart = ({ tickerId, interval = '1m', chartType = 'candle' }:
       console.error("[CandleChart] Failed to load initial data", err);
       setStatus('error');
     }
-  }, [tickerId, interval, transformData]);
+  }, [tickerId, range, interval, transformData]);
 
   // Load Historical Data
   const loadMoreHistory = useCallback(async () => {
@@ -94,7 +140,6 @@ export const CandleChart = ({ tickerId, interval = '1m', chartType = 'candle' }:
     if (!seriesRef.current) return;
 
     isFetchingHistory.current = true;
-    // console.log("[CandleChart] Fetching history before:", earliestTimestamp.current);
     
     try {
       const data = await api.get(`market/candles/${tickerId}`, {
@@ -106,10 +151,7 @@ export const CandleChart = ({ tickerId, interval = '1m', chartType = 'candle' }:
       }).json<CandleData[]>();
 
       if (data.length > 0) {
-        // console.log(`[CandleChart] Received ${data.length} historical candles.`);
         const formatted = transformData(data);
-        
-        // Filter duplicates
         const uniqueNew = formatted.filter(n => !allDataRef.current.some(e => e.time === n.time));
         
         if (uniqueNew.length > 0) {
@@ -117,23 +159,13 @@ export const CandleChart = ({ tickerId, interval = '1m', chartType = 'candle' }:
             seriesRef.current.setData(merged);
             allDataRef.current = merged;
             earliestTimestamp.current = data[0].timestamp;
-            // console.log("[CandleChart] History updated. New oldest:", earliestTimestamp.current);
-        } else {
-             // console.log("[CandleChart] No new unique candles found in history batch.");
-             // If backend returns data but all are duplicates, it likely means we hit the end or a loop
-             // But typically backend 'before' logic prevents this.
-             // Safe to assume end of history for now or retry logic.
-             // hasMoreHistory.current = false; 
         }
         
         if (data.length < 300) {
-            // Less than limit returned means end of history
             hasMoreHistory.current = false;
-            console.log("[CandleChart] End of history reached (count < limit).");
         }
 
       } else {
-          console.log("[CandleChart] No more history available (empty list).");
           hasMoreHistory.current = false;
       }
     } catch (err) {
@@ -157,8 +189,6 @@ export const CandleChart = ({ tickerId, interval = '1m', chartType = 'candle' }:
               formatted.forEach(bar => {
                   seriesRef.current?.update(bar);
               });
-              // Ideally we should also update allDataRef to keep it in sync for deduplication
-              // but for history fetching 'before' logic, it usually works on the tail.
           }
       } catch (e) {
           // silent fail
@@ -187,19 +217,72 @@ export const CandleChart = ({ tickerId, interval = '1m', chartType = 'candle' }:
         timeVisible: true,
         secondsVisible: false,
         borderColor: '#314368',
+        tickMarkFormatter: (timestamp: number, tickMarkType: number, locale: string) => {
+            // Force KST display for axis labels
+            const date = new Date(timestamp * 1000);
+            const options: Intl.DateTimeFormatOptions = { timeZone: 'Asia/Seoul', hour12: false };
+
+            switch(range) {
+                case '1D':
+                    options.hour = '2-digit'; options.minute = '2-digit';
+                    return date.toLocaleTimeString('ko-KR', options); // Time only
+                case '1W':
+                    // MM.dd HH:mm
+                    return `${date.toLocaleDateString('ko-KR', {timeZone: 'Asia/Seoul', month:'numeric', day:'numeric'})} ${date.toLocaleTimeString('ko-KR', {timeZone: 'Asia/Seoul', hour:'2-digit', minute:'2-digit', hour12:false})}`;
+                case '3M':
+                case '1Y':
+                    options.month = 'numeric'; options.day = 'numeric';
+                    return date.toLocaleDateString('ko-KR', options);
+                case '5Y':
+                    options.year = 'numeric'; options.month = 'numeric'; options.day = 'numeric';
+                    return date.toLocaleDateString('ko-KR', options);
+                default:
+                    return date.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+            }
+        },
       },
       rightPriceScale: {
         borderColor: '#314368',
       },
-      // Enable Mouse Wheel Zoom, Disable Wheel Scroll
+      // Localization for KST (Tooltip)
+      localization: {
+        locale: 'ko-KR',
+        dateFormat: 'yyyy-MM-dd',
+        timeFormatter: (timestamp: number) => {
+            const date = new Date(timestamp * 1000);
+            const options: Intl.DateTimeFormatOptions = { timeZone: 'Asia/Seoul', hour12: false };
+            
+            switch(range) {
+                case '1D':
+                    options.hour = '2-digit'; options.minute = '2-digit';
+                    break;
+                case '1W':
+                    options.month = 'numeric'; options.day = 'numeric'; options.hour = '2-digit'; options.minute = '2-digit';
+                    break;
+                case '3M':
+                case '1Y':
+                    options.month = 'numeric'; options.day = 'numeric';
+                    break;
+                case '5Y':
+                    options.year = 'numeric'; options.month = 'numeric'; options.day = 'numeric';
+                    break;
+                default:
+                    options.hour = '2-digit'; options.minute = '2-digit';
+            }
+            return date.toLocaleString('ko-KR', options);
+        },
+      },
+      // Disable scrolling and zooming for fixed view
       handleScale: {
-        mouseWheel: true,
+        mouseWheel: false,
+        pinch: false,
+        axisPressedMouseMove: false,
       },
       handleScroll: {
         mouseWheel: false,
-        pressedMouseMove: true,
-        horzTouchDrag: true,
-        vertTouchDrag: true,
+        pressedMouseMove: false,
+        horzTouchDrag: false,
+        vertTouchDrag: false,
       },
       kineticScroll: {
         touch: false,
@@ -231,9 +314,10 @@ export const CandleChart = ({ tickerId, interval = '1m', chartType = 'candle' }:
 
     loadInitialData();
 
+    // Only enable infinite scroll if chart is interactive (which is not now)
+    // Keeping logic here in case we re-enable interactions later, but it won't trigger if scroll is disabled
     const handleVisibleLogicalRangeChange = (range: LogicalRange | null) => {
         if (range) {
-            // When scrolling to the left (past 0 logical index), load more
             if (range.from < 50) { 
                 loadMoreHistory();
             }
@@ -259,7 +343,7 @@ export const CandleChart = ({ tickerId, interval = '1m', chartType = 'candle' }:
       chartRef.current = null;
       seriesRef.current = null;
     };
-  }, [loadInitialData, loadMoreHistory, chartType]);
+  }, [loadInitialData, loadMoreHistory, chartType, range]);
 
   return (
     <div className="w-full h-full relative group">

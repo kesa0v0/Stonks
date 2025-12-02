@@ -111,10 +111,11 @@ async def search_tickers_by_name(db: AsyncSession, query: str, limit: int) -> Li
     tickers = result.scalars().all()
     return tickers
 
-async def get_candle_history(db: AsyncSession, ticker_id: str, interval: str, limit: int, before: Optional[datetime] = None) -> List[Candle]:
+async def get_candle_history(db: AsyncSession, ticker_id: str, interval: str, limit: int, before: Optional[datetime] = None, after: Optional[datetime] = None) -> List[Candle]:
     """
     특정 종목의 과거 차트 데이터(분봉/일봉)를 조회합니다.
     before: 이 시간 이전의 데이터만 조회 (pagination)
+    after: 이 시간 이후의 데이터만 조회 (range filtering)
     """
     stmt = (
         select(Candle)
@@ -123,6 +124,9 @@ async def get_candle_history(db: AsyncSession, ticker_id: str, interval: str, li
     
     if before:
         stmt = stmt.where(Candle.timestamp < before)
+    
+    if after:
+        stmt = stmt.where(Candle.timestamp >= after)
         
     stmt = (
         stmt
