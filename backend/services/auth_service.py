@@ -97,6 +97,22 @@ async def authenticate_with_discord(
             raise InvalidCredentialsError("Failed to fetch Discord user info")
         du = user_res.json()
 
+        # 2.5) Check Guild Membership (if configured)
+        if settings.DISCORD_GUILD_ID:
+            guilds_res = await client.get(
+                "https://discord.com/api/users/@me/guilds",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            if guilds_res.status_code >= 300:
+                raise InvalidCredentialsError("Failed to fetch Discord guilds to verify membership")
+            
+            user_guilds = guilds_res.json()
+            # user_guilds is a list of partial guild objects: [{"id": "...", "name": "...", ...}, ...]
+            is_member = any(g.get("id") == settings.DISCORD_GUILD_ID for g in user_guilds)
+            
+            if not is_member:
+                raise InvalidCredentialsError("Access denied: You are not a member of the required Discord server.")
+
     discord_id = str(du.get("id"))
     username = du.get("global_name") or du.get("username") or "DiscordUser"
     email = du.get("email")

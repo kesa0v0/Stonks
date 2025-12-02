@@ -70,7 +70,7 @@ async def discord_authorize_url():
         "client_id": settings.DISCORD_CLIENT_ID,
         "response_type": "code",
         "redirect_uri": settings.DISCORD_REDIRECT_URI,
-        "scope": "identify email",
+        "scope": "identify email guilds",
         "prompt": "consent",
     }
     url = f"https://discord.com/api/oauth2/authorize?{urlencode(params)}"

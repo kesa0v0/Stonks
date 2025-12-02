@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     DISCORD_CLIENT_ID: str = ""
     DISCORD_CLIENT_SECRET: str = ""
     DISCORD_REDIRECT_URI: str = "http://localhost:5173/auth/discord/callback"
+    DISCORD_GUILD_ID: str = ""  # If set, only allow members of this Guild ID
     # Bot/알림용 (옵션)
     DISCORD_BOT_TOKEN: str = ""
     DISCORD_ALERTS_WEBHOOK_URL: str = ""      # 일반 알림 채널(청산/고래/리포트)
