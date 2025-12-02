@@ -236,3 +236,7 @@ postgres-data/
 
 # Alembic
 versions/
+
+
+deploy/oci/.env.example
+deploy/home/.env.example

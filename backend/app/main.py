@@ -89,12 +89,8 @@ app = FastAPI(
 # Prometheus Metrics (Expose /metrics)
 Instrumentator().instrument(app).expose(app)
 
-# CORS 설정: 허용할 출처(Origin) 목록
-origins = [
-    "http://localhost:5173",      # 로컬 개발 프론트엔드
-    "http://127.0.0.1:5173",      # 로컬 IP 접속 시
-    "https://stock.kesa.uk",      # 나중에 배포할 도메인
-]
+# CORS 설정: 허용할 출처(Origin) 목록 (환경설정에서 주입)
+origins = settings.BACKEND_CORS_ORIGINS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,        # 허용할 사이트들

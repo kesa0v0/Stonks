@@ -51,6 +51,14 @@ class Settings(BaseSettings):
     BACKUP_RETENTION_DAYS: int = 30 # 로컬/S3 백업 파일 보관 기간
     CANDLE_RETENTION_DAYS: int = 90 # DB 내 1분봉 보관 기간
 
+    # 7. CORS 허용 오리진 (배포시 환경변수로 덮어쓰기)
+    BACKEND_CORS_ORIGINS: list[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174"
+    ]
+
     DEBUG: bool = True
 
     @property
