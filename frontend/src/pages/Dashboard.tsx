@@ -107,10 +107,10 @@ export default function Dashboard() {
             <div className="px-4 py-3">
               <label className="flex flex-col min-w-40 h-12 w-full">
                 <div className="flex w-full items-stretch rounded-lg h-full">
-                  <div className="text-[#90cba4] flex bg-[#22492f] items-center justify-center pl-4 rounded-l-lg">
+                  <div className="text-[#90a4cb] flex bg-[#182234] items-center justify-center pl-4 rounded-l-lg border border-[#314368] border-r-0">
                     <span className="material-symbols-outlined">search</span>
                   </div>
-                  <input className="form-input flex w-full min-w-0 flex-1 rounded-r-lg text-white focus:outline-0 focus:ring-0 border-none bg-[#22492f] h-full placeholder:text-[#90cba4] px-4 pl-2 text-base font-normal" placeholder="Search assets..." value={search} onChange={e => setSearch(e.target.value)} />
+                  <input className="form-input flex w-full min-w-0 flex-1 rounded-r-lg text-white bg-[#182234] h-full placeholder:text-[#90a4cb] px-4 pl-2 text-base font-normal border border-[#314368] border-l-0 focus:ring-1 focus:ring-primary focus:border-primary" placeholder="Search assets..." value={search} onChange={e => setSearch(e.target.value)} />
                 </div>
               </label>
             </div>
@@ -126,9 +126,9 @@ export default function Dashboard() {
 
             {/* Table */}
             <div className="p-4">
-              <div className="overflow-x-auto rounded-lg border border-[#316843]">
+              <div className="overflow-x-auto rounded-lg border border-[#314368] bg-[#101623]">
                 <table className="w-full text-left">
-                  <thead className="bg-[#22492f]">
+                  <thead className="bg-[#182234]">
                     <tr>
                       <th className="p-4 text-sm font-semibold text-white tracking-wider">Symbol</th>
                       <th className="p-4 text-sm font-semibold text-white tracking-wider">Name</th>
@@ -136,9 +136,9 @@ export default function Dashboard() {
                       <th className="p-4 text-sm font-semibold text-white tracking-wider text-center">Trade</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#316843]">
+                  <tbody className="divide-y divide-[#314368]">
                     {filteredTickers.slice(0, 50).map(t => (
-                      <tr key={t.id} className="hover:bg-[#1a3824]/50">
+                      <tr key={t.id} className="hover:bg-[#182234]">
                         <td className="p-4 text-white font-medium">{t.symbol}</td>
                         <td className="p-4 text-gray-300">{t.name}</td>
                         <td className="p-4 text-gray-300">{t.market_type}</td>
@@ -158,7 +158,7 @@ export default function Dashboard() {
       {/* Trade Modal */}
       {selected && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setSelected(null)}>
-          <div className="w-full max-w-xl bg-[#101623] border border-[#316843] rounded-lg p-4" onClick={e => e.stopPropagation()}>
+          <div className="w-full max-w-xl bg-[#101623] border border-[#314368] rounded-lg p-4" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-[#0bda43]">trending_up</span>
@@ -168,7 +168,7 @@ export default function Dashboard() {
             </div>
 
             {/* Orderbook */}
-            <div className="rounded-lg border border-[#316843] bg-[#1a3824]/30 p-3 mb-4">
+            <div className="rounded-lg border border-[#314368] bg-[#182234] p-3 mb-4">
               <h3 className="text-white font-bold mb-2">Order Book</h3>
               <div className="grid grid-cols-2 gap-2 text-sm font-mono">
                 <div>
@@ -193,17 +193,17 @@ export default function Dashboard() {
             </div>
 
             {/* Trade form */}
-            <div className="rounded-lg border border-[#316843] bg-[#1a3824]/30 p-3">
-              <div className="flex bg-[#22492f] rounded-lg p-1 mb-4">
+            <div className="rounded-lg border border-[#314368] bg-[#182234] p-3">
+              <div className="flex bg-[#182234] rounded-lg p-1 mb-4 border border-[#314368]">
                 <button 
                   onClick={() => setSide('BUY')}
-                  className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${side === 'BUY' ? 'bg-primary text-background-dark' : 'text-[#90cba4] hover:text-white'}`}
+                  className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${side === 'BUY' ? 'bg-primary text-background-dark' : 'text-[#90a4cb] hover:text-white'}`}
                 >
                   Buy
                 </button>
                 <button 
                   onClick={() => setSide('SELL')}
-                  className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${side === 'SELL' ? 'bg-[#fa5538] text-white' : 'text-[#90cba4] hover:text-white'}`}
+                  className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${side === 'SELL' ? 'bg-[#fa5538] text-white' : 'text-[#90a4cb] hover:text-white'}`}
                 >
                   Sell
                 </button>
@@ -211,27 +211,27 @@ export default function Dashboard() {
 
               <form onSubmit={e => { e.preventDefault(); placeOrder.mutate(); }} className="flex flex-col gap-3">
                 <div>
-                  <label className="text-xs font-bold text-[#90cba4] uppercase">Price ({selected.currency})</label>
+                  <label className="text-xs font-bold text-[#90a4cb] uppercase">Price ({selected.currency})</label>
                   <input 
                     type="number" 
-                    className="w-full mt-1 bg-[#22492f] border border-[#316843] rounded-lg px-3 py-2 text-white font-mono focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
+                    className="w-full mt-1 bg-[#182234] border border-[#314368] rounded-lg px-3 py-2 text-white font-mono focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
                     value={price}
                     onChange={(e) => setPrice(parseFloat(e.target.value))}
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-[#90cba4] uppercase">Amount</label>
+                  <label className="text-xs font-bold text-[#90a4cb] uppercase">Amount</label>
                   <input 
                     type="number" 
                     step="0.0001"
-                    className="w-full mt-1 bg-[#22492f] border border-[#316843] rounded-lg px-3 py-2 text-white font-mono focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
+                    className="w-full mt-1 bg-[#182234] border border-[#314368] rounded-lg px-3 py-2 text-white font-mono focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
                     placeholder="0.00"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
                   />
                 </div>
-                <div className="mt-2 pt-3 border-t border-[#316843] flex justify-between text-sm">
-                  <span className="text-[#90cba4]">Total</span>
+                <div className="mt-2 pt-3 border-t border-[#314368] flex justify-between text-sm">
+                  <span className="text-[#90a4cb]">Total</span>
                   <span className="text-white font-bold">{(price * (parseFloat(amount) || 0)).toLocaleString()} {selected.currency}</span>
                 </div>
                 <button 
@@ -252,7 +252,7 @@ export default function Dashboard() {
 
 function Card({ title, icon, iconClass, children }: { title: string; icon: string; iconClass?: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-4 rounded-lg p-6 border border-[#316843] bg-[#1a3824]/50 backdrop-blur-sm">
+    <div className="flex flex-col gap-4 rounded-lg p-6 border border-[#314368] bg-[#101623]">
       <div className="flex items-center gap-2">
         <span className={`material-symbols-outlined ${iconClass || ''}`}>{icon}</span>
         <p className="text-white text-base font-medium leading-normal">{title}</p>
@@ -280,8 +280,8 @@ function ListMovers({ data, positive }: { data?: MoverResponse[]; positive?: boo
 
 function Chip({ label, active, onClick, primary }: { label: string; active?: boolean; onClick?: () => void; primary?: boolean }) {
   return (
-    <button onClick={onClick} className={`flex h-8 shrink-0 items-center justify-center gap-x-2 rounded-full px-4 ${primary ? 'bg-primary/20 hover:bg-primary/30 text-primary' : 'bg-[#22492f] hover:bg-[#2a5a3a]'} ${active ? 'ring-2 ring-primary' : ''}`}>
-      <p className={`${primary ? 'text-sm font-medium leading-normal' : 'text-white text-sm font-medium leading-normal'}`}>{label}</p>
+    <button onClick={onClick} className={`flex h-8 shrink-0 items-center justify-center gap-x-2 rounded-full px-4 ${primary ? 'bg-primary/20 hover:bg-primary/30 text-primary' : 'bg-[#182234] hover:bg-[#222f49] text-white'} ${active ? 'ring-2 ring-primary' : ''}`}>
+      <p className={`text-sm font-medium leading-normal`}>{label}</p>
     </button>
   );
 }
