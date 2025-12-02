@@ -34,6 +34,77 @@ services:
     networks:
       - proxy
 
+  # 4. 지정가 매칭 워커
+  worker_matcher:
+    image: ghcr.io/kesa0v0/stonks-backend:latest
+    container_name: stonks-worker-matcher
+    restart: always
+    command: python -m backend.worker.limit_matcher
+    env_file: .env
+    labels:
+      - "com.centurylinklabs.watchtower.scope=auto-update"
+    networks:
+      - proxy
+
+  # 5. 캔들 수집 워커
+  worker_candle:
+    image: ghcr.io/kesa0v0/stonks-backend:latest
+    container_name: stonks-worker-candle
+    restart: always
+    command: python -m backend.worker.candle_collector
+    env_file: .env
+    labels:
+      - "com.centurylinklabs.watchtower.scope=auto-update"
+    networks:
+      - proxy
+
+  # 6. 마진 감시 워커
+  worker_margin:
+    image: ghcr.io/kesa0v0/stonks-backend:latest
+    container_name: stonks-worker-margin
+    restart: always
+    command: python -m backend.worker.margin_watcher
+    env_file: .env
+    labels:
+      - "com.centurylinklabs.watchtower.scope=auto-update"
+    networks:
+      - proxy
+
+  # 7. 알림 워커 (Discord 웹훅 전송)
+  worker_notify:
+    image: ghcr.io/kesa0v0/stonks-backend:latest
+    container_name: stonks-worker-notify
+    restart: always
+    command: python -m backend.worker.notification_worker
+    env_file: .env
+    labels:
+      - "com.centurylinklabs.watchtower.scope=auto-update"
+    networks:
+      - proxy
+
+  # 8. 일일 리포트 워커 (스케줄러 또는 외부에서 트리거)
+  worker_daily_report:
+    image: ghcr.io/kesa0v0/stonks-backend:latest
+    container_name: stonks-worker-daily-report
+    restart: always
+    command: python -m backend.worker.daily_reporter
+    env_file: .env
+    labels:
+      - "com.centurylinklabs.watchtower.scope=auto-update"
+    networks:
+      - proxy
+
+  # 9. 디스코드 봇 (Slash Commands)
+  discord_bot:
+    image: ghcr.io/kesa0v0/stonks-backend:latest
+    container_name: stonks-discord-bot
+    restart: always
+    command: python -m backend.worker.discord_bot.bot
+    env_file: .env
+    labels:
+      - "com.centurylinklabs.watchtower.scope=auto-update"
+    networks:
+      - proxy
 
 networks:
   proxy:
