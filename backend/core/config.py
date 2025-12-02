@@ -26,10 +26,17 @@ class Settings(BaseSettings):
     RABBITMQ_USER: str = "guest"
     RABBITMQ_PASS: str = "guest"
 
-    # 4. Discord OAuth 설정
+    # 4. Discord 설정
     DISCORD_CLIENT_ID: str = ""
     DISCORD_CLIENT_SECRET: str = ""
     DISCORD_REDIRECT_URI: str = "http://localhost:5173/auth/discord/callback"
+    # Bot/알림용 (옵션)
+    DISCORD_BOT_TOKEN: str = ""
+    DISCORD_ALERTS_WEBHOOK_URL: str = ""      # 일반 알림 채널(청산/고래/리포트)
+    DISCORD_HUMAN_WEBHOOK_URL: str = ""       # Human ETF 전용 채널(IPO/배당/구제금융)
+    # 알림 임계치/스케줄
+    WHALE_ALERT_THRESHOLD_KRW: int = 10_000_000
+    DAILY_REPORT_CRON_KST: str = "0 0 * * *"   # 매일 00:00 KST
 
     # 5. Observability
     NTFY_URL: str = "https://ntfy.sh"

@@ -10,6 +10,7 @@ from backend.models import User, Portfolio, Wallet, Ticker
 from backend.services.common.asset import liquidate_user_assets
 from backend.services.common.price import get_current_price
 from backend.services.common.wallet import set_balance
+from backend.core.event_hook import publish_event
 from backend.core.constants import WALLET_REASON_LIQUIDATION_RESET
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,10 @@ async def check_and_liquidate_user(
     long_value = Decimal("0")
     short_liability = Decimal("0") # 갚아야 할 돈 (양수)
     
+    # 최대 숏 포지션 티커 추적 (알림용)
+    max_short_abs = Decimal("0")
+    max_short_ticker = None
+
     for p in portfolios:
         # 현재가 조회
         price = await get_current_price(redis_client, p.ticker_id)
@@ -60,6 +65,11 @@ async def check_and_liquidate_user(
         else:
             # 숏 포지션 가치 (음수) -> 부채로 계산
             short_liability += abs(val)
+            # 가장 큰 숏 포지션 기억
+            abs_val = abs(val)
+            if abs_val > max_short_abs:
+                max_short_abs = abs_val
+                max_short_ticker = p.ticker_id
             
     # 순자산 (Net Equity) = 현금 + 롱 평가액 - 숏 부채
     net_equity = cash_balance + long_value - short_liability
@@ -90,3 +100,21 @@ async def check_and_liquidate_user(
             set_balance(wallet, Decimal("0"), WALLET_REASON_LIQUIDATION_RESET)
             
         await db.commit()
+
+        # 이벤트 발행 (디스코드 알림용)
+        try:
+            # 닉네임 조회
+            user_stmt = select(User).where(User.id == user_id)
+            user_obj = (await db.execute(user_stmt)).scalars().first()
+            nickname = user_obj.nickname if user_obj else str(user_id)
+            event = {
+                "type": "liquidation",
+                "user_id": str(user_id),
+                "nickname": nickname,
+                "ticker_id": max_short_ticker,
+                "equity": float(net_equity),
+                "liability": float(short_liability),
+            }
+            await publish_event(redis_client, event, channel="liquidation_events")
+        except Exception as _:
+            pass

@@ -10,25 +10,16 @@
 **핵심 전략:** OCI는 "대문 및 우체통", 홈서버는 "공장 및 금고" 역할을 수행. 집 인터넷이 끊겨도 주문은 받아둔다.
 
 ```mermaid
-graph TD
-
-    %% ====================================
     %% Dark Mode Node Styles
     %% ====================================
     classDef node fill:#1e1e1e,stroke:#444,color:#f3f3f3;
     classDef dbnode fill:#252525,stroke:#5a5a5a,color:#f3f3f3;
     classDef http stroke:#4aa8ff,stroke-width:2px,color:#4aa8ff;
-    classDef amqp stroke:#ff944d,stroke-width:2px,color:#ff944d;
     classDef db stroke:#7dff7d,stroke-width:2px,color:#7dff7d;
-    classDef internal stroke:#aaa,stroke-width:1.8px,color:#ccc;
 
-    %% ====================================
     %% Cloud Section
-    %% ====================================
     subgraph cloud["☁️ Oracle Cloud - Public Edge Layer"]
-        client["User Browser / Mobile"]:::node
         traefik["Traefik Proxy"]:::node
-        fe["Frontend (React Build)"]:::node
         mq["RabbitMQ (Queue Broker)"]:::node
         wg_server["WireGuard VPN Server"]:::node
         
@@ -39,24 +30,12 @@ graph TD
     end
 
     %% ====================================
-    %% Home Server Section
-    %% ====================================
     subgraph home["🏠 Home Server - Private Compute Layer"]
         
         wg_client["WireGuard Client"]:::node
 
-        subgraph workers["Backend Workers"]
-            fastapi["FastAPI Main Server"]:::node
-            trade_worker["Trade Consumer Worker"]:::node
-            data_worker["Market Data Collector"]:::node
         end
         
-        subgraph datastore["Data Store"]
-            db_pg[("PostgreSQL")]:::dbnode
-            db_redis[("Redis Cache")]:::dbnode
-        end
-
-        %% VPN Routing
         wg_server -->|Encrypted Tunnel| wg_client:::internal
 
         %% Internal Traffic
@@ -80,10 +59,6 @@ graph TD
 > 
 1. **💰 돈 (Money):**
     - **DB:** `DECIMAL(20, 8)` 사용. `FLOAT` 절대 금지.
-    - **기준 통화:** 모든 자산 가치 평가(Ranking)는 **KRW(원화)** 기준.
-    - **저장:** 매수 당시의 원본 통화(USD/BTC)와 환율 정보를 같이 저장.
-2. **⏰ 시간 (Time):**
-    - **Server/DB:** 무조건 **UTC** 저장.
     - **Client:** 브라우저 로컬 타임존(KST)으로 변환하여 표시.
 3. **🆔 식별자 (ID):**
     - 포맷: `[MARKET]-[TYPE]-[SYMBOL]` (All Caps)
@@ -200,7 +175,50 @@ graph TD
 - **Phase 5: 배포 및 안정화**
     - [ ]  OCI에 Frontend 빌드 파일 배포.
     - [ ]  Discord 알림 봇 연동.
+        - 설정(.env):
+            - `DISCORD_ALERTS_WEBHOOK_URL` (청산/고래/리포트 채널)
+            - `DISCORD_HUMAN_WEBHOOK_URL` (Human ETF 채널)
+            - `DISCORD_BOT_TOKEN` (슬래시 커맨드용 봇 토큰, 선택)
+            - `WHALE_ALERT_THRESHOLD_KRW` (기본 10,000,000)
+        - 워커:
+            - `worker_notify`: Redis Pub/Sub 이벤트(`trade_events`, `liquidation_events`, `human_events`) 구독 → Discord 전송
+            - `worker_daily_report`: 일간 요약 리포트 1회 실행 (개발용). 운영에선 스케줄러에서 호출 권장
+            - `discord_bot`: `/price`, `/rank`, `/me` 슬래시 커맨드 (봇 토큰 필요)
     - [ ]  친구들 초대 및 버그 사냥.
+
+## 메시지 템플릿 (Discord Alerts)
+
+- 저장소: Redis (키: `config:msg_template:<key>`), 미설정 시 기본값 사용.
+- 관리: Admin 대시보드 → Settings → Message Templates
+- API:
+    - GET `/api/v1/admin/templates` → 모든 템플릿 반환
+    - GET `/api/v1/admin/templates/{key}` → 단일 템플릿
+    - PUT `/api/v1/admin/templates/{key}` → `{ "key": "whale_trade", "content": "..." }`
+
+지원 키와 플레이스홀더 예시
+- `whale_trade`: "🐳 [고래] {nickname}님이 {ticker}에 {notional:,} KRW 규모 {side} 체결!"
+    - `{nickname}`, `{ticker}`, `{side}`, `{price}`, `{quantity}`, `{notional}`
+- `liquidation`: "📉 [속보] {nickname}님이 {ticker} 포지션 강제 청산! (순자산 {equity:,} / 부채 {liability:,})"
+    - `{nickname}`, `{ticker}`, `{equity}`, `{liability}`
+- `ipo_listed`: "🆕 [IPO] {symbol} 상장! 배당률 {dividend_rate_pct}%"
+    - `{symbol}`, `{dividend_rate}`, `{dividend_rate_pct}`
+- `dividend_paid`: "💰 [배당] {payer_nickname}님이 총 {total_dividend:,} KRW 배당"
+    - `{payer_nickname}`, `{total_dividend}`
+- `bailout_processed`: "😭 [파산] {nickname}님 구제금융 처리"
+    - `{nickname}`
+- `daily_report` (멀티라인):
+    - 기본값:
+        ```
+        📊 일일 리포트
+        🥇 오늘의 승리자: {gainer_nickname} (+{gainer_pnl:,} KRW)
+        💩 오늘의 흑우: {loser_nickname} ({loser_pnl:,} KRW)
+        🌙 야수의 심장: {volume_king_nickname} ({trade_count}회 체결)
+        ```
+    - `{gainer_nickname}`, `{gainer_pnl}`, `{loser_nickname}`, `{loser_pnl}`, `{volume_king_nickname}`, `{trade_count}`
+
+비고
+- 정의되지 않은 플레이스홀더는 `{placeholder}` 형태로 그대로 출력됩니다(안전 포맷팅).
+- 템플릿 변경 즉시 워커가 Redis에서 최신 템플릿을 읽어 사용합니다.
 \n+## 7. 인증 (Authentication Summary)\n+\n+### JWT Access / Refresh\n+- `POST /login/access-token`: Access(30m) + Refresh(7d) 동시 발급\n+- `POST /login/refresh`: Refresh JTI 재사용 감지 + 회전(이전 토큰 블랙리스트)\n+- `POST /logout`: Access/Refresh 모두 Redis 블랙리스트 처리 + Refresh 상태 제거\n+- 헤더: `Authorization: Bearer <access_token>`\n+\n+### API Key 인증 (Header 기반)\n+- 발급: `POST /api-keys` (Bearer 필요) → 응답의 `api_key`는 최초 1회만 전체 평문 제공\n+- 호출: 헤더 `X-API-Key: <your_api_key>`\n+- 목록: `GET /api-keys`\n+- 회전: `POST /api-keys/{key_id}/rotate`\n+- 폐기: `DELETE /api-keys/{key_id}` (soft revoke: `is_active=false`)\n+- OpenAPI 문서: `ApiKeyAuth` security scheme (header `X-API-Key`) 자동 노출\n+\n+### 선택 기준\n+| 상황 | 권장 방식 | 이유 |\n+|------|-----------|------|\n+| 일반 사용자 웹/모바일 | JWT | 짧은 수명 + Refresh 회전 |\n+| 서버-서버 통신 / 배치 | API Key | 단순 헤더, 장기/비인터랙티브 |\n+| 고빈도 읽기 전용 | API Key | Stateless + 캐싱 결합 유리 |\n+| 민감한 거래 액션 | JWT | 세션 컨텍스트 / 재사용 토큰 감지 |\n+\n+### 다중 인증 헬퍼 예시\n+```python
 from fastapi import Depends, Security
 from backend.app.routers.api_key import get_current_user_by_api_key

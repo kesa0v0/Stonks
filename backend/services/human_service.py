@@ -16,6 +16,9 @@ from backend.models import User, Ticker, Portfolio, MarketType, Currency, Ticker
 from backend.schemas.human import IpoCreate, BurnCreate
 from backend.services.common.wallet import add_balance
 from backend.core.constants import WALLET_REASON_HUMAN_DISTRIBUTION
+from backend.core.event_hook import publish_event
+import redis.asyncio as async_redis
+from backend.core.config import settings
 
 async def process_bailout(db: AsyncSession, user_id: UUID):
     """
@@ -78,6 +81,20 @@ async def process_bailout(db: AsyncSession, user_id: UUID):
     add_balance(wallet, Decimal(final_amount), WALLET_REASON_HUMAN_DISTRIBUTION)
     
     await db.commit()
+
+    # 이벤트 발행 (Human 채널용)
+    try:
+        redis_client = async_redis.Redis(host=settings.REDIS_HOST, port=settings.REDIS_PORT, decode_responses=True)
+        event = {
+            "type": "bailout_processed",
+            "user_id": str(user_id),
+            "nickname": user.nickname if user else str(user_id),
+            "amount": float(final_amount),
+        }
+        await publish_event(redis_client, event, channel="human_events")
+        await redis_client.close()
+    except Exception:
+        pass
     
     return {
         "message": "Bailout successful. System bought your shares.",
@@ -141,6 +158,20 @@ async def process_ipo(db: AsyncSession, user_id: UUID, ipo_in: IpoCreate):
     db.add(portfolio)
     
     await db.commit()
+
+    # 이벤트 발행 (Human 채널용)
+    try:
+        redis_client = async_redis.Redis(host=settings.REDIS_HOST, port=settings.REDIS_PORT, decode_responses=True)
+        event = {
+            "type": "ipo_listed",
+            "user_id": str(user_id),
+            "symbol": ticker_symbol,
+            "dividend_rate": float(ipo_in.dividend_rate),
+        }
+        await publish_event(redis_client, event, channel="human_events")
+        await redis_client.close()
+    except Exception:
+        pass
     
     return {
         "message": f"Successfully listed {ticker_symbol}. {ipo_in.quantity} shares issued.", 

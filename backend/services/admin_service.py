@@ -7,12 +7,12 @@ from backend.core import constants
 from backend.core.exceptions import TickerAlreadyExistsError, TickerNotFoundError
 from backend.models import Ticker, User
 from backend.schemas.market import TickerCreate, TickerUpdate, TickerResponse
-from backend.schemas.admin import FeeUpdate, PriceUpdate
+from backend.schemas.admin import FeeUpdate, PriceUpdate, WhaleThresholdUpdate, MessageTemplateUpdate
 from backend.schemas.user import UserResponse
 from uuid import UUID
 from typing import List
 
-from backend.services.common.config import get_trading_fee_rate
+from backend.services.common.config import get_trading_fee_rate, get_message_template, set_message_template, list_all_templates
 from backend.services.user_service import process_bankruptcy
 
 async def get_current_trading_fee(redis_client: async_redis.Redis) -> dict:
@@ -31,6 +31,20 @@ async def update_trading_fee_config(redis_client: async_redis.Redis, fee_update:
         "message": "Trading fee rate updated successfully",
         "fee_rate": fee_update.fee_rate
     }
+
+async def get_current_whale_threshold(redis_client: async_redis.Redis) -> dict:
+    """현재 고래 알림 임계치(KRW) 조회"""
+    val = await redis_client.get(constants.REDIS_KEY_WHALE_THRESHOLD_KRW)
+    if val:
+        if isinstance(val, bytes):
+            val = val.decode()
+        return {"whale_threshold_krw": int(val)}
+    return {"whale_threshold_krw": int(constants.DEFAULT_WHALE_THRESHOLD_KRW)}
+
+async def update_whale_threshold(redis_client: async_redis.Redis, update: WhaleThresholdUpdate) -> dict:
+    """고래 알림 임계치(KRW) 업데이트"""
+    await redis_client.set(constants.REDIS_KEY_WHALE_THRESHOLD_KRW, str(int(update.whale_threshold_krw)))
+    return {"message": "Whale threshold updated", "whale_threshold_krw": int(update.whale_threshold_krw)}
 
 async def set_admin_test_price(redis_client: async_redis.Redis, update: PriceUpdate):
     """
@@ -132,3 +146,15 @@ async def update_user_status(db: AsyncSession, user_id: UUID, is_active: bool):
     
     status_msg = "Active" if is_active else "Banned"
     return {"message": f"User status updated to {status_msg}", "is_active": user.is_active}
+
+# --- Message Templates (Redis-backed) ---
+async def get_all_message_templates(redis_client: async_redis.Redis) -> dict:
+    return await list_all_templates(redis_client)
+
+async def get_one_message_template(redis_client: async_redis.Redis, key: str) -> dict:
+    content = await get_message_template(redis_client, key)
+    return {"key": key, "content": content}
+
+async def update_message_template(redis_client: async_redis.Redis, update: MessageTemplateUpdate) -> dict:
+    await set_message_template(redis_client, update.key, update.content)
+    return {"message": "Template updated", "key": update.key, "content": update.content}

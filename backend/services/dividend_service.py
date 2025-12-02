@@ -6,6 +6,9 @@ import logging
 from backend.models import User, Wallet, Portfolio, Ticker, DividendHistory
 from backend.services.common.wallet import add_balance, sub_balance
 from backend.core.constants import WALLET_REASON_DIVIDEND
+from backend.core.event_hook import publish_event
+import redis.asyncio as async_redis
+from backend.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -99,3 +102,18 @@ async def process_dividend(db: AsyncSession, payer_user: User, pnl: Decimal):
             db.add(history)
             
     logger.info(f"Dividend distribution completed for {ticker_id}")
+
+    # 이벤트 발행 (Human 채널용)
+    try:
+        redis_client = async_redis.Redis(host=settings.REDIS_HOST, port=settings.REDIS_PORT, decode_responses=True)
+        event = {
+            "type": "dividend_paid",
+            "payer_id": str(payer_user.id),
+            "payer_nickname": payer_user.nickname,
+            "ticker_id": ticker_id,
+            "total_dividend": float(total_dividend),
+        }
+        await publish_event(redis_client, event, channel="human_events")
+        await redis_client.close()
+    except Exception:
+        pass

@@ -8,11 +8,16 @@ from backend.core.deps import get_current_admin_user
 from backend.core.cache import get_redis
 from backend.core.database import get_db
 from backend.schemas.market import TickerCreate, TickerUpdate, TickerResponse
-from backend.schemas.admin import FeeUpdate, PriceUpdate
+from backend.schemas.admin import FeeUpdate, PriceUpdate, WhaleThresholdUpdate, MessageTemplateUpdate, MessageTemplateResponse
 from backend.services.admin_service import (
     get_current_trading_fee,
     update_trading_fee_config,
     set_admin_test_price,
+    get_current_whale_threshold,
+    update_whale_threshold,
+    get_all_message_templates,
+    get_one_message_template,
+    update_message_template,
     create_new_ticker,
     update_existing_ticker,
     delete_existing_ticker,
@@ -115,6 +120,39 @@ async def set_test_price_admin(update: PriceUpdate, redis_client: async_redis.Re
     이 API를 호출하면 limit_matcher가 즉시 반응하여 지정가 주문을 체결합니다.
     """
     return await set_admin_test_price(redis_client, update)
+
+# --- Alerts Settings ---
+
+@router.get("/alerts/whale-threshold", response_model=dict, dependencies=[Depends(get_rate_limiter("/admin/alerts/whale-threshold"))])
+async def get_whale_threshold(redis_client: async_redis.Redis = Depends(get_redis)):
+    """
+    고래 알림 임계치(KRW)를 조회합니다.
+    """
+    return await get_current_whale_threshold(redis_client)
+
+@router.put("/alerts/whale-threshold", response_model=dict, dependencies=[Depends(get_rate_limiter("/admin/alerts/whale-threshold"))])
+async def put_whale_threshold(update: WhaleThresholdUpdate, redis_client: async_redis.Redis = Depends(get_redis)):
+    """
+    고래 알림 임계치(KRW)를 업데이트합니다.
+    """
+    return await update_whale_threshold(redis_client, update)
+
+# --- Message Templates ---
+
+@router.get("/templates", dependencies=[Depends(get_rate_limiter("/admin/templates"))])
+async def list_templates(redis_client: async_redis.Redis = Depends(get_redis)):
+    return await get_all_message_templates(redis_client)
+
+@router.get("/templates/{key}", response_model=MessageTemplateResponse, dependencies=[Depends(get_rate_limiter("/admin/templates/{key}"))])
+async def get_template(key: str, redis_client: async_redis.Redis = Depends(get_redis)):
+    return await get_one_message_template(redis_client, key)
+
+@router.put("/templates/{key}", response_model=MessageTemplateResponse, dependencies=[Depends(get_rate_limiter("/admin/templates/{key}"))])
+async def put_template(key: str, update: MessageTemplateUpdate, redis_client: async_redis.Redis = Depends(get_redis)):
+    if key != update.key:
+        raise HTTPException(status_code=400, detail="Path key and body key mismatch")
+    await update_message_template(redis_client, update)
+    return {"key": update.key, "content": update.content}
 
 # --- Ticker Management ---
 

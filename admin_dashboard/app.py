@@ -187,7 +187,7 @@ def main_app():
             else:
                 st.error(r.text)
 
-    # --- Tab 4: Settings (Fee) ---
+    # --- Tab 4: Settings (Fee, Alerts) ---
     with tab4:
         st.header("Trading Fee")
         if st.button("Load Current Fee"):
@@ -202,6 +202,57 @@ def main_app():
                 st.success("Fee Updated Successfully")
             else:
                 st.error(r.text)
+
+        st.divider()
+        st.header("Alerts: Whale Threshold")
+        col_w1, col_w2 = st.columns(2)
+        with col_w1:
+            if st.button("Load Whale Threshold"):
+                r = requests.get(f"{API_URL}/admin/alerts/whale-threshold", headers=headers)
+                if r.status_code == 200:
+                    st.session_state.whale_threshold = int(r.json().get("whale_threshold_krw", 0))
+                else:
+                    st.error(r.text)
+        current = st.session_state.get("whale_threshold", 0)
+        new_thr = st.number_input("Whale Threshold (KRW)", min_value=0, step=100000, value=int(current))
+        if st.button("Update Whale Threshold"):
+            r = requests.put(
+                f"{API_URL}/admin/alerts/whale-threshold",
+                json={"whale_threshold_krw": int(new_thr)},
+                headers=headers,
+            )
+            if r.status_code == 200:
+                st.success(f"Whale threshold updated: {r.json().get('whale_threshold_krw'):,} KRW")
+            else:
+                st.error(r.text)
+
+        st.divider()
+        st.header("Message Templates")
+        # Load all templates
+        if st.button("Load Templates"):
+            r = requests.get(f"{API_URL}/admin/templates", headers=headers)
+            if r.status_code == 200:
+                st.session_state.templates = r.json()
+            else:
+                st.error(r.text)
+
+        templates = st.session_state.get("templates", {})
+        if templates:
+            keys = sorted(list(templates.keys()))
+            selected = st.selectbox("Template Key", keys)
+            content = st.text_area("Template Content", value=templates.get(selected, ""), height=180)
+            if st.button("Update Template"):
+                payload = {"key": selected, "content": content}
+                r = requests.put(f"{API_URL}/admin/templates/{selected}", json=payload, headers=headers)
+                if r.status_code == 200:
+                    st.success("Template updated")
+                    # Refresh cache
+                    templates[selected] = content
+                    st.session_state.templates = templates
+                else:
+                    st.error(r.text)
+        else:
+            st.info("Click 'Load Templates' to fetch current templates.")
 
 if st.session_state.token:
     main_app()

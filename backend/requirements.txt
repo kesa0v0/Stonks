@@ -35,3 +35,6 @@ prometheus-fastapi-instrumentator
 
 # Storage
 boto3
+
+# Discord Bot
+discord.py>=2.3.2
