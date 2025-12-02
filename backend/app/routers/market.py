@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.core.cache import get_redis
 from backend.core.database import get_db
 from backend.core.deps import get_current_user_by_api_key, get_current_user_any
-from backend.schemas.market import TickerResponse, CurrentPriceResponse, MarketStatusResponse, OrderBookResponse
+from backend.schemas.market import TickerResponse, CurrentPriceResponse, MarketStatusResponse, OrderBookResponse, MoverResponse
 from backend.schemas.candle import CandleResponse
 from backend.services.market_service import (
     get_all_market_status,
@@ -15,7 +15,9 @@ from backend.services.market_service import (
     search_tickers_by_name,
     get_candle_history,
     get_orderbook_data,
-    get_current_price_info
+    get_current_price_info,
+    get_top_movers,
+    get_trending_tickers
 )
 
 router = APIRouter(prefix="/market", tags=["market"])
@@ -92,3 +94,24 @@ async def get_ticker_current_price(
         )
     
     return CurrentPriceResponse(ticker_id=ticker_id, price=price)
+
+@router.get("/movers", response_model=List[MoverResponse], dependencies=[Depends(get_rate_limiter("/market/movers"))])
+async def get_movers_endpoint(
+    type: str = Query(..., pattern="^(gainers|losers)$"),
+    limit: int = Query(10, ge=1, le=50),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    오늘의 등락률 상위(gainers) / 하위(losers) 종목을 조회합니다.
+    """
+    return await get_top_movers(db, type, limit)
+
+@router.get("/trending", response_model=List[MoverResponse], dependencies=[Depends(get_rate_limiter("/market/trending"))])
+async def get_trending_endpoint(
+    limit: int = Query(10, ge=1, le=50),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    현재 거래가 가장 활발한(거래대금 급증) 종목을 조회합니다.
+    """
+    return await get_trending_tickers(db, limit)

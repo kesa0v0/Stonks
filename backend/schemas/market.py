@@ -57,3 +57,10 @@ class OrderBookResponse(BaseModel):
     ticker_id: str
     bids: List[OrderBookEntry] # 매수 잔량
     asks: List[OrderBookEntry] # 매도 잔량
+
+class MoverResponse(BaseModel):
+    ticker: TickerResponse
+    price: DecimalStr
+    change_percent: DecimalStr
+    volume: DecimalStr # 해당 기간(1m 등)의 거래량
+    value: DecimalStr # 거래대금 (price * volume)

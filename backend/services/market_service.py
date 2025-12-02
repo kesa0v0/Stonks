@@ -6,12 +6,13 @@ except ImportError:
 
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, desc, asc
+from sqlalchemy.orm import aliased
 import redis.asyncio as async_redis
 
 from backend.models import Ticker, Candle, Order
 from backend.core.enums import OrderStatus, OrderType, OrderSide
-from backend.schemas.market import MarketState, OrderBookEntry, OrderBookResponse, MarketStatusResponse
+from backend.schemas.market import MarketState, OrderBookEntry, OrderBookResponse, MarketStatusResponse, MoverResponse, TickerResponse
 from backend.services.common.price import get_current_price
 
 def get_market_status_by_type(market_type: str, now: datetime) -> MarketState:
@@ -170,3 +171,116 @@ async def get_current_price_info(redis_client: async_redis.Redis, ticker_id: str
     if price_decimal is None:
         return None
     return float(price_decimal)
+
+async def get_top_movers(db: AsyncSession, type: str, limit: int) -> List[MoverResponse]:
+    """
+    등락률 상위(Gainers) 또는 하위(Losers) 종목 조회
+    """
+    # 1. Latest 1m candles (Current Price)
+    # Postgres specific DISTINCT ON
+    curr_stmt = (
+        select(Candle)
+        .where(Candle.interval == '1m')
+        .distinct(Candle.ticker_id)
+        .order_by(Candle.ticker_id, Candle.timestamp.desc())
+        .subquery()
+    )
+    curr = aliased(Candle, curr_stmt)
+
+    # 2. Latest 1d candles (Previous Close)
+    prev_stmt = (
+        select(Candle)
+        .where(Candle.interval == '1d')
+        .distinct(Candle.ticker_id)
+        .order_by(Candle.ticker_id, Candle.timestamp.desc())
+        .subquery()
+    )
+    prev = aliased(Candle, prev_stmt)
+
+    # 3. Join & Calculate
+    # change_pct = (curr.close - prev.close) / prev.close * 100
+    change_expr = (curr.close - prev.close) / prev.close * 100
+
+    stmt = (
+        select(Ticker, curr, change_expr.label("change_percent"))
+        .join(curr, Ticker.id == curr.ticker_id)
+        .join(prev, Ticker.id == prev.ticker_id)
+        .where(Ticker.is_active == True)
+    )
+
+    if type == "gainers":
+        stmt = stmt.order_by(desc("change_percent"))
+    else:
+        stmt = stmt.order_by(asc("change_percent"))
+    
+    stmt = stmt.limit(limit)
+
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    movers = []
+    for row in rows:
+        ticker, candle_1m, change_pct = row
+        movers.append(MoverResponse(
+            ticker=TickerResponse.model_validate(ticker),
+            price=str(candle_1m.close),
+            change_percent=f"{change_pct:.2f}",
+            volume=str(candle_1m.volume),
+            value=str(candle_1m.close * candle_1m.volume)
+        ))
+    return movers
+
+async def get_trending_tickers(db: AsyncSession, limit: int) -> List[MoverResponse]:
+    """
+    거래대금(Value) 급증 종목 조회 (최근 1분봉 기준)
+    """
+    # Latest 1m candle
+    curr_stmt = (
+        select(Candle)
+        .where(Candle.interval == '1m')
+        .distinct(Candle.ticker_id)
+        .order_by(Candle.ticker_id, Candle.timestamp.desc())
+        .subquery()
+    )
+    curr = aliased(Candle, curr_stmt)
+    
+    # Calculate Value = close * volume
+    value_expr = curr.close * curr.volume
+    
+    # We also need prev_close for change_percent
+    prev_stmt = (
+        select(Candle)
+        .where(Candle.interval == '1d')
+        .distinct(Candle.ticker_id)
+        .order_by(Candle.ticker_id, Candle.timestamp.desc())
+        .subquery()
+    )
+    prev = aliased(Candle, prev_stmt)
+    
+    change_expr = (curr.close - prev.close) / prev.close * 100
+
+    stmt = (
+        select(Ticker, curr, change_expr.label("change_percent"), value_expr.label("trade_value"))
+        .join(curr, Ticker.id == curr.ticker_id)
+        .outerjoin(prev, Ticker.id == prev.ticker_id) # Use outerjoin in case 1d is missing
+        .where(Ticker.is_active == True)
+        .order_by(desc("trade_value"))
+        .limit(limit)
+    )
+    
+    result = await db.execute(stmt)
+    rows = result.all()
+    
+    trends = []
+    for row in rows:
+        ticker, candle_1m, change_pct, trade_val = row
+        change_str = f"{change_pct:.2f}" if change_pct is not None else "0.00"
+        
+        trends.append(MoverResponse(
+            ticker=TickerResponse.model_validate(ticker),
+            price=str(candle_1m.close),
+            change_percent=change_str,
+            volume=str(candle_1m.volume),
+            value=str(trade_val)
+        ))
+    return trends
