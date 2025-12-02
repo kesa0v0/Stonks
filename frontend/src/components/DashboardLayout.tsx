@@ -10,7 +10,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const getAvatarUrl = (seed: string) => `https://api.dicebear.com/7.x/pixel-art/svg?seed=${seed}`;
 
   // 현재 경로와 일치하면 active 처리
-  const isActive = (path: string) => location.pathname === path;
+  const isActive = (path: string) => {
+    if (path === '/market') return location.pathname.startsWith('/market');
+    return location.pathname === path;
+  };
+  const lastMarketTickerId = typeof window !== 'undefined' ? window.localStorage.getItem('lastMarketTickerId') : null;
+  const marketPath = lastMarketTickerId ? `/market/${lastMarketTickerId}` : '/market';
 
   return (
     <div className="flex min-h-screen w-full flex-row bg-[#f5f6f8] dark:bg-[#101622] font-sans text-white">
@@ -27,17 +32,15 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           <nav className="flex flex-col gap-2 mt-4">
             {/* to 속성으로 경로 연결 */}
             <NavItem to="/dashboard" icon="bar_chart" label="Dashboard" active={isActive('/dashboard')} />
-            <NavItem to="/market" icon="storefront" label="Markets" active={isActive('/market')} />
+            <NavItem to={marketPath} icon="storefront" label="Markets" active={isActive('/market')} />
             <NavItem to="/leaderboard" icon="emoji_events" label="Leaderboard" active={isActive('/leaderboard')} />
             <NavItem to="/portfolio" icon="pie_chart" label="Portfolio" active={isActive('/portfolio')} />
             <NavItem to="/human" icon="rocket_launch" label="Human ETF" active={isActive('/human')} />
           </nav>
         </div>
         <div className="flex flex-col gap-4">
-          <button className="flex w-full cursor-pointer items-center justify-center rounded-lg h-10 px-4 bg-[#0d59f2] text-white text-sm font-bold hover:bg-[#0d59f2]/90 transition-colors">
-            Connect Wallet
-          </button>
           <div className="flex flex-col gap-1">
+            <NavItem to="/settings" icon="settings" label="Settings" />
             <NavItem to="/help" icon="help" label="Help Center" />
             <NavItem to="/logout" icon="logout" label="Logout" />
           </div>

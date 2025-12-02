@@ -25,6 +25,14 @@ export default function Market() {
   const [amount, setAmount] = useState<string>('');
   const [side, setSide] = useState<'BUY' | 'SELL'>('BUY');
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('lastMarketTickerId', tickerId);
+    } catch {
+      /* ignore persistence errors */
+    }
+  }, [tickerId]);
+
   // 데이터 로드 (호가창)
   useEffect(() => {
     const fetchOrderBook = async () => {

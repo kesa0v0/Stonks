@@ -40,7 +40,7 @@ export default function HumanETF() {
     }
   };
 
-  if (!profile) return <div className="p-8 text-white">Loading...</div>;
+  const isLoading = !profile;
 
   return (
     <DashboardLayout>
@@ -48,17 +48,29 @@ export default function HumanETF() {
         
         {/* Profile Card */}
         <div className="flex p-6 border border-[#314368] bg-[#101623] rounded-xl items-center gap-6">
-          <div 
-            className="w-24 h-24 rounded-full border-4 border-[#0d59f2] bg-cover bg-center shadow-[0_0_15px_rgba(13,89,242,0.3)]"
-            style={{ backgroundImage: `url("https://api.dicebear.com/7.x/pixel-art/svg?seed=${profile.nickname}")` }}
-          ></div>
-          <div>
-            <h1 className="text-white text-3xl font-bold font-mono tracking-tighter">
-              {profile.nickname} <span className="text-[#0d59f2] text-xl">ETF</span>
-            </h1>
-            <p className="text-[#90a4cb] mt-1">Status: {profile.is_active ? 'Active Trader' : 'Inactive'}</p>
-            {profile.is_bankrupt && <span className="inline-block mt-2 px-2 py-1 bg-red-500/20 text-red-500 text-xs font-bold rounded">BANKRUPT</span>}
-          </div>
+          {isLoading ? (
+            <div className="flex items-center gap-6 w-full animate-pulse">
+              <div className="w-24 h-24 rounded-full bg-[#182234]" />
+              <div className="flex-1">
+                <div className="h-6 w-48 bg-[#182234] rounded mb-2" />
+                <div className="h-4 w-32 bg-[#182234] rounded" />
+              </div>
+            </div>
+          ) : (
+            <>
+              <div 
+                className="w-24 h-24 rounded-full border-4 border-[#0d59f2] bg-cover bg-center shadow-[0_0_15px_rgba(13,89,242,0.3)]"
+                style={{ backgroundImage: `url("https://api.dicebear.com/7.x/pixel-art/svg?seed=${profile!.nickname}")` }}
+              ></div>
+              <div>
+                <h1 className="text-white text-3xl font-bold font-mono tracking-tighter">
+                  {profile!.nickname} <span className="text-[#0d59f2] text-xl">ETF</span>
+                </h1>
+                <p className="text-[#90a4cb] mt-1">Status: {profile!.is_active ? 'Active Trader' : 'Inactive'}</p>
+                {profile!.is_bankrupt && <span className="inline-block mt-2 px-2 py-1 bg-red-500/20 text-red-500 text-xs font-bold rounded">BANKRUPT</span>}
+              </div>
+            </>
+          )}
         </div>
 
         {/* Solvency Bar (Design Element) */}
