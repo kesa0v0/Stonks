@@ -204,6 +204,17 @@ async def initial_seed():
         logger.info(f"🎯 Found {len(tickers)} tickers. Starting hydration...")
 
         for ticker in tickers:
+            # 2. 일봉 충분 여부 먼저 확인하여, 충분하면 대량 히스토리 수집을 모두 건너뜀
+            async with AsyncSessionLocal() as session:
+                daily_count_stmt = select(func.count()).select_from(Candle).where(
+                    Candle.ticker_id == ticker.id,
+                    Candle.interval == '1d'
+                )
+                daily_res = await session.execute(daily_count_stmt)
+                existing_1d_count = daily_res.scalar() or 0
+
+            skip_history_due_to_daily = existing_1d_count > 1000
+
             # 1. 1분봉 7일치 (약 10,080개) - 초기 진입 시 차트용
             async with AsyncSessionLocal() as session:
                 count_stmt = select(func.count()).select_from(Candle).where(
@@ -213,29 +224,36 @@ async def initial_seed():
                 res = await session.execute(count_stmt)
                 existing_1m_count = res.scalar() or 0
 
-            if existing_1m_count > 5000:
-                logger.info(f"⏭️ Skipping 1m history for {ticker.symbol} (Found {existing_1m_count} candles)")
-                # 최신 데이터만 살짝 갱신 (공백 방지)
-                await fetch_and_store_candles(exchange, ticker, interval='1m', count=200)
+            if skip_history_due_to_daily:
+                # 일봉 데이터가 충분하면 대량 히스토리 수집(fetch_historical_candles)을 모두 건너뜁니다.
+                logger.info(f"⏭️ Skipping history for {ticker.symbol} due to sufficient 1d candles ({existing_1d_count})")
+                # 대신 최신 1분봉만 소량 갱신하여 공백 방지
+                await fetch_and_store_candles(exchange, ticker, interval='1m', count=50)
             else:
-                # 7일치 수집 (pagination 함수 재사용)
-                await fetch_historical_candles(exchange, ticker, interval='1m', days=7)
+                if existing_1m_count > 5000:
+                    logger.info(f"⏭️ Skipping 1m history for {ticker.symbol} (Found {existing_1m_count} candles)")
+                    # 최신 데이터만 살짝 갱신 (공백 방지)
+                    await fetch_and_store_candles(exchange, ticker, interval='1m', count=200)
+                else:
+                    # 7일치 수집 (pagination 함수 재사용)
+                    await fetch_historical_candles(exchange, ticker, interval='1m', days=7)
             
             await asyncio.sleep(0.1)
             
             # 2. 일봉 5년치 (약 1800일) - 데이터가 부족할 때만 수집
-            async with AsyncSessionLocal() as session:
-                count_stmt = select(func.count()).select_from(Candle).where(
-                    Candle.ticker_id == ticker.id,
-                    Candle.interval == '1d'
-                )
-                res = await session.execute(count_stmt)
-                existing_count = res.scalar() or 0
-            
-            if existing_count > 1000:
-                logger.info(f"⏭️ Skipping 1d history for {ticker.symbol} (Found {existing_count} candles)")
-            else:
-                await fetch_historical_candles(exchange, ticker, interval='1d', days=1825)
+            if not skip_history_due_to_daily:
+                async with AsyncSessionLocal() as session:
+                    count_stmt = select(func.count()).select_from(Candle).where(
+                        Candle.ticker_id == ticker.id,
+                        Candle.interval == '1d'
+                    )
+                    res = await session.execute(count_stmt)
+                    existing_count = res.scalar() or 0
+                
+                if existing_count > 1000:
+                    logger.info(f"⏭️ Skipping 1d history for {ticker.symbol} (Found {existing_count} candles)")
+                else:
+                    await fetch_historical_candles(exchange, ticker, interval='1d', days=1825)
             
             await asyncio.sleep(0.1)
             

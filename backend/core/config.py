@@ -6,8 +6,9 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"  # production, staging, development
     RATE_LIMIT_ENABLED: bool = False
 
-    # 1. DB 설정 (기본값은 로컬용이나, Docker 환경변수가 있으면 덮어씌워짐)
-    DATABASE_URL: str = "postgresql://devuser:devpass@localhost:5432/dev_db"
+    # 1. DB 설정 (Docker 기본값: 서비스명 사용, 환경변수로 덮어쓰기 가능)
+    # 로컬 호스트에서 직접 실행할 경우 .env 또는 환경변수로 localhost로 변경하세요.
+    DATABASE_URL: str = "postgresql://devuser:devpass@postgres:5432/dev_db"
     
     # 2. 보안 설정
     SECRET_KEY: str
@@ -19,10 +20,11 @@ class Settings(BaseSettings):
     API_KEY_RATE_LIMIT_PER_MINUTE: int = 120  # 기본 API Key 사용 제한
     
     # 3. 추가된 인프라 설정 (Redis, RabbitMQ)
-    REDIS_HOST: str = "localhost"
+    # Docker 네트워크 기본값 (로컬 실행 시 .env로 덮어쓰기)
+    REDIS_HOST: str = "redis"
     REDIS_PORT: int = 6379
     
-    RABBITMQ_HOST: str = "localhost"
+    RABBITMQ_HOST: str = "rabbitmq"
     RABBITMQ_PORT: int = 5672
     RABBITMQ_USER: str = "guest"
     RABBITMQ_PASS: str = "guest"
