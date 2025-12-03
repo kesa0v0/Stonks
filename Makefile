@@ -21,7 +21,8 @@ dev-init-db: db-upgrade
 
 # 5. DB 마이그레이션 실행
 db-upgrade:
-	docker-compose -f docker-compose.dev.yml run --rm api alembic upgrade head
+	# backend/alembic.ini를 명시적으로 사용해 localhost 하드코딩을 피합니다.
+	docker-compose -f docker-compose.dev.yml run --rm api alembic -c backend/alembic.ini upgrade head
 
 # 5. 프론트엔드 실행 (별도 터미널 권장)
 dev-front:
