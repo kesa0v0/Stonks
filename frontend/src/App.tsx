@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import Dashboard from './pages/Dashboard';
 import Leaderboards from './pages/Leaderboards';
 import Portfolio from './pages/Portfolio';
@@ -9,7 +10,7 @@ import Login from './pages/Login';
 import OAuthCallback from './pages/OAuthCallback';
 import RequireAuth from './components/RequireAuth';
 import Logout from './pages/Logout';
-import { setOnUnauthorized } from './api/client';
+import { setOnUnauthorized, initializeAuth } from './api/client';
 
 const queryClient = new QueryClient();
 
@@ -43,7 +44,14 @@ export default function App() {
 
 function AuthBridge() {
   const navigate = useNavigate();
-  // Register a redirect handler for 401s from api client
-  setOnUnauthorized(() => navigate('/login', { replace: true }));
+
+  useEffect(() => {
+    // Register a redirect handler for 401s from api client
+    setOnUnauthorized(() => navigate('/login', { replace: true }));
+    
+    // Proactively refresh token on mount
+    initializeAuth().catch(console.error);
+  }, [navigate]);
+
   return null;
 }
