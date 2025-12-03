@@ -69,13 +69,13 @@ async def lifespan(app: FastAPI):
 tags_metadata = [
     {"name": "auth", "description": "Authentication"},
     {"name": "me", "description": "User Profile, Portfolio & PnL"},
+    {"name": "users", "description": "User Profiles"},
     {"name": "order", "description": "Order Management"},
     {"name": "market", "description": "Market Data (Ticker, Candle, Price)"},
     {"name": "ranking", "description": "Leaderboards & Hall of Fame"},
     {"name": "human_etf", "description": "Human ETF & Bankruptcy"},
     {"name": "admin", "description": "Admin Operations"},
     {"name": "api_key", "description": "API Key Management"},
-    {"name": "users", "description": "User Profiles"},
 ]
 
 app = FastAPI(
