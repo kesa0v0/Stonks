@@ -91,11 +91,15 @@ export default function Market() {
           <div className="flex gap-4">
             <div className="text-right hidden sm:block">
               <p className="text-[#90a4cb] text-xs uppercase font-bold">24h Change</p>
-              <p className="text-up font-mono font-bold">+1.2%</p>
+              <p className={`font-mono font-bold ${(Number(selectedTicker?.change_percent || 0) >= 0) ? 'text-up' : 'text-down'}`}>
+                {selectedTicker?.change_percent ? `${Number(selectedTicker.change_percent) >= 0 ? '+' : ''}${Number(selectedTicker.change_percent).toFixed(2)}%` : '-'}
+              </p>
             </div>
             <div className="text-right hidden sm:block">
               <p className="text-[#90a4cb] text-xs uppercase font-bold">24h Volume</p>
-              <p className="text-white font-mono font-bold">15.2B</p>
+              <p className="text-white font-mono font-bold">
+                {selectedTicker?.volume ? Number(selectedTicker.volume).toLocaleString(undefined, { maximumFractionDigits: 0 }) : '-'}
+              </p>
             </div>
           </div>
         </header>

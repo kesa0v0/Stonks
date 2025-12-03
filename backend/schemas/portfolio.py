@@ -18,6 +18,7 @@ class AssetResponse(BaseModel):
 class PortfolioResponse(BaseModel):
     cash_balance: DecimalStr
     total_asset_value: DecimalStr # 총 자산 (현금 + 주식 평가액)
+    total_asset_change_percent: DecimalStr | None = None # 전일 대비 총 자산 변동률
     assets: List[AssetResponse]
     model_config = ConfigDict(
         from_attributes=True,

@@ -29,11 +29,24 @@ async def get_user_portfolio(
     wallet = wallet_result.scalars().first()
     cash_balance = float(wallet.balance) if wallet else 0.0
 
-    # 2. 보유 주식 조회 (Ticker 정보 조인)
-    # N+1 문제를 방지하기 위해 조인 사용
+    # 2. 보유 주식 조회 (Ticker 정보 + 전일 종가 조인)
+    # Latest 1d candle subquery for previous close
+    from backend.models.candle import Candle
+    from sqlalchemy.orm import aliased
+    
+    prev_stmt = (
+        select(Candle)
+        .where(Candle.interval == '1d')
+        .distinct(Candle.ticker_id)
+        .order_by(Candle.ticker_id, Candle.timestamp.desc())
+        .subquery()
+    )
+    prev = aliased(Candle, prev_stmt)
+
     stmt = (
-        select(Portfolio, Ticker)
+        select(Portfolio, Ticker, prev)
         .outerjoin(Ticker, Portfolio.ticker_id == Ticker.id)
+        .outerjoin(prev, Portfolio.ticker_id == prev.ticker_id)
         .where(Portfolio.user_id == user_id)
     )
     result = await db.execute(stmt)
@@ -41,8 +54,9 @@ async def get_user_portfolio(
     
     assets = []
     total_position_value = 0.0
+    total_prev_position_value = 0.0
 
-    for portfolio, ticker in rows:
+    for portfolio, ticker, prev_candle in rows:
         # Redis에서 현재가 조회 (Async)
         price_decimal = await get_current_price(redis, portfolio.ticker_id)
         current_price = float(price_decimal) if price_decimal else float(portfolio.average_price)
@@ -51,15 +65,18 @@ async def get_user_portfolio(
         avg_price = float(portfolio.average_price)
         
         # 평가 금액 (Valuation) 및 매입 원금 (Cost Basis)
-        # 숏 포지션(qty < 0)일 경우 둘 다 음수
         valuation = qty * current_price
         cost_basis = qty * avg_price
         
         total_position_value += valuation
         
-        # 수익률 계산 (Long/Short 통합 공식)
-        # PnL = Valuation - Cost Basis
-        # Rate = PnL / abs(Cost Basis)
+        # Calculate previous value for 24h change
+        # If prev_candle exists, use its close. Else fallback to current_price (no change) or cost?
+        # Fallback to current_price means 0 change contribution from this asset.
+        prev_price = float(prev_candle.close) if prev_candle else current_price
+        total_prev_position_value += qty * prev_price
+        
+        # 수익률 계산
         profit_rate = 0.0
         if abs(cost_basis) > 0:
             profit_rate = ((valuation - cost_basis) / abs(cost_basis)) * 100
@@ -75,10 +92,22 @@ async def get_user_portfolio(
             profit_rate=round(profit_rate, 2)
         ))
 
-    # 총 자산 = 현금 + 포지션 평가액(숏은 음수이므로 자동 차감됨)
+    total_asset_value = cash_balance + total_position_value
+    
+    # Calculate Total Portfolio Change %
+    # We consider cash as stable (no change), so we include cash in the denominator?
+    # Usually "Portfolio Change" implies the change in total value.
+    # Prev Total Value = Cash (assumed const) + Prev Position Value
+    total_prev_asset_value = cash_balance + total_prev_position_value
+    
+    total_asset_change_percent = 0.0
+    if total_prev_asset_value > 0:
+        total_asset_change_percent = ((total_asset_value - total_prev_asset_value) / total_prev_asset_value) * 100
+
     return {
         "cash_balance": cash_balance,
-        "total_asset_value": cash_balance + total_position_value,
+        "total_asset_value": total_asset_value,
+        "total_asset_change_percent": f"{total_asset_change_percent:.2f}",
         "assets": assets
     }
 

@@ -16,6 +16,7 @@ export interface Asset {
 export interface Portfolio {
   cash_balance: number;
   total_asset_value: number;
+  total_asset_change_percent?: string;
   assets: Asset[];
 }
 
@@ -88,6 +89,9 @@ export interface TickerResponse {
   currency: 'KRW' | 'USD';
   is_active: boolean;
   source: string;
+  current_price?: string;
+  change_percent?: string;
+  volume?: string;
 }
 
 export interface MoverResponse {

@@ -53,7 +53,12 @@ export default function Portfolio() {
         {isLoading ? (
           <SkeletonCard />
         ) : (
-          <StatCard title="Total Asset Value" value={`$${Math.floor(portfolio.total_asset_value).toLocaleString()}`} trend="+1.2%" />
+          <StatCard 
+            title="Total Asset Value" 
+            value={`$${Math.floor(portfolio.total_asset_value).toLocaleString()}`} 
+            trend={portfolio.total_asset_change_percent ? `${Number(portfolio.total_asset_change_percent) >= 0 ? '+' : ''}${portfolio.total_asset_change_percent}%` : undefined}
+            trendPositive={Number(portfolio.total_asset_change_percent || 0) >= 0}
+          />
         )}
         {isLoading ? (
           <SkeletonCard />
@@ -155,13 +160,13 @@ export default function Portfolio() {
   );
 }
 
-const StatCard = ({ title, value, trend }: { title: string, value: string, trend?: string }) => (
+const StatCard = ({ title, value, trend, trendPositive }: { title: string, value: string, trend?: string, trendPositive?: boolean }) => (
   <div className="flex flex-col gap-2 rounded-xl p-6 border border-[#314368] bg-[#101623]">
     <p className="text-[#90a4cb] text-sm font-medium">{title}</p>
     <p className="text-white text-3xl font-bold">{value}</p>
     {trend && (
-      <div className="flex items-center gap-1 text-up text-sm font-medium">
-        <span className="material-symbols-outlined text-base">arrow_upward</span>
+      <div className={`flex items-center gap-1 text-sm font-medium ${trendPositive ? 'text-up' : 'text-down'}`}>
+        <span className="material-symbols-outlined text-base">{trendPositive ? 'arrow_upward' : 'arrow_downward'}</span>
         <span>{trend}</span>
       </div>
     )}

@@ -104,21 +104,35 @@ export default function Dashboard() {
                     <tr>
                       <th className="p-4 text-sm font-semibold text-white tracking-wider">Symbol</th>
                       <th className="p-4 text-sm font-semibold text-white tracking-wider">Name</th>
-                      <th className="p-4 text-sm font-semibold text-white tracking-wider">Market</th>
+                      <th className="p-4 text-sm font-semibold text-white tracking-wider text-right">Price</th>
+                      <th className="p-4 text-sm font-semibold text-white tracking-wider text-right">24h Change</th>
+                      <th className="p-4 text-sm font-semibold text-white tracking-wider text-right">Volume</th>
                       <th className="p-4 text-sm font-semibold text-white tracking-wider text-center">Trade</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#314368]">
-                    {filteredTickers.slice(0, 50).map(t => (
-                      <tr key={t.id} className="hover:bg-[#182234]">
-                        <td className="p-4 text-white font-medium">{t.symbol}</td>
-                        <td className="p-4 text-gray-300">{t.name}</td>
-                        <td className="p-4 text-gray-300">{t.market_type}</td>
-                        <td className="p-4 text-center">
-                          <button onClick={() => onTrade(t)} className="h-8 px-4 rounded-md bg-primary text-background-dark font-semibold text-sm hover:bg-primary/90">Trade</button>
-                        </td>
-                      </tr>
-                    ))}
+                    {filteredTickers.slice(0, 50).map(t => {
+                      const change = Number(t.change_percent || 0);
+                      const isPositive = change >= 0;
+                      return (
+                        <tr key={t.id} className="hover:bg-[#182234]">
+                          <td className="p-4 text-white font-medium">{t.symbol}</td>
+                          <td className="p-4 text-gray-300">{t.name}</td>
+                          <td className="p-4 text-right text-white font-mono">
+                            {t.current_price ? Number(t.current_price).toLocaleString() : '-'} {t.currency}
+                          </td>
+                          <td className={`p-4 text-right font-mono font-medium ${isPositive ? 'text-primary' : 'text-[#fa5538]'}`}>
+                            {t.change_percent ? `${isPositive ? '+' : ''}${change.toFixed(2)}%` : '-'}
+                          </td>
+                          <td className="p-4 text-right text-gray-400 font-mono">
+                            {t.volume ? Number(t.volume).toLocaleString(undefined, { maximumFractionDigits: 0 }) : '-'}
+                          </td>
+                          <td className="p-4 text-center">
+                            <button onClick={() => onTrade(t)} className="h-8 px-4 rounded-md bg-primary text-background-dark font-semibold text-sm hover:bg-primary/90">Trade</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

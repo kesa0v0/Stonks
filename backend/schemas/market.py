@@ -41,6 +41,11 @@ class TickerResponse(BaseModel):
     currency: Currency
     is_active: bool
     source: str # source 추가 (TickerSource enum이지만 str로 변환되어 나감)
+    
+    # Market Data (Optional)
+    current_price: Optional[DecimalStr] = None
+    change_percent: Optional[DecimalStr] = None
+    volume: Optional[DecimalStr] = None
 
     model_config = ConfigDict(from_attributes=True)
 

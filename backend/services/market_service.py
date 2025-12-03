@@ -80,23 +80,96 @@ async def get_all_market_status() -> MarketStatusResponse:
         server_time=now.isoformat()
     )
 
-async def get_active_tickers(db: AsyncSession) -> List[Ticker]:
+async def get_active_tickers(db: AsyncSession) -> List[TickerResponse]:
     """
-    상장된 모든 활성 종목 리스트를 조회합니다.
+    상장된 모든 활성 종목 리스트를 조회합니다. (현재가, 변동률 포함)
     """
-    result = await db.execute(select(Ticker).where(Ticker.is_active == True))
-    tickers = result.scalars().all()
+    # Latest 1m candle (Current Price & Volume)
+    curr_stmt = (
+        select(Candle)
+        .where(Candle.interval == '1m')
+        .distinct(Candle.ticker_id)
+        .order_by(Candle.ticker_id, Candle.timestamp.desc())
+        .subquery()
+    )
+    curr = aliased(Candle, curr_stmt)
+
+    # Latest 1d candle (Previous Close)
+    prev_stmt = (
+        select(Candle)
+        .where(Candle.interval == '1d')
+        .distinct(Candle.ticker_id)
+        .order_by(Candle.ticker_id, Candle.timestamp.desc())
+        .subquery()
+    )
+    prev = aliased(Candle, prev_stmt)
+
+    # Calculate Change %
+    change_expr = (curr.close - prev.close) / prev.close * 100
+
+    stmt = (
+        select(Ticker, curr, change_expr.label("change_percent"))
+        .outerjoin(curr, Ticker.id == curr.ticker_id)
+        .outerjoin(prev, Ticker.id == prev.ticker_id)
+        .where(Ticker.is_active == True)
+    )
+
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    tickers = []
+    for row in rows:
+        ticker_obj, candle_1m, change_pct = row
+        
+        # Build response
+        t_res = TickerResponse.model_validate(ticker_obj)
+        
+        if candle_1m:
+            t_res.current_price = str(candle_1m.close)
+            t_res.volume = str(candle_1m.volume)
+            
+        if change_pct is not None:
+            t_res.change_percent = f"{change_pct:.2f}"
+        else:
+             # If no data, 0.00 or None. Let's default to 0.00 if price exists? 
+             # Or None. None is safer to indicate "no data".
+             pass
+
+        tickers.append(t_res)
+        
     return tickers
 
-async def search_tickers_by_name(db: AsyncSession, query: str, limit: int) -> List[Ticker]:
+async def search_tickers_by_name(db: AsyncSession, query: str, limit: int) -> List[TickerResponse]:
     """
-    종목 이름 또는 심볼로 종목을 검색합니다.
+    종목 이름 또는 심볼로 종목을 검색합니다. (현재가 포함)
     """
-    search_pattern = f"%{query}%" # 부분 일치 검색
+    search_pattern = f"%{query}%" 
     
-    # SQLite 호환성을 위해 ilike 대신 lower() + like() 사용
+    # Reuse similar logic for price data
+    curr_stmt = (
+        select(Candle)
+        .where(Candle.interval == '1m')
+        .distinct(Candle.ticker_id)
+        .order_by(Candle.ticker_id, Candle.timestamp.desc())
+        .subquery()
+    )
+    curr = aliased(Candle, curr_stmt)
+
+    prev_stmt = (
+        select(Candle)
+        .where(Candle.interval == '1d')
+        .distinct(Candle.ticker_id)
+        .order_by(Candle.ticker_id, Candle.timestamp.desc())
+        .subquery()
+    )
+    prev = aliased(Candle, prev_stmt)
+
+    change_expr = (curr.close - prev.close) / prev.close * 100
+    
     stmt = (
-        select(Ticker)
+        select(Ticker, curr, change_expr.label("change_percent"))
+        .outerjoin(curr, Ticker.id == curr.ticker_id)
+        .outerjoin(prev, Ticker.id == prev.ticker_id)
         .where(
             Ticker.is_active == True,
             or_(
@@ -108,7 +181,22 @@ async def search_tickers_by_name(db: AsyncSession, query: str, limit: int) -> Li
     )
     
     result = await db.execute(stmt)
-    tickers = result.scalars().all()
+    rows = result.all()
+
+    tickers = []
+    for row in rows:
+        ticker_obj, candle_1m, change_pct = row
+        t_res = TickerResponse.model_validate(ticker_obj)
+        
+        if candle_1m:
+            t_res.current_price = str(candle_1m.close)
+            t_res.volume = str(candle_1m.volume)
+        
+        if change_pct is not None:
+            t_res.change_percent = f"{change_pct:.2f}"
+            
+        tickers.append(t_res)
+        
     return tickers
 
 async def get_candle_history(db: AsyncSession, ticker_id: str, interval: str, limit: int, before: Optional[datetime] = None, after: Optional[datetime] = None) -> List[Candle]:
