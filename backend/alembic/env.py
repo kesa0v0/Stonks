@@ -35,10 +35,15 @@ from backend.core.database import Base
 # Import all models to ensure they are registered with Base.metadata
 # It's important to import all models so Alembic can detect schema changes.
 from backend.models import *
+from backend.core.config import settings
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+
+# Overwrite the sqlalchemy.url in the config object with the one from settings.
+# This ensures that Alembic uses the database URL defined in environment variables (e.g., production DB).
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
