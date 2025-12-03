@@ -66,16 +66,22 @@ const refreshAuthToken = async () => {
 };
 
 export const initializeAuth = async () => {
-    const rt = getRefreshToken();
-    if (rt && !accessToken) {
-        try {
-            await refreshAuthToken();
-        } catch {
-            // Silent fail on init - user will just be unauthenticated
-            setRefreshToken(null);
-            handleUnauthorized(); // Redirect if proactive refresh fails
-        }
+  const rt = getRefreshToken();
+  if (rt && !accessToken) {
+    try {
+      // Use the same singleton to prevent concurrent refreshes on app mount
+      if (!refreshPromise) {
+        refreshPromise = refreshAuthToken().finally(() => {
+          refreshPromise = null;
+        });
+      }
+      await refreshPromise;
+    } catch {
+      // Silent fail on init - user will just be unauthenticated
+      setRefreshToken(null);
+      handleUnauthorized(); // Redirect if proactive refresh fails
     }
+  }
 };
 
 // Schedule a proactive token refresh before it expires

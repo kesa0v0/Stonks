@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import api from '../api/client';
+import api, { initializeAuth } from '../api/client';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -22,6 +22,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     let mounted = true;
     (async () => {
       try {
+        // Ensure auth initialization completes before fetching profile
+        await initializeAuth();
         const data = await api.get('auth/login/me').json<{ nickname: string }>();
         if (mounted) setMe(data);
       } catch {
