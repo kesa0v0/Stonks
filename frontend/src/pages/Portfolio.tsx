@@ -53,12 +53,12 @@ export default function Portfolio() {
         {isLoading ? (
           <SkeletonCard />
         ) : (
-          <StatCard 
-            title="Total Asset Value" 
-            value={`$${Math.floor(portfolio.total_asset_value).toLocaleString()}`} 
-            trend={portfolio.total_asset_change_percent ? `${Number(portfolio.total_asset_change_percent) >= 0 ? '+' : ''}${portfolio.total_asset_change_percent}%` : undefined}
-            trendPositive={Number(portfolio.total_asset_change_percent || 0) >= 0}
-          />
+              <StatCard 
+                title="Total Asset Value" 
+                value={`$${Math.floor(portfolio.total_asset_value).toLocaleString()}`} 
+                trend={portfolio.total_asset_change_percent ? `${Number(portfolio.total_asset_change_percent) >= 0 ? '+' : ''}${portfolio.total_asset_change_percent}%` : undefined}
+                trendPositive={Number(portfolio.total_asset_change_percent || 0) >= 0}
+              />
         )}
         {isLoading ? (
           <SkeletonCard />
@@ -143,7 +143,7 @@ export default function Portfolio() {
                     <td className="px-6 py-4 text-white/70 text-sm">{new Date(order.created_at).toLocaleDateString()}</td>
                     <td className="px-6 py-4 text-white font-bold">{order.ticker_id.split('-').pop()}</td>
                     <td className="px-6 py-4 text-center">
-                      <span className={`inline-flex items-center justify-center rounded-full h-7 px-3 text-xs font-bold ${order.side === 'BUY' ? 'bg-up/20 text-up' : 'bg-down/20 text-down'}`}>
+                          <span className={`inline-flex items-center justify-center rounded-full h-7 px-3 text-xs font-bold ${order.side === 'BUY' ? 'bg-profit/20 text-profit' : 'bg-loss/20 text-loss'}`}>
                         {order.side}
                       </span>
                     </td>
@@ -165,7 +165,7 @@ const StatCard = ({ title, value, trend, trendPositive }: { title: string, value
     <p className="text-[#90a4cb] text-sm font-medium">{title}</p>
     <p className="text-white text-3xl font-bold">{value}</p>
     {trend && (
-      <div className={`flex items-center gap-1 text-sm font-medium ${trendPositive ? 'text-up' : 'text-down'}`}>
+            <div className={`flex items-center gap-1 text-sm font-medium ${trendPositive ? 'text-profit' : 'text-loss'}`}>
         <span className="material-symbols-outlined text-base">{trendPositive ? 'arrow_upward' : 'arrow_downward'}</span>
         <span>{trend}</span>
       </div>

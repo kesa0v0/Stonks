@@ -57,13 +57,13 @@ export default function Dashboard() {
           {/* Gainers / Losers / Trending */}
           <section className="p-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card title="Top Gainers" icon="trending_up" iconClass="text-primary">
+              <Card title="Top Gainers" icon="trending_up" iconClass="text-profit">
                 <ListMovers data={gainersQ.data} positive />
               </Card>
-              <Card title="Top Losers" icon="trending_down" iconClass="text-[#fa5538]">
+              <Card title="Top Losers" icon="trending_down" iconClass="text-loss">
                 <ListMovers data={losersQ.data} />
               </Card>
-              <Card title="Trending Now" icon="bolt" iconClass="text-primary">
+              <Card title="Trending Now" icon="bolt" iconClass="text-profit">
                 <ListMovers data={trendingQ.data} positive />
               </Card>
             </div>
@@ -121,7 +121,7 @@ export default function Dashboard() {
                           <td className="p-4 text-right text-white font-mono">
                             {t.current_price ? Number(t.current_price).toLocaleString() : '-'} {t.currency}
                           </td>
-                          <td className={`p-4 text-right font-mono font-medium ${isPositive ? 'text-primary' : 'text-[#fa5538]'}`}>
+                          <td className={`p-4 text-right font-mono font-medium ${isPositive ? 'text-profit' : 'text-loss'}`}>
                             {t.change_percent ? `${isPositive ? '+' : ''}${change.toFixed(2)}%` : '-'}
                           </td>
                           <td className="p-4 text-right text-gray-400 font-mono">
@@ -167,7 +167,7 @@ function ListMovers({ data, positive }: { data?: MoverResponse[]; positive?: boo
       {items.map((m, i) => (
         <div key={i} className="flex justify-between items-center">
           <p className="text-white tracking-light text-lg font-bold">{m.ticker.symbol}</p>
-          <p className={`${(positive ?? false) || Number(m.change_percent) > 0 ? 'text-primary' : 'text-[#fa5538]'} text-base font-medium`}>{Number(m.change_percent).toFixed(1)}%</p>
+          <p className={`${(positive ?? false) || Number(m.change_percent) > 0 ? 'text-profit' : 'text-loss'} text-base font-medium`}>{Number(m.change_percent).toFixed(1)}%</p>
         </div>
       ))}
     </>

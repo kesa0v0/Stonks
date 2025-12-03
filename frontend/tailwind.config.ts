@@ -13,6 +13,8 @@ export default {
         'background-dark': '#101622',
         up: '#ef4444',
         down: '#0d59f2',
+        profit: '#ef4444', // +는 빨강
+        loss: '#0ea5e9',   // -는 파랑
       },
       fontFamily: {
         display: ['Space Grotesk', 'sans-serif'],

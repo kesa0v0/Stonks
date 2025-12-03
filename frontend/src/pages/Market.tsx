@@ -91,7 +91,7 @@ export default function Market() {
           <div className="flex gap-4">
             <div className="text-right hidden sm:block">
               <p className="text-[#90a4cb] text-xs uppercase font-bold">24h Change</p>
-              <p className={`font-mono font-bold ${(Number(selectedTicker?.change_percent || 0) >= 0) ? 'text-up' : 'text-down'}`}>
+              <p className={`font-mono font-bold ${(Number(selectedTicker?.change_percent || 0) >= 0) ? 'text-profit' : 'text-loss'}`}>
                 {selectedTicker?.change_percent ? `${Number(selectedTicker.change_percent) >= 0 ? '+' : ''}${Number(selectedTicker.change_percent).toFixed(2)}%` : '-'}
               </p>
             </div>
@@ -168,10 +168,10 @@ export default function Market() {
                     </tr>
                   </thead>
                   <tbody>
-                    {/* Asks (Sell Orders) - Blue (Down) */}
+                    {/* Asks (Sell Orders) - Blue (Loss) */}
                     {orderBook?.asks.slice(0, 8).reverse().map((ask, i) => (
                       <tr key={`ask-${i}`} className="hover:bg-[#182234] transition-colors relative">
-                        <td className="text-down py-1">{ask.price.toLocaleString()}</td>
+                        <td className="text-loss py-1">{ask.price.toLocaleString()}</td>
                         <td className="text-right text-white/70">{ask.quantity.toFixed(4)}</td>
                         <td className="text-right text-white/40">{(ask.price * ask.quantity).toLocaleString()}</td>
                       </tr>
@@ -184,10 +184,10 @@ export default function Market() {
                       </td>
                     </tr>
 
-                    {/* Bids (Buy Orders) - Red (Up) */}
+                    {/* Bids (Buy Orders) - Red (Profit) */}
                     {orderBook?.bids.slice(0, 8).map((bid, i) => (
                       <tr key={`bid-${i}`} className="hover:bg-[#2a1818] transition-colors relative">
-                        <td className="text-up py-1">{bid.price.toLocaleString()}</td>
+                        <td className="text-profit py-1">{bid.price.toLocaleString()}</td>
                         <td className="text-right text-white/70">{bid.quantity.toFixed(4)}</td>
                         <td className="text-right text-white/40">{(bid.price * bid.quantity).toLocaleString()}</td>
                       </tr>
@@ -202,13 +202,13 @@ export default function Market() {
               <div className="flex bg-[#182234] rounded-lg p-1 mb-4">
                 <button 
                   onClick={() => setSide('BUY')}
-                  className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${side === 'BUY' ? 'bg-up text-white shadow-lg' : 'text-[#90a4cb] hover:text-white'}`}
+                  className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${side === 'BUY' ? 'bg-profit text-white shadow-lg' : 'text-[#90a4cb] hover:text-white'}`}
                 >
                   Buy
                 </button>
                 <button 
                   onClick={() => setSide('SELL')}
-                  className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${side === 'SELL' ? 'bg-down text-white shadow-lg' : 'text-[#90a4cb] hover:text-white'}`}
+                  className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${side === 'SELL' ? 'bg-loss text-white shadow-lg' : 'text-[#90a4cb] hover:text-white'}`}
                 >
                   Sell
                 </button>
@@ -244,14 +244,14 @@ export default function Market() {
                 <button 
                   type="submit" 
                   className={`w-full py-3 rounded-lg font-bold text-white mt-2 transition-all hover:brightness-110 active:scale-95
-                    ${side === 'BUY' ? 'bg-up' : 'bg-down'}`}
+                    ${side === 'BUY' ? 'bg-profit' : 'bg-loss'}`}
                 >
                   Buy
                 </button>
                 <button 
                   type="submit" 
                   className={`w-full py-3 rounded-lg font-bold text-white mt-2 transition-all hover:brightness-110 active:scale-95
-                    ${side === 'SELL' ? 'bg-down' : 'bg-up'}`}
+                    ${side === 'SELL' ? 'bg-loss' : 'bg-profit'}`}
                 >
                   Sell
                 </button>

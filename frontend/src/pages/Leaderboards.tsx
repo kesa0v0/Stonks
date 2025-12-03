@@ -142,13 +142,13 @@ export default function Leaderboard() {
                 title="Profit King" 
                 user={hallOfFame?.top_profit} 
                 desc="Highest Realized PnL"
-                color="text-green-400"
+                color="text-red-500"
               />
               <BadgeCard 
                 title="Rekt Master" 
                 user={hallOfFame?.top_loss} 
                 desc="Highest Total Loss"
-                color="text-red-500"
+                color="text-blue-500"
               />
               <BadgeCard 
                 title="Volume King" 
@@ -220,8 +220,9 @@ function getRankIcon(rank: number) {
 }
 
 function getValueColor(type: string, value: number) {
-  if (type === 'loss') return 'text-[#ef4444]'; // 빨강
-  if (type === 'pnl') return value >= 0 ? 'text-[#00FF41]' : 'text-[#ef4444]';
+  // 사이트 전역 규칙: +는 빨강(text-profit), -는 파랑(text-loss)
+  if (type === 'loss') return 'text-loss';
+  if (type === 'pnl') return value >= 0 ? 'text-profit' : 'text-loss';
   return 'text-white';
 }
 
