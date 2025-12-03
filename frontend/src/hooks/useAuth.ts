@@ -8,10 +8,10 @@ export function useAuth() {
       const body = new URLSearchParams();
       body.set('username', d.username);
       body.set('password', d.password);
-      return api.post('auth/login/access-token', { body }).json<{access_token:string;refresh_token:string;token_type:string}>();
+      return api.post('auth/login/access-token', { body }).json<{access_token:string;refresh_token:string;token_type:string;expires_in:number}>();
     },
     onSuccess: t => {
-      setAccessToken(t.access_token);
+      setAccessToken(t.access_token, t.expires_in);
       setRefreshToken(t.refresh_token);
     }
   });
@@ -23,9 +23,9 @@ export function useAuth() {
 
   const exchangeDiscordCode = useMutation({
     mutationFn: (d: { code: string; redirect_uri?: string }) =>
-      api.post('auth/discord/exchange', { json: d }).json<{access_token:string;refresh_token:string;token_type:string}>(),
+      api.post('auth/discord/exchange', { json: d }).json<{access_token:string;refresh_token:string;token_type:string;expires_in:number}>(),
     onSuccess: t => {
-      setAccessToken(t.access_token);
+      setAccessToken(t.access_token, t.expires_in);
       setRefreshToken(t.refresh_token);
     }
   });

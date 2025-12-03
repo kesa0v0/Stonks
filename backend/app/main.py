@@ -90,14 +90,26 @@ app = FastAPI(
 Instrumentator().instrument(app).expose(app)
 
 # CORS 설정: 허용할 출처(Origin) 목록 (환경설정에서 주입)
-origins = settings.BACKEND_CORS_ORIGINS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,        # 허용할 사이트들
-    allow_credentials=True,       # 쿠키/인증정보 포함 허용
-    allow_methods=["*"],          # 모든 HTTP Method 허용 (GET, POST...)
-    allow_headers=["*"],          # 모든 Header 허용
-)
+# DEBUG 모드일 경우 로컬 개발 편의를 위해 좀 더 관대하게 설정하거나,
+# 명시된 오리진이 제대로 적용되도록 합니다.
+if settings.DEBUG:
+    # 개발 모드에서는 웬만하면 다 허용 (Credentials 포함 시 * 불가하므로 패턴 사용)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.BACKEND_CORS_ORIGINS, # config.py에 정의된 로컬 주소들
+        allow_origin_regex="https?://(localhost|127\.0\.0\.1)(:[0-9]+)?", # 로컬호스트 모든 포트 허용
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.BACKEND_CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 app.add_exception_handler(StonksError, stonks_exception_handler)
 app.add_exception_handler(Exception, general_exception_handler)

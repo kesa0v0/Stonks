@@ -5,6 +5,7 @@ class Token(BaseModel):
     access_token: str
     token_type: str
     refresh_token: str
+    expires_in: int  # Time in seconds until the access token expires
 
 class TokenPayload(BaseModel):
     sub: Optional[str] = None

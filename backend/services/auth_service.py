@@ -15,15 +15,15 @@ from backend.core import security, constants
 from backend.core.config import settings
 from backend.core.exceptions import InvalidCredentialsError, UserInactiveError, UserNotFoundError
 from backend.models import User
-from backend.schemas.token import RefreshTokenRequest, LogoutRequest
+from backend.schemas.token import RefreshTokenRequest, LogoutRequest, Token
 
 from backend.repository.user import user_repo
 
 async def authenticate_user(
     db: AsyncSession, 
-    redis_client: async_redis.Redis, 
+    redis_client: async_redis.Redis,
     form_data: Any
-) -> Dict[str, Any]:
+) -> Token:
     """
     OAuth2 compatible token login, get an access token for future requests
     """
@@ -36,6 +36,7 @@ async def authenticate_user(
         raise UserInactiveError()
         
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    expires_in_seconds = int(access_token_expires.total_seconds())
     
     # Generate refresh token with JTI and persist JTI in Redis for reuse detection
     refresh_jti = str(uuid.uuid4())
@@ -52,20 +53,21 @@ async def authenticate_user(
         # Fail-open: authentication still succeeds even if state store fails
         pass
 
-    return {
-        "access_token": security.create_access_token(
+    return Token(
+        access_token=security.create_access_token(
             subject=user.id, expires_delta=access_token_expires
         ),
-        "token_type": "bearer",
-        "refresh_token": refresh_token
-    }
+        token_type="bearer",
+        refresh_token=refresh_token,
+        expires_in=expires_in_seconds
+    )
 
 async def authenticate_with_discord(
     db: AsyncSession,
     redis_client: async_redis.Redis,
     code: str,
     redirect_uri: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> Token:
     """
     Exchange Discord OAuth code for user info, upsert user, and issue local tokens.
     """
@@ -153,6 +155,7 @@ async def authenticate_with_discord(
 
     # 4) Issue tokens (same as local auth)
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    expires_in_seconds = int(access_token_expires.total_seconds())
     refresh_jti = str(uuid.uuid4())
     refresh_token = security.create_refresh_token(subject=user.id, jti=refresh_jti)
     refresh_exp = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
@@ -164,19 +167,20 @@ async def authenticate_with_discord(
     except Exception:
         pass
 
-    return {
-        "access_token": security.create_access_token(
+    return Token(
+        access_token=security.create_access_token(
             subject=user.id, expires_delta=access_token_expires
         ),
-        "token_type": "bearer",
-        "refresh_token": refresh_token,
-    }
+        token_type="bearer",
+        refresh_token=refresh_token,
+        expires_in=expires_in_seconds
+    )
 
 async def refresh_access_token(
     db: AsyncSession, 
     redis_client: async_redis.Redis, 
     request: RefreshTokenRequest
-) -> Dict[str, Any]:
+) -> Token:
     """
     Refresh access token using a refresh token
     """
@@ -243,6 +247,7 @@ async def refresh_access_token(
         raise UserInactiveError()
         
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    expires_in_seconds = int(access_token_expires.total_seconds())
     
     # Blacklist the old refresh token (rotate)
     try:
@@ -266,13 +271,14 @@ async def refresh_access_token(
     except Exception:
         pass
 
-    return {
-        "access_token": security.create_access_token(
+    return Token(
+        access_token=security.create_access_token(
             subject=user.id, expires_delta=access_token_expires
         ),
-        "token_type": "bearer",
-        "refresh_token": new_refresh_token
-    }
+        token_type="bearer",
+        refresh_token=new_refresh_token,
+        expires_in=expires_in_seconds
+    )
 
 async def logout_user(
     redis_client: async_redis.Redis,
