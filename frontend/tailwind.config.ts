@@ -11,6 +11,8 @@ export default {
         primary: '#0d59f2',
         'background-light': '#f5f6f8',
         'background-dark': '#101622',
+        up: '#ef4444',
+        down: '#0d59f2',
       },
       fontFamily: {
         display: ['Space Grotesk', 'sans-serif'],

@@ -301,12 +301,10 @@ export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle' }: Ch
         });
     } else {
         series = chart.addSeries(CandlestickSeries, {
-            upColor: '#00FF41',
-            downColor: '#ef4444',
-            borderVisible: false,
-            wickUpColor: '#00FF41',
-            wickDownColor: '#ef4444',
-        });
+                    upColor: '#ef4444',
+                    downColor: '#00FF41',            borderVisible: false,
+                    wickUpColor: '#ef4444',
+                    wickDownColor: '#00FF41',        });
     }
 
     chartRef.current = chart;

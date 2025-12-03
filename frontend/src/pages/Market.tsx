@@ -91,7 +91,7 @@ export default function Market() {
           <div className="flex gap-4">
             <div className="text-right hidden sm:block">
               <p className="text-[#90a4cb] text-xs uppercase font-bold">24h Change</p>
-              <p className="text-[#00FF41] font-mono font-bold">+1.2%</p>
+              <p className="text-up font-mono font-bold">+1.2%</p>
             </div>
             <div className="text-right hidden sm:block">
               <p className="text-[#90a4cb] text-xs uppercase font-bold">24h Volume</p>
@@ -164,10 +164,10 @@ export default function Market() {
                     </tr>
                   </thead>
                   <tbody>
-                    {/* Asks (Sell Orders) - Red */}
+                    {/* Asks (Sell Orders) - Blue (Down) */}
                     {orderBook?.asks.slice(0, 8).reverse().map((ask, i) => (
-                      <tr key={`ask-${i}`} className="hover:bg-[#2a1818] transition-colors relative">
-                        <td className="text-[#ef4444] py-1">{ask.price.toLocaleString()}</td>
+                      <tr key={`ask-${i}`} className="hover:bg-[#182234] transition-colors relative">
+                        <td className="text-down py-1">{ask.price.toLocaleString()}</td>
                         <td className="text-right text-white/70">{ask.quantity.toFixed(4)}</td>
                         <td className="text-right text-white/40">{(ask.price * ask.quantity).toLocaleString()}</td>
                       </tr>
@@ -180,10 +180,10 @@ export default function Market() {
                       </td>
                     </tr>
 
-                    {/* Bids (Buy Orders) - Green (or Blue based on theme) */}
+                    {/* Bids (Buy Orders) - Red (Up) */}
                     {orderBook?.bids.slice(0, 8).map((bid, i) => (
-                      <tr key={`bid-${i}`} className="hover:bg-[#102a20] transition-colors relative">
-                        <td className="text-[#00FF41] py-1">{bid.price.toLocaleString()}</td>
+                      <tr key={`bid-${i}`} className="hover:bg-[#2a1818] transition-colors relative">
+                        <td className="text-up py-1">{bid.price.toLocaleString()}</td>
                         <td className="text-right text-white/70">{bid.quantity.toFixed(4)}</td>
                         <td className="text-right text-white/40">{(bid.price * bid.quantity).toLocaleString()}</td>
                       </tr>
@@ -198,13 +198,13 @@ export default function Market() {
               <div className="flex bg-[#182234] rounded-lg p-1 mb-4">
                 <button 
                   onClick={() => setSide('BUY')}
-                  className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${side === 'BUY' ? 'bg-[#0d59f2] text-white shadow-lg' : 'text-[#90a4cb] hover:text-white'}`}
+                  className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${side === 'BUY' ? 'bg-up text-white shadow-lg' : 'text-[#90a4cb] hover:text-white'}`}
                 >
                   Buy
                 </button>
                 <button 
                   onClick={() => setSide('SELL')}
-                  className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${side === 'SELL' ? 'bg-[#ef4444] text-white shadow-lg' : 'text-[#90a4cb] hover:text-white'}`}
+                  className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${side === 'SELL' ? 'bg-down text-white shadow-lg' : 'text-[#90a4cb] hover:text-white'}`}
                 >
                   Sell
                 </button>
@@ -240,14 +240,14 @@ export default function Market() {
                 <button 
                   type="submit" 
                   className={`w-full py-3 rounded-lg font-bold text-white mt-2 transition-all hover:brightness-110 active:scale-95
-                    ${side === 'BUY' ? 'bg-[#0d59f2]' : 'bg-[#ef4444]'}`}
+                    ${side === 'BUY' ? 'bg-up' : 'bg-down'}`}
                 >
                   Buy
                 </button>
                 <button 
                   type="submit" 
                   className={`w-full py-3 rounded-lg font-bold text-white mt-2 transition-all hover:brightness-110 active:scale-95
-                    ${side === 'SELL' ? 'bg-[#ef4444]' : 'bg-[#0d59f2]'}`}
+                    ${side === 'SELL' ? 'bg-down' : 'bg-up'}`}
                 >
                   Sell
                 </button>

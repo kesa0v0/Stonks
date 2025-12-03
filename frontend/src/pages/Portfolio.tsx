@@ -138,7 +138,7 @@ export default function Portfolio() {
                     <td className="px-6 py-4 text-white/70 text-sm">{new Date(order.created_at).toLocaleDateString()}</td>
                     <td className="px-6 py-4 text-white font-bold">{order.ticker_id.split('-').pop()}</td>
                     <td className="px-6 py-4 text-center">
-                      <span className={`inline-flex items-center justify-center rounded-full h-7 px-3 text-xs font-bold ${order.side === 'BUY' ? 'bg-[#0d59f2]/20 text-[#0d59f2]' : 'bg-red-500/20 text-red-400'}`}>
+                      <span className={`inline-flex items-center justify-center rounded-full h-7 px-3 text-xs font-bold ${order.side === 'BUY' ? 'bg-up/20 text-up' : 'bg-down/20 text-down'}`}>
                         {order.side}
                       </span>
                     </td>
@@ -160,7 +160,7 @@ const StatCard = ({ title, value, trend }: { title: string, value: string, trend
     <p className="text-[#90a4cb] text-sm font-medium">{title}</p>
     <p className="text-white text-3xl font-bold">{value}</p>
     {trend && (
-      <div className="flex items-center gap-1 text-[#00FF41] text-sm font-medium">
+      <div className="flex items-center gap-1 text-up text-sm font-medium">
         <span className="material-symbols-outlined text-base">arrow_upward</span>
         <span>{trend}</span>
       </div>
