@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     ADMIN_EMAIL: str = "admin@stonks.com"
+    ADMIN_PASSWORD: str = "admin"
     API_KEY_RATE_LIMIT_PER_MINUTE: int = 120  # 기본 API Key 사용 제한
     
     # 3. 추가된 인프라 설정 (Redis, RabbitMQ)
