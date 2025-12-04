@@ -6,6 +6,7 @@ import DashboardLayout from '../components/DashboardLayout';
 import type { TickerResponse, MoverResponse, Portfolio } from '../interfaces';
 import { usePrices } from '../hooks/usePrices';
 import HoldingsTable from '../components/HoldingsTable';
+import OpenOrders from '../components/OpenOrders';
 
 //
 
@@ -164,6 +165,11 @@ export default function Dashboard() {
           {/* My Holdings */}
           <section className="px-4 pb-6">
              <HoldingsTable assets={myAssets} isLoading={portfolioQ.isLoading} />
+          </section>
+
+          {/* Open Orders */}
+          <section className="px-4 pb-6">
+             <OpenOrders />
           </section>
 
           {/* Asset List */}
