@@ -296,9 +296,9 @@ export default function Market() {
 
   return (
     <DashboardLayout>
-      <>
+      <div className="flex flex-col min-h-screen">
         {/* Header Bar */}
-        <header className="flex items-center justify-between border-b border-[#314368] pb-4 mb-6">
+        <header className="flex-none flex items-center justify-between border-b border-[#314368] pb-4 mb-6">
           <div className="flex items-center gap-4">
             <div className="w-10 h-10 rounded-full bg-[#222f49] flex items-center justify-center text-[#0d59f2]">
               <span className="material-symbols-outlined text-2xl">currency_bitcoin</span>
@@ -315,13 +315,13 @@ export default function Market() {
           </div>
         </header>
 
-        {/* Main Grid */}
-        <div className="grid grid-cols-12 gap-6 h-[calc(100vh-180px)] min-h-[600px]">
+        {/* Main Grid: fixed viewport height; prioritize larger panels */}
+        <div className="flex-1 grid grid-cols-12 gap-6 min-h-0">
           
           {/* Left Column: Chart */}
-          <div className="col-span-12 lg:col-span-8 flex flex-col gap-6">
-            <div className="flex-1 rounded-xl border border-[#314368] bg-[#101623] p-4 flex flex-col">
-              <div className="flex justify-between items-center mb-4">
+          <div className="col-span-12 lg:col-span-8 flex flex-col h-full">
+            <div className="flex-1 rounded-xl border border-[#314368] bg-[#101623] p-4 flex flex-col min-h-0">
+              <div className="flex justify-between items-center mb-4 flex-none">
                 <h3 className="text-white font-bold">Price Chart</h3>
                 <div className="flex gap-4">
                   {/* Range Toggle */}
@@ -368,11 +368,11 @@ export default function Market() {
           </div>
 
           {/* Right Column: OrderBook & Trade Form */}
-          <div className="col-span-12 lg:col-span-4 flex flex-col gap-6">
+          <div className="col-span-12 lg:col-span-4 flex flex-col gap-6 h-full">
             
             {/* Order Book */}
-            <div className="flex-[2] rounded-xl border border-[#314368] bg-[#101623] p-4 flex flex-col overflow-hidden">
-              <h3 className="text-white font-bold mb-3 border-b border-[#314368] pb-2">Order Book</h3>
+            <div className="flex-1 rounded-xl border border-[#314368] bg-[#101623] p-4 flex flex-col min-h-0 overflow-hidden">
+              <h3 className="text-white font-bold mb-3 border-b border-[#314368] pb-2 flex-none">Order Book</h3>
               <div className="flex-1 overflow-y-auto font-mono text-sm no-scrollbar">
                 <table className="w-full">
                   <thead>
@@ -413,7 +413,7 @@ export default function Market() {
             </div>
 
             {/* Trade Form */}
-            <div className="flex-[3] rounded-xl border border-[#314368] bg-[#101623] p-4 flex flex-col justify-center">
+            <div className="flex-none h-auto rounded-xl border border-[#314368] bg-[#101623] p-4 flex flex-col">
               {/* Side Toggle */}
               <div className="flex bg-[#182234] rounded-lg p-1 mb-4">
                 <button 
@@ -532,11 +532,11 @@ export default function Market() {
           </div>
         </div>
 
-        {/* Open Orders Section */}
-        <div className="mt-6">
+        {/* Open Orders Section: fixed card height with internal scroll */}
+        <div className="flex-none mt-6 pb-6">
            <OpenOrders tickerId={tickerId} />
         </div>
-      </>
+      </div>
     </DashboardLayout>
   );
 }
