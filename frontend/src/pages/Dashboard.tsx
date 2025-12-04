@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import api from '../api/client';
 import DashboardLayout from '../components/DashboardLayout';
-import type { TickerResponse, MoverResponse } from '../interfaces';
+import type { TickerResponse, MoverResponse, Portfolio } from '../interfaces';
 import { usePrices } from '../hooks/usePrices';
+import HoldingsTable from '../components/HoldingsTable';
 
 //
 
@@ -35,6 +36,35 @@ export default function Dashboard() {
     queryKey: ['trending'],
     queryFn: () => api.get('market/trending', { searchParams: { limit: '5' } }).json<MoverResponse[]>(),
   });
+
+  const portfolioQ = useQuery({
+    queryKey: ['portfolio'],
+    queryFn: () => api.get('me/portfolio').json<Portfolio>(),
+  });
+
+  const myAssets = useMemo(() => {
+    if (!portfolioQ.data) return [];
+    
+    return portfolioQ.data.assets.map(a => {
+      const p = prices.get(a.ticker_id);
+      const assetQuantity = Number(a.quantity);
+      const assetAveragePrice = Number(a.average_price);
+      const assetCurrentPrice = p !== undefined ? p : Number(a.current_price);
+
+      const totalValue = assetCurrentPrice * assetQuantity;
+      let profitRate = 0;
+      if (assetAveragePrice * assetQuantity !== 0) {
+          profitRate = ((totalValue - (assetAveragePrice * assetQuantity)) / (assetAveragePrice * assetQuantity)) * 100;
+      }
+
+      return {
+          ...a,
+          current_price: assetCurrentPrice.toString(),
+          total_value: totalValue.toString(),
+          profit_rate: profitRate.toFixed(2).toString()
+      };
+    });
+  }, [portfolioQ.data, prices]);
 
   const filteredTickers = useMemo(() => {
     const list = tickersQ.data || [];
@@ -110,7 +140,7 @@ export default function Dashboard() {
   return (
     <DashboardLayout>
       <div className="relative flex h-auto min-h-screen w-full flex-col bg-background-light dark:bg-background-dark overflow-x-hidden">
-        <div className="px-4 sm:px-8 md:px-12 lg:px-20 xl:px-40 flex-1 py-5">
+        <div className="px-4 sm:px-6 md:px-8 lg:px-10 xl:px-12 flex-1 py-5">
           {/* Header */}
           <header className="w-full px-4 pt-6 pb-3">
             <h1 className="text-white tracking-tight text-[32px] font-bold leading-tight">Market Overview</h1>
@@ -129,6 +159,11 @@ export default function Dashboard() {
                 <ListMovers data={displayedTrending} />
               </Card>
             </div>
+          </section>
+
+          {/* My Holdings */}
+          <section className="px-4 pb-6">
+             <HoldingsTable assets={myAssets} isLoading={portfolioQ.isLoading} />
           </section>
 
           {/* Asset List */}

@@ -4,6 +4,7 @@ import DashboardLayout from '../components/DashboardLayout';
 import type { Portfolio as IPortfolio, OrderListItem } from '../interfaces';
 import { usePrices } from '../hooks/usePrices';
 import OpenOrders from '../components/OpenOrders';
+import HoldingsTable from '../components/HoldingsTable';
 
 export default function Portfolio() {
   const [fetchedPortfolio, setFetchedPortfolio] = useState<IPortfolio | null>(null);
@@ -131,15 +132,15 @@ export default function Portfolio() {
         ) : (
               <StatCard 
                 title="Total Asset Value" 
-                value={`$${Math.floor(portfolio.total_asset_value).toLocaleString()}`} 
-                trend={portfolio.total_asset_change_percent ? `${Number(portfolio.total_asset_change_percent) >= 0 ? '+' : ''}${portfolio.total_asset_change_percent}%` : undefined}
+                value={`$${Math.floor(Number(portfolio.total_asset_value)).toLocaleString()}`} 
+                trend={portfolio.total_asset_change_percent ? `${Number(portfolio.total_asset_change_percent) >= 0 ? '+' : ''}${portfolio.total_asset_change_percent}% (Today)` : undefined}
                 trendPositive={Number(portfolio.total_asset_change_percent || 0) >= 0}
               />
         )}
         {isLoading ? (
           <SkeletonCard />
         ) : (
-          <StatCard title="Available Cash" value={`$${Math.floor(portfolio.cash_balance).toLocaleString()}`} />
+          <StatCard title="Available Cash" value={`$${Math.floor(Number(portfolio.cash_balance)).toLocaleString()}`} />
         )}
         {isLoading ? (
           <SkeletonCard />
@@ -167,7 +168,7 @@ export default function Portfolio() {
                 </svg>
                 <div className="absolute flex flex-col items-center justify-center">
                   <p className="text-[#90a4cb] text-sm">Total Value</p>
-                  <p className="text-white text-xl font-bold">${Math.floor(portfolio.total_asset_value).toLocaleString()}</p>
+                  <p className="text-white text-xl font-bold">${Math.floor(Number(portfolio.total_asset_value)).toLocaleString()}</p>
                 </div>
               </>
             )}
@@ -191,6 +192,9 @@ export default function Portfolio() {
           )}
         </div>
       </div>
+
+      {/* Holdings Table */}
+      <HoldingsTable assets={portfolio?.assets || []} isLoading={isLoading} />
 
       {/* Open Orders */}
       <div className="flex flex-col gap-4">

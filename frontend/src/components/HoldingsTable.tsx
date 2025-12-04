@@ -1,0 +1,107 @@
+import { useNavigate } from 'react-router-dom';
+import type { Asset } from '../interfaces';
+
+interface HoldingsTableProps {
+  assets: Asset[];
+  isLoading?: boolean;
+}
+
+export default function HoldingsTable({ assets, isLoading }: HoldingsTableProps) {
+  const navigate = useNavigate();
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col gap-4 rounded-xl border border-[#314368] bg-[#101623] p-6">
+        <div className="h-6 w-48 bg-[#182234] rounded animate-pulse mb-4" />
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-12 w-full bg-[#182234] rounded animate-pulse" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (!assets || assets.length === 0) {
+    return (
+      <div className="flex flex-col gap-4 rounded-xl border border-[#314368] bg-[#101623] p-6">
+        <h2 className="text-white text-xl font-bold">Current Positions</h2>
+        <div className="flex flex-col items-center justify-center py-8 text-[#90a4cb]">
+          <span className="material-symbols-outlined text-4xl mb-2">savings</span>
+          <p>No active positions found.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4 rounded-xl border border-[#314368] bg-[#101623] overflow-hidden">
+      <div className="p-6 pb-2">
+        <h2 className="text-white text-xl font-bold">Current Positions</h2>
+      </div>
+      
+      <div className="overflow-x-auto">
+        <table className="w-full text-left">
+          <thead className="bg-[#182234]">
+            <tr>
+              <th className="px-4 py-3 text-[#90a4cb] text-sm font-medium">Asset</th>
+              <th className="px-4 py-3 text-[#90a4cb] text-sm font-medium text-right">Quantity</th>
+              <th className="px-4 py-3 text-[#90a4cb] text-sm font-medium text-right">Avg. Price</th>
+              <th className="px-4 py-3 text-[#90a4cb] text-sm font-medium text-right">Current Price</th>
+              <th className="px-4 py-3 text-[#90a4cb] text-sm font-medium text-right">Total Value</th>
+              <th className="px-4 py-3 text-[#90a4cb] text-sm font-medium text-right">PnL</th>
+              <th className="px-4 py-3 text-[#90a4cb] text-sm font-medium text-center">Trade</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#314368]">
+            {assets.map((asset) => {
+              const quantity = Number(asset.quantity);
+              const avgPrice = Number(asset.average_price);
+              const currentPrice = Number(asset.current_price);
+              const totalValue = Number(asset.total_value);
+              const profitRate = Number(asset.profit_rate);
+              
+              // Calculate PnL Value: (Current Price - Avg Price) * Quantity
+              // Or simpler: Total Value - (Avg Price * Quantity)
+              const pnlValue = totalValue - (avgPrice * quantity);
+              const isPositive = pnlValue >= 0;
+              const pnlColor = isPositive ? 'text-profit' : 'text-loss';
+
+              return (
+                <tr key={asset.ticker_id} className="hover:bg-[#182234] transition-colors">
+                  <td className="px-4 py-3">
+                    <div className="flex flex-col">
+                      <span className="text-white font-bold">{asset.symbol}</span>
+                      <span className="text-[#90a4cb] text-xs">{asset.name}</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-right text-white font-mono">
+                    {quantity.toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                  </td>
+                  <td className="px-4 py-3 text-right text-[#90a4cb] font-mono">
+                    {avgPrice.toLocaleString()}
+                  </td>
+                  <td className="px-4 py-3 text-right text-white font-mono font-medium">
+                    {currentPrice.toLocaleString()}
+                  </td>
+                  <td className="px-4 py-3 text-right text-white font-bold font-mono">
+                    {Math.floor(totalValue).toLocaleString()}
+                  </td>
+                  <td className={`px-4 py-3 text-right font-mono font-medium ${pnlColor}`}>
+                    <div className="flex flex-col items-end">
+                      <span>{isPositive ? '+' : ''}{Math.floor(pnlValue).toLocaleString()}</span>
+                      <span className="text-xs">({isPositive ? '+' : ''}{profitRate.toFixed(2)}%)</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <button onClick={() => navigate(`/market/${asset.ticker_id}`)} className="h-8 px-4 rounded-md bg-primary text-background-dark font-semibold text-sm hover:bg-primary/90">Trade</button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}

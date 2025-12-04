@@ -31,7 +31,7 @@ export default function Market() {
   const [wsTimestamp, setWsTimestamp] = useState<number | undefined>(undefined);
   
   // Form States
-  const [orderType, setOrderType] = useState<'LIMIT' | 'MARKET'>('LIMIT');
+  const [orderType, setOrderType] = useState<'LIMIT' | 'MARKET'>('MARKET');
   const [price, setPrice] = useState<number | ''>(''); // Unit Price
   const [amount, setAmount] = useState<string>(''); // Quantity
   const [total, setTotal] = useState<string>(''); // Total Price
@@ -194,7 +194,9 @@ export default function Market() {
               <span className="material-symbols-outlined text-2xl">currency_bitcoin</span>
             </div>
             <div>
-              <h1 className="text-white text-xl font-bold leading-tight">{symbol} / {currency}</h1>
+              <h1 className="text-white text-xl font-bold leading-tight">
+                {(symbol.endsWith(`/${currency}`) || symbol.endsWith(`-${currency}`)) ? symbol : `${symbol} / ${currency}`}
+              </h1>
               <p className="text-[#90a4cb] text-sm">{selectedTicker?.name ?? tickerId}</p>
             </div>
           </div>
@@ -272,7 +274,7 @@ export default function Market() {
           <div className="col-span-12 lg:col-span-4 flex flex-col gap-6">
             
             {/* Order Book */}
-            <div className="flex-[3] rounded-xl border border-[#314368] bg-[#101623] p-4 flex flex-col overflow-hidden">
+            <div className="flex-[2] rounded-xl border border-[#314368] bg-[#101623] p-4 flex flex-col overflow-hidden">
               <h3 className="text-white font-bold mb-3 border-b border-[#314368] pb-2">Order Book</h3>
               <div className="flex-1 overflow-y-auto font-mono text-sm custom-scrollbar">
                 <table className="w-full">
@@ -314,7 +316,7 @@ export default function Market() {
             </div>
 
             {/* Trade Form */}
-            <div className="flex-[2] rounded-xl border border-[#314368] bg-[#101623] p-4 flex flex-col justify-center">
+            <div className="flex-[3] rounded-xl border border-[#314368] bg-[#101623] p-4 flex flex-col justify-center">
               {/* Side Toggle */}
               <div className="flex bg-[#182234] rounded-lg p-1 mb-4">
                 <button 
