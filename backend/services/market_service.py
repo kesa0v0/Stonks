@@ -14,6 +14,8 @@ import redis.asyncio as async_redis
 from backend.models import Ticker, Candle, Order
 from backend.core.enums import OrderStatus, OrderType, OrderSide
 from backend.schemas.market import MarketState, OrderBookEntry, OrderBookResponse, MarketStatusResponse, MoverResponse, TickerResponse
+import json
+import redis.asyncio as async_redis
 from backend.services.common.price import get_current_price
 
 def get_market_status_by_type(market_type: str, now: datetime) -> MarketState:
@@ -263,10 +265,30 @@ async def get_candle_history(db: AsyncSession, ticker_id: str, interval: str, li
     # 차트 라이브러리는 보통 시간 오름차순(과거->최신)을 선호하므로 뒤집어서 반환
     return list(reversed(candles))
 
-async def get_orderbook_data(db: AsyncSession, ticker_id: str) -> OrderBookResponse:
+async def get_orderbook_data(db: AsyncSession, ticker_id: str, redis_client: async_redis.Redis | None = None) -> OrderBookResponse:
     """
     특정 종목의 내부 호가창(Orderbook)을 조회합니다.
     """
+    # 1) 우선 Redis 캐시(실시간 거래소 호가) 조회
+    if redis_client is not None:
+        try:
+            raw = await redis_client.get(f"orderbook:{ticker_id}")
+            if raw:
+                obj = json.loads(raw)
+                asks = [
+                    OrderBookEntry(price=float(x.get("price", 0)), quantity=float(x.get("quantity", 0)))
+                    for x in obj.get("asks", [])
+                ]
+                bids = [
+                    OrderBookEntry(price=float(x.get("price", 0)), quantity=float(x.get("quantity", 0)))
+                    for x in obj.get("bids", [])
+                ]
+                return OrderBookResponse(ticker_id=ticker_id, bids=bids, asks=asks)
+        except Exception:
+            # Redis/JSON 문제 시 조용히 DB fallback
+            pass
+
+    # 2) Fallback: 내부 지정가 주문 집계로 호가 구성
     # 매수/매도 별로 그룹화하여 집계
     # PENDING LIMIT 주문의 경우, target_price가 호가입니다. (price는 체결가)
     stmt = (

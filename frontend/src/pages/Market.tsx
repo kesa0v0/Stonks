@@ -9,6 +9,38 @@ import { CandleChart } from '../components/CandleChart';
 import OpenOrders from '../components/OpenOrders';
 import OrderInputs from '../components/orders/OrderInputs';
 import type { OrderBookResponse, TickerResponse, Portfolio } from '../interfaces';
+import { usePrice } from '../store/prices';
+
+// Isolated header stats to avoid rerendering the whole page on price updates
+function RealTimeHeaderStats({ tickerId, selectedTicker }: { tickerId: string; selectedTicker?: TickerResponse }) {
+  const livePrice = usePrice(tickerId);
+  const basePrice = selectedTicker?.current_price ? Number(selectedTicker.current_price) : undefined;
+  const baseChange = selectedTicker?.change_percent ? Number(selectedTicker.change_percent) : undefined;
+  const price = typeof livePrice === 'number' ? livePrice : basePrice;
+
+  let change = baseChange ?? 0;
+  if (typeof price === 'number' && typeof basePrice === 'number' && typeof baseChange === 'number') {
+    const prev = d(basePrice).div(d(1).add(d(baseChange).div(100))).toNumber();
+    if (prev !== 0) change = d(price).sub(prev).div(prev).mul(100).toNumber();
+  }
+
+  return (
+    <>
+      <div className="text-right hidden sm:block">
+        <p className="text-[#90a4cb] text-xs uppercase font-bold">24h Change</p>
+        <p className={`font-mono font-bold ${change >= 0 ? 'text-profit' : 'text-loss'}`}>
+          {change >= 0 ? '+' : ''}{change.toFixed(2)}%
+        </p>
+      </div>
+      <div className="text-right hidden sm:block">
+        <p className="text-[#90a4cb] text-xs uppercase font-bold">24h Volume</p>
+        <p className="text-white font-mono font-bold">
+          {selectedTicker?.volume ? Number(selectedTicker.volume).toLocaleString(undefined, { maximumFractionDigits: 0 }) : '-'}
+        </p>
+      </div>
+    </>
+  );
+}
 // import { useWebSocket } from '../hooks/useWebSocket';
 
 const toNumber = (v: string) => {
@@ -49,8 +81,6 @@ export default function Market() {
   const currency = selectedTicker?.currency ?? 'KRW';
 
   const [orderBook, setOrderBook] = useState<OrderBookResponse | null>(null);
-  const [wsPrice] = useState<number | undefined>(undefined);
-  const [wsTimestamp] = useState<number | undefined>(undefined);
   
   // Form States
   const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT' | 'STOP_LOSS' | 'TAKE_PROFIT' | 'STOP_LIMIT' | 'TRAILING_STOP'>('MARKET');
@@ -96,17 +126,8 @@ export default function Market() {
   });
 
   // Real-time Price Logic
-  const realTimePrice = wsPrice !== undefined ? wsPrice : (selectedTicker?.current_price ? Number(selectedTicker.current_price) : undefined);
-
-  let realTimeChange = selectedTicker?.change_percent ? Number(selectedTicker.change_percent) : 0;
-  if (wsPrice !== undefined && selectedTicker?.current_price && selectedTicker.change_percent) {
-    const initPrice = Number(selectedTicker.current_price);
-    const initChange = Number(selectedTicker.change_percent);
-    const prev = d(initPrice).div(d(1).add(d(initChange).div(100))).toNumber();
-    if (prev !== 0) {
-      realTimeChange = d(wsPrice).sub(prev).div(prev).mul(100).toNumber();
-    }
-  }
+  const livePrice = usePrice(tickerId); // kept for order form auto-calc below
+  const realTimePrice = (typeof livePrice === 'number') ? livePrice : (selectedTicker?.current_price ? Number(selectedTicker.current_price) : undefined);
 
   const currentHolding = useMemo(() => {
     return portfolioQ.data?.assets.find(a => a.ticker_id === tickerId);
@@ -290,18 +311,7 @@ export default function Market() {
             </div>
           </div>
           <div className="flex gap-4">
-            <div className="text-right hidden sm:block">
-              <p className="text-[#90a4cb] text-xs uppercase font-bold">24h Change</p>
-              <p className={`font-mono font-bold ${(realTimeChange >= 0) ? 'text-profit' : 'text-loss'}`}>
-                {realTimeChange >= 0 ? '+' : ''}{realTimeChange.toFixed(2)}%
-              </p>
-            </div>
-            <div className="text-right hidden sm:block">
-              <p className="text-[#90a4cb] text-xs uppercase font-bold">24h Volume</p>
-              <p className="text-white font-mono font-bold">
-                {selectedTicker?.volume ? Number(selectedTicker.volume).toLocaleString(undefined, { maximumFractionDigits: 0 }) : '-'}
-              </p>
-            </div>
+            <RealTimeHeaderStats tickerId={tickerId} selectedTicker={selectedTicker} />
           </div>
         </header>
 
@@ -352,8 +362,6 @@ export default function Market() {
                    tickerId={tickerId} 
                    range={timeRange} 
                    chartType={chartType} 
-                   lastPrice={realTimePrice}
-                   lastPriceTimestamp={wsTimestamp}
                  />
               </div>
             </div>
@@ -378,9 +386,9 @@ export default function Market() {
                     {/* Asks (Sell Orders) - Blue (Loss) */}
                     {orderBook?.asks.slice(0, 8).reverse().map((ask, i) => (
                       <tr key={`ask-${i}`} className="hover:bg-[#182234] transition-colors relative">
-                        <td className="text-loss py-1">{ask.price.toLocaleString()}</td>
+                        <td className="text-loss py-1">{Number(ask.price).toLocaleString()}</td>
                         <td className="text-right text-white/70">{Number(ask.quantity).toFixed(4)}</td>
-                        <td className="text-right text-white/40">{(ask.price * Number(ask.quantity)).toLocaleString()}</td>
+                        <td className="text-right text-white/40">{(Number(ask.price) * Number(ask.quantity)).toLocaleString()}</td>
                       </tr>
                     ))}
                     
@@ -394,9 +402,9 @@ export default function Market() {
                     {/* Bids (Buy Orders) - Red (Profit) */}
                     {orderBook?.bids.slice(0, 8).map((bid, i) => (
                       <tr key={`bid-${i}`} className="hover:bg-[#2a1818] transition-colors relative">
-                        <td className="text-profit py-1">{bid.price.toLocaleString()}</td>
+                        <td className="text-profit py-1">{Number(bid.price).toLocaleString()}</td>
                         <td className="text-right text-white/70">{Number(bid.quantity).toFixed(4)}</td>
-                        <td className="text-right text-white/40">{(bid.price * Number(bid.quantity)).toLocaleString()}</td>
+                        <td className="text-right text-white/40">{(Number(bid.price) * Number(bid.quantity)).toLocaleString()}</td>
                       </tr>
                     ))}
                   </tbody>

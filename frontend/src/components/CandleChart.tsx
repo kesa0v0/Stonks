@@ -2,6 +2,7 @@ import { createChart, ColorType, CandlestickSeries, AreaSeries } from 'lightweig
 import type { IChartApi, ISeriesApi, UTCTimestamp, LogicalRange } from 'lightweight-charts';
 import { useEffect, useRef, useCallback, useState } from 'react';
 import api from '../api/client';
+import { usePrice } from '../store/prices';
 
 interface CandleData {
   ticker_id: string;
@@ -22,6 +23,10 @@ interface ChartProps {
 }
 
 export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle', lastPrice, lastPriceTimestamp }: ChartProps) => {
+    // Prefer external lastPrice if provided, otherwise subscribe to store
+    const storePrice = usePrice(tickerId);
+    const rtPrice = (typeof lastPrice === 'number') ? lastPrice : (typeof storePrice === 'number' ? storePrice : undefined);
+    const rtTimestamp = lastPriceTimestamp;
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick" | "Area"> | null>(null);
@@ -37,6 +42,48 @@ export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle', last
   const hasMoreHistory = useRef(true); // New: Stop fetching if no more data
   
   const [status, setStatus] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading');
+
+  // Helper: apply realtime price into current bar (1m or 1d aligned)
+  const applyRealtime = useCallback((price: number, tsMs?: number) => {
+    if (!seriesRef.current || typeof price !== 'number') return;
+    const nowMs = typeof tsMs === 'number' ? tsMs : Date.now();
+    const lastBar = allDataRef.current[allDataRef.current.length - 1];
+
+    // Compute bar start time by interval, aligning daily bars to KST midnight
+    const sec = Math.floor(nowMs / 1000);
+    let newBarTime = sec - (sec % 60); // default minute alignment
+    if (interval === '1d') {
+      const KST_OFFSET = 9 * 60 * 60; // seconds
+      const kstSec = sec + KST_OFFSET;
+      const kstDayStart = kstSec - (kstSec % 86400);
+      newBarTime = kstDayStart - KST_OFFSET;
+    }
+
+    if (!lastBar || newBarTime > (lastBar.time as number)) {
+      const newBar: any = { time: newBarTime as UTCTimestamp };
+      if (chartType === 'area') {
+        newBar.value = price;
+      } else {
+        newBar.open = price;
+        newBar.high = price;
+        newBar.low = price;
+        newBar.close = price;
+      }
+      seriesRef.current.update(newBar);
+      allDataRef.current.push(newBar);
+    } else {
+      const updatedBar: any = { ...lastBar };
+      if (chartType === 'area') {
+        updatedBar.value = price;
+      } else {
+        updatedBar.high = Math.max(lastBar.high, price);
+        updatedBar.low = Math.min(lastBar.low, price);
+        updatedBar.close = price;
+      }
+      seriesRef.current.update(updatedBar);
+      allDataRef.current[allDataRef.current.length - 1] = updatedBar;
+    }
+  }, [interval, chartType]);
 
   // Transform API data to Chart data
   const transformData = useCallback((data: CandleData[]) => {
@@ -125,6 +172,11 @@ export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle', last
             chartRef.current.timeScale().fitContent();
         }
         setStatus('ready');
+
+        // Immediately reflect current price if available to avoid stale last bar
+        if (typeof rtPrice === 'number') {
+          applyRealtime(rtPrice, rtTimestamp);
+        }
       } else {
         // console.warn("[CandleChart] No data found.");
         setStatus('empty');
@@ -134,7 +186,7 @@ export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle', last
       console.error("[CandleChart] Failed to load initial data", err);
       setStatus('error');
     }
-  }, [tickerId, range, interval, transformData]);
+  }, [tickerId, range, interval, transformData, applyRealtime]);
 
   // Load Historical Data
   const loadMoreHistory = useCallback(async () => {
@@ -181,50 +233,9 @@ export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle', last
 
   // Real-time Update (from props)
   useEffect(() => {
-    if (!seriesRef.current || !lastPrice || !lastPriceTimestamp) return;
-    
-    const lastBar = allDataRef.current[allDataRef.current.length - 1];
-    const lastPriceTimeSeconds = Math.floor(lastPriceTimestamp / 1000);
-    
-    // Calculate expected bar time (truncate to minute/day start)
-    // For 1m interval:
-    let newBarTime = lastPriceTimeSeconds - (lastPriceTimeSeconds % 60);
-    if (interval === '1d') {
-        // UTC day start
-        newBarTime = lastPriceTimeSeconds - (lastPriceTimeSeconds % 86400); 
-        // Note: Timezone handling for '1d' might be tricky if server uses UTC. 
-        // Assuming simplified UTC days for now or matching server logic.
-    }
-
-    // If we have no data, or the new price belongs to a new bar
-    if (!lastBar || newBarTime > (lastBar.time as number)) {
-        const newBar = {
-            time: newBarTime as UTCTimestamp,
-            open: lastPrice,
-            high: lastPrice,
-            low: lastPrice,
-            close: lastPrice,
-            value: lastPrice, // for Area chart
-        };
-        
-        seriesRef.current.update(newBar);
-        allDataRef.current.push(newBar);
-        
-    } else {
-        // Update existing bar
-        const updatedBar = {
-            ...lastBar,
-            high: Math.max(lastBar.high, lastPrice),
-            low: Math.min(lastBar.low, lastPrice),
-            close: lastPrice,
-            value: lastPrice, // for Area chart
-        };
-        
-        seriesRef.current.update(updatedBar);
-        allDataRef.current[allDataRef.current.length - 1] = updatedBar;
-    }
-    
-  }, [lastPrice, lastPriceTimestamp, interval]);
+    if (typeof rtPrice !== 'number') return;
+    applyRealtime(rtPrice, rtTimestamp);
+  }, [rtPrice, rtTimestamp, applyRealtime]);
 
   // Initialize Chart & Event Listeners
   useEffect(() => {

@@ -90,13 +90,15 @@ async def get_candles(
 @router.get("/orderbook/{ticker_id}", response_model=OrderBookResponse, dependencies=[Depends(get_rate_limiter("/market/orderbook/{ticker_id}"))])
 async def get_orderbook(
     ticker_id: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    redis_client: async_redis.Redis = Depends(get_redis)
 ):
     """
     특정 종목의 내부 호가창(Orderbook)을 조회합니다.
     참가자들의 미체결 지정가 주문(LIMIT)을 집계하여 보여줍니다.
     """
-    return await get_orderbook_data(db, ticker_id)
+    # 우선 Redis(실시간 거래소 호가)를 사용하고, 없으면 DB 집계로 대체
+    return await get_orderbook_data(db, ticker_id, redis_client)
 
 @router.get("/price/{ticker_id}", response_model=CurrentPriceResponse, dependencies=[Depends(get_rate_limiter("/market/price/{ticker_id}"))])
 async def get_ticker_current_price(
