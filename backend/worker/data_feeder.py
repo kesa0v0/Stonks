@@ -3,9 +3,20 @@ import json
 import redis.asyncio as redis
 import ccxt.async_support as ccxt_async
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.events import (
+    EVENT_JOB_MISSED,
+    EVENT_JOB_MAX_INSTANCES,
+    EVENT_JOB_ERROR,
+    EVENT_JOB_EXECUTED,
+)
+from datetime import datetime, timezone, timedelta
+import logging
+import time
 
 from backend.core.event_hook import publish_event
 from backend.core.config import settings
+logging.getLogger('apscheduler.executors.default').setLevel(logging.ERROR)
+logging.getLogger('apscheduler.scheduler').setLevel(logging.ERROR)
 
 # 수집할 대상 목록
 TARGET_TICKERS = {
@@ -16,10 +27,11 @@ TARGET_TICKERS = {
 
 exchange = None
 redis_client = None
+tick_counter = 0
 
 async def init_resources():
     global exchange, redis_client
-    exchange = ccxt_async.upbit()
+    exchange = ccxt_async.upbit({'enableRateLimit': True})
     redis_client = redis.Redis(
         host=settings.REDIS_HOST, 
         port=settings.REDIS_PORT, 
@@ -31,7 +43,12 @@ async def fetch_tickers_job():
     주기적으로 실행될 작업: 시세 조회 및 Redis 발행
     """
     try:
+        if exchange is None or redis_client is None:
+            print("⚠️ Resources not ready for fetch_tickers_job")
+            return
         symbols = list(TARGET_TICKERS.keys())
+        # 전체 실행시간 측정 (요청+발행 포함)
+        t0 = time.perf_counter()
         # [핵심] fetch_tickers (복수형) 사용 -> 요청 1번으로 모든 시세 가져옴!
         tickers = await exchange.fetch_tickers(symbols)
         
@@ -59,6 +76,10 @@ async def fetch_tickers_job():
             }
             await publish_event(redis_client, event, channel="price_events")
 
+        elapsed = time.perf_counter() - t0
+        if elapsed > 0.8:
+            print(f"⏱️ fetch_tickers_job slow run: {elapsed:.3f}s; consider reducing symbols or raising interval")
+
     except Exception as e:
         print(f"❌ Fetch Tickers Error: {e}")
 
@@ -67,17 +88,19 @@ async def fetch_orderbooks_job():
     주기적으로 실행될 작업: 호가창 조회 및 Redis 발행
     """
     try:
-        for symbol, ticker_id in TARGET_TICKERS.items():
-            try:
-                # ccxt fetch_order_book returns: {'bids': [[price, qty], ...], 'asks': [[price, qty], ...], ...}
-                orderbook = await exchange.fetch_order_book(symbol, limit=15)
-                
-                # Format data
-                # asks: 매도 잔량 (Price 오름차순 - 싸게 팔려는 사람 우선)
-                # bids: 매수 잔량 (Price 내림차순 - 비싸게 사려는 사람 우선)
-                formatted_asks = [{"price": ask[0], "quantity": ask[1]} for ask in orderbook['asks']]
-                formatted_bids = [{"price": bid[0], "quantity": bid[1]} for bid in orderbook['bids']]
+        if exchange is None or redis_client is None:
+            print("⚠️ Resources not ready for fetch_orderbooks_job")
+            return
 
+        t0 = time.perf_counter()
+        ex = exchange  # capture to satisfy type checkers
+        rc = redis_client
+
+        async def _fetch_one(symbol: str, ticker_id: str):
+            try:
+                orderbook = await ex.fetch_order_book(symbol, limit=15)
+                formatted_asks = [{"price": ask[0], "quantity": ask[1]} for ask in orderbook.get('asks', [])]
+                formatted_bids = [{"price": bid[0], "quantity": bid[1]} for bid in orderbook.get('bids', [])]
                 data = {
                     "type": "orderbook",
                     "ticker_id": ticker_id,
@@ -85,27 +108,90 @@ async def fetch_orderbooks_job():
                     "bids": formatted_bids,
                     "timestamp": orderbook.get('timestamp')
                 }
-                
-                # Publish to Redis channel "orderbook_updates"
-                # Note: We don't necessarily need to store full orderbook in Redis key if not queried often by REST
-                # But for caching REST API response, we might want to set it.
-                # Let's set a key for initial REST load as well.
-                await redis_client.set(f"orderbook:{ticker_id}", json.dumps(data))
-                await redis_client.publish("orderbook_updates", json.dumps(data))
-                
+                await rc.set(f"orderbook:{ticker_id}", json.dumps(data))
+                await rc.publish("orderbook_updates", json.dumps(data))
             except Exception as sub_e:
                 print(f"⚠️ Fetch Orderbook Error ({symbol}): {sub_e}")
 
+        tasks = [_fetch_one(symbol, ticker_id) for symbol, ticker_id in TARGET_TICKERS.items()]
+        if tasks:
+            await asyncio.gather(*tasks)
+
+        elapsed = time.perf_counter() - t0
+        if elapsed > 0.9:
+            print(f"⏱️ fetch_orderbooks_job slow run: {elapsed:.3f}s; consider seconds=2 or reducing symbols")
+
     except Exception as e:
         print(f"❌ Fetch Orderbooks Job Error: {e}")
+
+async def market_feeder_job():
+    """Single consolidated job: tickers every 1s, orderbooks every 2s with time budget."""
+    global tick_counter
+    start = time.perf_counter()
+    await fetch_tickers_job()
+    elapsed_after_tickers = time.perf_counter() - start
+    budget = 0.95
+    if tick_counter % 2 == 0:
+        if elapsed_after_tickers < budget * 0.7:
+            try:
+                await fetch_orderbooks_job()
+            except Exception as e:
+                print(f"⚠️ market_feeder_job orderbooks error: {e}")
+        else:
+            print(f"ℹ️ Skipping orderbooks this tick to keep schedule (elapsed={elapsed_after_tickers:.3f}s)")
+    total = time.perf_counter() - start
+    if total > budget:
+        print(f"⏱️ market_feeder_job slow run: {total:.3f}s; consider raising interval or reducing work")
+    tick_counter = (tick_counter + 1) % 1000000
 
 async def main():
     await init_resources()
     
     scheduler = AsyncIOScheduler()
-    # 1초마다 실행.
-    scheduler.add_job(fetch_tickers_job, 'interval', seconds=1, max_instances=1, coalesce=True)
-    scheduler.add_job(fetch_orderbooks_job, 'interval', seconds=1, max_instances=1, coalesce=True)
+    
+    # 상세 원인 로깅을 위한 스케줄러 리스너
+    def _scheduler_listener(event):
+        now = datetime.now(timezone.utc)
+        scheduled = getattr(event, 'scheduled_run_time', None)
+        delay_str = ""
+        if scheduled is not None:
+            try:
+                delay = (now - scheduled).total_seconds()
+                delay_str = f" | delay={delay:.3f}s"
+            except Exception:
+                pass
+
+        if event.code == EVENT_JOB_MISSED:
+            print(
+                f"⏰ JOB MISSED id={getattr(event, 'job_id', '?')} sched={scheduled}Z | now={now.isoformat()}Z{delay_str}. "
+                "Likely causes: long-running job, process busy, or clock skew."
+            )
+        elif event.code == EVENT_JOB_MAX_INSTANCES:
+            print(
+                f"🚦 JOB SKIPPED (max_instances) id={getattr(event, 'job_id', '?')} sched={scheduled}Z | now={now.isoformat()}Z{delay_str}. "
+                "Consider increasing max_instances or reducing job duration."
+            )
+        elif event.code == EVENT_JOB_ERROR:
+            print(
+                f"💥 JOB ERROR id={getattr(event, 'job_id', '?')} sched={scheduled}Z | now={now.isoformat()}Z{delay_str} | "
+                f"exc={getattr(event, 'exception', None)}"
+            )
+        # Do not log EXECUTED to reduce noise
+
+    scheduler.add_listener(
+        _scheduler_listener,
+        EVENT_JOB_MISSED | EVENT_JOB_MAX_INSTANCES | EVENT_JOB_ERROR,
+    )
+    # 1초마다 단일 잡 실행 (내부에서 2틱마다 orderbooks 실행)
+    scheduler.add_job(
+        market_feeder_job,
+        'interval',
+        seconds=1,
+        id='market_feeder_job',
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3,
+    )
     scheduler.start()
     
     print("🚀 Data Feeder Started with APScheduler (1s interval)")

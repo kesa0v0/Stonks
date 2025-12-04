@@ -4,8 +4,15 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.events import (
+    EVENT_JOB_MISSED,
+    EVENT_JOB_MAX_INSTANCES,
+    EVENT_JOB_ERROR,
+    EVENT_JOB_EXECUTED,
+)
 from datetime import datetime, timezone, timedelta
 import logging
+import time
 
 # 프로젝트 모듈 임포트
 from backend.core.database import AsyncSessionLocal, wait_for_db
@@ -13,7 +20,44 @@ from backend.models import Ticker, Candle, MarketType, TickerSource
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
+# Reduce APScheduler default warning noise; we'll log our own details
+logging.getLogger('apscheduler.executors.default').setLevel(logging.ERROR)
+logging.getLogger('apscheduler.scheduler').setLevel(logging.ERROR)
 logger = logging.getLogger("candle_collector")
+
+# 상세 원인 로깅을 위한 스케줄러 리스너
+def _scheduler_listener(event):
+    now = datetime.now(timezone.utc)
+    try:
+        scheduled = event.scheduled_run_time
+    except Exception:
+        scheduled = None
+
+    # 지연 시간 계산 (가능한 경우)
+    delay_str = ""
+    if scheduled is not None:
+        try:
+            delay = (now - scheduled).total_seconds()
+            delay_str = f" | delay={delay:.3f}s"
+        except Exception:
+            pass
+
+    if event.code == EVENT_JOB_MISSED:
+        logger.warning(
+            f"⏰ JOB MISSED id={getattr(event, 'job_id', '?')} sched={scheduled}Z | now={now.isoformat()}Z{delay_str}. "
+            "Likely causes: long-running job, process busy, or clock skew."
+        )
+    elif event.code == EVENT_JOB_MAX_INSTANCES:
+        logger.warning(
+            f"🚦 JOB SKIPPED (max_instances) id={getattr(event, 'job_id', '?')} sched={scheduled}Z | now={now.isoformat()}Z{delay_str}. "
+            "Consider increasing max_instances or reducing job duration."
+        )
+    elif event.code == EVENT_JOB_ERROR:
+        logger.error(
+            f"💥 JOB ERROR id={getattr(event, 'job_id', '?')} sched={scheduled}Z | now={now.isoformat()}Z{delay_str} | "
+            f"exc={getattr(event, 'exception', None)}"
+        )
+    # Do not log EXECUTED to reduce noise
 
 async def save_candles_to_db(ohlcvs, ticker: Ticker, interval: str):
     """
@@ -132,6 +176,8 @@ async def fetch_historical_candles(exchange, ticker: Ticker, interval: str = '1d
 
 async def minute_collector_job():
     """매 분 실행되는 1분봉 수집 작업"""
+    t0 = time.perf_counter()
+    tickers_count = 0
     exchange = ccxt.upbit()
     try:
         async with AsyncSessionLocal() as db:
@@ -143,8 +189,10 @@ async def minute_collector_job():
             )
             result = await db.execute(stmt)
             tickers = result.scalars().all()
+        tickers_count = len(tickers) if tickers else 0
         
-        if not tickers: return
+        if not tickers:
+            return
 
         for ticker in tickers:
             await fetch_and_store_candles(exchange, ticker, interval='1m', count=3)
@@ -154,6 +202,10 @@ async def minute_collector_job():
         logger.error(f"🔥 Minute job error: {e}")
     finally:
         await exchange.close()
+        elapsed = time.perf_counter() - t0
+        # Only log when slow to avoid noise
+        if elapsed > 5:
+            logger.warning(f"⏱️ minute_collector_job took {elapsed:.3f}s for {tickers_count} tickers")
 
 async def daily_collector_job():
     """매일 실행되는 일봉 수집 작업"""
@@ -275,12 +327,34 @@ async def main():
     await initial_seed()
 
     scheduler = AsyncIOScheduler()
+    # 미스/스킵/에러/완료 리스너 등록
+    scheduler.add_listener(
+        _scheduler_listener,
+        EVENT_JOB_MISSED | EVENT_JOB_MAX_INSTANCES | EVENT_JOB_ERROR | EVENT_JOB_EXECUTED,
+    )
     
-    # 1분봉: 매 분 5초
-    scheduler.add_job(minute_collector_job, 'cron', second='5')
+    # 1분봉: 매 분 5초. Grace/Coalesce/MaxInstances로 Missed 경고 완화 및 중첩 방지
+    scheduler.add_job(
+        minute_collector_job,
+        'cron',
+        second='5',
+        id='minute_collector_job',
+        misfire_grace_time=20,
+        coalesce=True,
+        max_instances=1,
+    )
     
     # 일봉: 매일 오전 9시 1분
-    scheduler.add_job(daily_collector_job, 'cron', hour='9', minute='1')
+    scheduler.add_job(
+        daily_collector_job,
+        'cron',
+        hour='9',
+        minute='1',
+        id='daily_collector_job',
+        misfire_grace_time=1800,
+        coalesce=True,
+        max_instances=1,
+    )
     
     scheduler.start()
     logger.info("🚀 Candle Collector Scheduler Started! (1m & 1d)")

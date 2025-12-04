@@ -5,6 +5,7 @@ from backend.core.database import AsyncSessionLocal
 from backend.models import User, Wallet
 from backend.core.security import get_password_hash
 from decimal import Decimal
+from sqlalchemy import or_
 
 async def create_test_user():
     USERS_TO_CREATE = [
@@ -34,10 +35,14 @@ async def create_test_user():
                 nickname = user_data["nickname"]
                 initial_balance = user_data["initial_balance"]
 
-                # 기존 유저 확인 (UUID로)
-                result = await db.execute(select(User).where(User.id == uuid.UUID(user_id)))
+                # UUID 또는 이메일 기준으로 기존 유저 확인
+                result = await db.execute(
+                    select(User).where(
+                        or_(User.id == uuid.UUID(user_id), User.email == email)
+                    )
+                )
                 user = result.scalars().first()
-                
+
                 if not user: # 유저가 없으면 새로 생성
                     hashed_pwd = get_password_hash(password)
                     user = User(
@@ -47,15 +52,15 @@ async def create_test_user():
                         nickname=nickname
                     )
                     db.add(user)
-                    
+
                     wallet = Wallet(user_id=user.id, balance=initial_balance)
                     db.add(wallet)
-                    
+
                     await db.commit()
                     print(f"✅ Created user: {email} with password '{password}' and balance {initial_balance}")
                 else: # 유저가 이미 있다면 비밀번호 및 지갑 업데이트
                     user.hashed_password = get_password_hash(password)
-                    
+                    user.nickname = nickname
                     # 지갑 확인 및 잔고 충전/업데이트
                     w_result = await db.execute(select(Wallet).where(Wallet.user_id == user.id))
                     wallet = w_result.scalars().first()
@@ -68,7 +73,7 @@ async def create_test_user():
                         print(f"✅ Reset user {email} wallet balance to {initial_balance}")
 
                     await db.commit()
-                    print(f"✅ Updated user: {email} password to '{password}'")
+                    print(f"✅ Updated user: {email} password to '{password}' and nickname to '{nickname}'")
                 
         except Exception as e:
             print(f"Error: {e}")
