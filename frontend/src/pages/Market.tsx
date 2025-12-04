@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import api from '../api/client';
 import DashboardLayout from '../components/DashboardLayout';
 import { CandleChart } from '../components/CandleChart';
+import OpenOrders from '../components/OpenOrders';
 import type { OrderBookResponse, TickerResponse } from '../interfaces';
 import { useWebSocket } from '../hooks/useWebSocket';
 
@@ -399,6 +400,11 @@ export default function Market() {
             </div>
 
           </div>
+        </div>
+
+        {/* Open Orders Section */}
+        <div className="mt-6">
+           <OpenOrders tickerId={tickerId} />
         </div>
       </>
     </DashboardLayout>

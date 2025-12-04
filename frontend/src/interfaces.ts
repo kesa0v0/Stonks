@@ -5,17 +5,17 @@ export interface Asset {
   ticker_id: string;
   symbol: string;
   name: string;
-  quantity: number;
-  average_price: number;
-  current_price: number;
-  total_value: number;
-  profit_rate: number;
+  quantity: string; // Changed from number to string
+  average_price: string; // Changed from number to string
+  current_price: string; // Changed from number to string
+  total_value: string; // Changed from number to string
+  profit_rate: string; // Changed from number to string
 }
 
 // 2. Portfolio (포트폴리오) 타입
 export interface Portfolio {
-  cash_balance: number;
-  total_asset_value: number;
+  cash_balance: string; // Changed from number to string
+  total_asset_value: string; // Changed from number to string
   total_asset_change_percent?: string;
   assets: Asset[];
 }

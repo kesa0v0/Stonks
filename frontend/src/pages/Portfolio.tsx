@@ -3,6 +3,7 @@ import api from '../api/client';
 import DashboardLayout from '../components/DashboardLayout';
 import type { Portfolio as IPortfolio, OrderListItem } from '../interfaces';
 import { usePrices } from '../hooks/usePrices';
+import OpenOrders from '../components/OpenOrders';
 
 export default function Portfolio() {
   const [fetchedPortfolio, setFetchedPortfolio] = useState<IPortfolio | null>(null);
@@ -28,34 +29,72 @@ export default function Portfolio() {
   const portfolio = useMemo(() => {
     if (!fetchedPortfolio) return null;
 
+    // Convert string inputs from backend to numbers for calculations
+    const initialCashBalance = Number(fetchedPortfolio.cash_balance);
+    const initialTotalAssetValue = Number(fetchedPortfolio.total_asset_value);
+    
     const updatedAssets = fetchedPortfolio.assets.map(a => {
-      const p = prices.get(a.ticker_id);
-      if (p !== undefined) {
-        return { ...a, current_price: p, total_value: p * a.quantity };
+      const p = prices.get(a.ticker_id); // This is a number
+      
+      const assetQuantity = Number(a.quantity);
+      const assetAveragePrice = Number(a.average_price);
+      const assetCurrentPrice = p !== undefined ? p : Number(a.current_price); // Use real-time price if available, else initial from API
+
+      const totalValue = assetCurrentPrice * assetQuantity;
+      let profitRate = 0;
+      // Avoid division by zero if cost basis is 0
+      if (assetAveragePrice * assetQuantity !== 0) {
+          profitRate = ((totalValue - (assetAveragePrice * assetQuantity)) / (assetAveragePrice * assetQuantity)) * 100;
       }
-      return a;
+
+      return { 
+          ...a, 
+          quantity: assetQuantity.toString(), // Convert back to string for consistency with interface
+          current_price: assetCurrentPrice.toString(),
+          total_value: totalValue.toString(),
+          profit_rate: profitRate.toFixed(2).toString()
+      };
     });
 
-    const newTotalValue = updatedAssets.reduce((acc, cur) => acc + cur.total_value, 0) + fetchedPortfolio.cash_balance;
+    const newTotalValueNum = updatedAssets.reduce((acc, cur) => acc + Number(cur.total_value), 0) + initialCashBalance;
 
+    let newChange: string | undefined = undefined; 
+    
     // Calculate real-time change percent
-    let newChange = fetchedPortfolio.total_asset_change_percent;
-    if (fetchedPortfolio.total_asset_change_percent && fetchedPortfolio.total_asset_value > 0) {
-        const oldTotal = fetchedPortfolio.total_asset_value;
-        const oldChange = Number(fetchedPortfolio.total_asset_change_percent);
-        // Calculate previous total value (e.g., yesterday's close)
-        const prevTotal = oldTotal / (1 + oldChange / 100);
+    if (fetchedPortfolio.total_asset_change_percent && initialTotalAssetValue > 0) {
+        const oldChange = Number(fetchedPortfolio.total_asset_change_percent || '0');
         
-        if (prevTotal !== 0) {
-             const changeVal = ((newTotalValue - prevTotal) / prevTotal) * 100;
-             newChange = changeVal.toFixed(2);
+        // Calculate previous total value (e.g., yesterday's close)
+        const divisor = (1 + oldChange / 100);
+        let prevTotal = 0;
+
+        if (divisor !== 0) { // Avoid division by zero if oldChange is -100%
+            prevTotal = initialTotalAssetValue / divisor;
         }
+        
+        if (prevTotal !== 0) { // Avoid division by zero for changeVal
+            const changeVal = ((newTotalValueNum - prevTotal) / prevTotal) * 100;
+            newChange = changeVal.toFixed(2);
+        } else if (newTotalValueNum > 0) {
+            // If prevTotal was 0 and newTotalValue is positive, it's an "infinite" gain
+            newChange = 'Infinity'; // Indicate huge gain from 0
+        } else {
+            newChange = '0.00'; // Both 0, no change
+        }
+    } else if (newTotalValueNum > 0) {
+        // If there was no previous total_asset_value or change percent, but now we have value.
+        // It means it's a new portfolio or initial load, no historical change to calculate.
+        newChange = '0.00'; // Or set to N/A
+    } else {
+        newChange = '0.00';
     }
+
 
     return {
         ...fetchedPortfolio,
         assets: updatedAssets,
-        total_asset_value: newTotalValue,
+        cash_balance: initialCashBalance.toString(),
+        total_asset_value: newTotalValueNum.toString(),
         total_asset_change_percent: newChange
     };
   }, [fetchedPortfolio, prices]);
@@ -63,13 +102,13 @@ export default function Portfolio() {
   const isLoading = !portfolio;
 
   // 도넛 차트용 데이터 계산 (간단 예시)
-  const stockVal = portfolio ? portfolio.assets.filter(a => !a.ticker_id.includes('COIN')).reduce((acc, cur) => acc + cur.total_value, 0) : 0;
-  const cryptoVal = portfolio ? portfolio.assets.filter(a => a.ticker_id.includes('COIN')).reduce((acc, cur) => acc + cur.total_value, 0) : 0;
-  const totalVal = portfolio ? Math.max(portfolio.total_asset_value, 1) : 1; // 0 나누기 방지
+  const stockVal = portfolio ? portfolio.assets.filter(a => !a.ticker_id.includes('COIN')).reduce((acc, cur) => acc + Number(cur.total_value), 0) : 0;
+  const cryptoVal = portfolio ? portfolio.assets.filter(a => a.ticker_id.includes('COIN')).reduce((acc, cur) => acc + Number(cur.total_value), 0) : 0;
+  const totalValNum = portfolio ? Math.max(Number(portfolio.total_asset_value), 1) : 1; // 0 나누기 방지
   
-  const stockPct = (stockVal / totalVal) * 100;
-  const cryptoPct = (cryptoVal / totalVal) * 100;
-  const cashPct = portfolio ? (portfolio.cash_balance / totalVal) * 100 : 0;
+  const stockPct = (stockVal / totalValNum) * 100;
+  const cryptoPct = (cryptoVal / totalValNum) * 100;
+  const cashPct = portfolio ? (Number(portfolio.cash_balance) / totalValNum) * 100 : 0;
 
   // SVG Dash Arrays for Donut Chart
   const r = 15.9155;
@@ -151,6 +190,11 @@ export default function Portfolio() {
             </>
           )}
         </div>
+      </div>
+
+      {/* Open Orders */}
+      <div className="flex flex-col gap-4">
+        <OpenOrders />
       </div>
 
       {/* Recent Trade History */}
