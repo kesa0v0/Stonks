@@ -144,7 +144,7 @@ async def websocket_endpoint(websocket: WebSocket):
         decode_responses=True,
     )
     pubsub = r.pubsub()
-    await pubsub.subscribe(constants.REDIS_CHANNEL_MARKET_UPDATES)  # 워커가 쏘는 채널 구독
+    await pubsub.subscribe(constants.REDIS_CHANNEL_MARKET_UPDATES, "orderbook_updates")  # 워커가 쏘는 채널 구독
 
     print("🟢 Client Connected to WebSocket")
 

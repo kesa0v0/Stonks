@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
@@ -6,7 +6,7 @@ import api from '../api/client';
 import DashboardLayout from '../components/DashboardLayout';
 import { CandleChart } from '../components/CandleChart';
 import type { OrderBookResponse, TickerResponse } from '../interfaces';
-import { usePrices } from '../hooks/usePrices';
+import { useWebSocket } from '../hooks/useWebSocket';
 
 const toNumber = (v: string) => {
   const n = parseFloat(v);
@@ -16,7 +16,6 @@ const toNumber = (v: string) => {
 export default function Market() {
   const { tickerId: routeTickerId } = useParams<{ tickerId: string }>();
   const tickerId = routeTickerId ?? 'CRYPTO-COIN-ETH';
-  const prices = usePrices();
   
   const tickersQ = useQuery({
     queryKey: ['tickers'],
@@ -26,8 +25,29 @@ export default function Market() {
   const symbol = selectedTicker?.symbol ?? (tickerId.split('-').pop() || tickerId);
   const currency = selectedTicker?.currency ?? 'KRW';
 
+  const [orderBook, setOrderBook] = useState<OrderBookResponse | null>(null);
+  const [wsPrice, setWsPrice] = useState<number | undefined>(undefined);
+  
+  const [price, setPrice] = useState<number>(3500); // 임시 초기값
+  const [amount, setAmount] = useState<string>('');
+  const [side, setSide] = useState<'BUY' | 'SELL'>('BUY');
+  const [timeRange, setTimeRange] = useState<'1D' | '1W' | '3M' | '1Y' | '5Y'>('1D');
+  const [chartType, setChartType] = useState<'candle' | 'area'>('candle');
+
+  // WebSocket Event Handler
+  const onMessage = useCallback((msg: any) => {
+    if (!msg || msg.ticker_id !== tickerId) return;
+
+    if (msg.type === 'ticker' || (!msg.type && msg.price)) {
+      setWsPrice(msg.price);
+    } else if (msg.type === 'orderbook') {
+      setOrderBook(msg);
+    }
+  }, [tickerId]);
+
+  useWebSocket(onMessage);
+
   // Real-time Price Logic
-  const wsPrice = prices.get(tickerId);
   const realTimePrice = wsPrice !== undefined ? wsPrice : (selectedTicker?.current_price ? Number(selectedTicker.current_price) : undefined);
 
   let realTimeChange = selectedTicker?.change_percent ? Number(selectedTicker.change_percent) : 0;
@@ -40,13 +60,6 @@ export default function Market() {
     }
   }
 
-  const [orderBook, setOrderBook] = useState<OrderBookResponse | null>(null);
-  const [price, setPrice] = useState<number>(3500); // 임시 초기값
-  const [amount, setAmount] = useState<string>('');
-  const [side, setSide] = useState<'BUY' | 'SELL'>('BUY');
-  const [timeRange, setTimeRange] = useState<'1D' | '1W' | '3M' | '1Y' | '5Y'>('1D');
-  const [chartType, setChartType] = useState<'candle' | 'area'>('candle');
-
   useEffect(() => {
     try {
       window.localStorage.setItem('lastMarketTickerId', tickerId);
@@ -55,15 +68,7 @@ export default function Market() {
     }
   }, [tickerId]);
 
-  // Update form price when ticker loads (optional, but good UX)
-  useEffect(() => {
-    if (realTimePrice) {
-        // Only set if user hasn't touched it? 
-        // Or just init. stick to init logic or manual.
-        // existing code didn't update it. I will leave it.
-    }
-      }, [tickerId]); // Removed logic to auto-update form price to avoid annoying user
-  // 데이터 로드 (호가창)
+  // 초기 데이터 로드 (호가창) - 빠른 렌더링을 위해 1회만 실행
   useEffect(() => {
     const fetchOrderBook = async () => {
       try {
@@ -73,11 +78,8 @@ export default function Market() {
         console.error("Failed to fetch orderbook", err);
       }
     };
-    
-    // 1초마다 호가창 갱신 (실제론 웹소켓 권장)
     fetchOrderBook();
-    const timerId = setInterval(fetchOrderBook, 1000);
-    return () => clearInterval(timerId);
+    // Polling 제거됨 (WebSocket으로 대체)
   }, [tickerId]);
 
   // 주문 제출 핸들러

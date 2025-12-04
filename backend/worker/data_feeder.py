@@ -40,14 +40,13 @@ async def fetch_tickers_job():
             price = ticker['last']
             
             data = {
+                "type": "ticker",
                 "ticker_id": ticker_id,
                 "price": price,
                 "timestamp": ticker['timestamp']
             }
             
             # Redis 저장 & 발행
-            # 파이프라인을 사용하여 Redis 요청 최적화 가능하지만, publish는 즉시 전파가 중요하므로 개별 실행이 나을 수도 있음.
-            # 여기선 단순하게 개별 실행.
             await redis_client.set(f"price:{ticker_id}", json.dumps(data))
             await redis_client.publish("market_updates", json.dumps(data))
 
@@ -58,23 +57,55 @@ async def fetch_tickers_job():
                 "price": price,
                 "timestamp": ticker['timestamp']
             }
-            # publish_event 내부 로직이 복잡하지 않다면 직접 publish 호출해도 됨 (오버헤드 절감)
-            # 하지만 일관성을 위해 함수 사용
             await publish_event(redis_client, event, channel="price_events")
 
-            # print(f"✅ {symbol}: {price:,.0f} KRW") # 로그 노이즈 감소를 위해 주석 처리
+    except Exception as e:
+        print(f"❌ Fetch Tickers Error: {e}")
+
+async def fetch_orderbooks_job():
+    """
+    주기적으로 실행될 작업: 호가창 조회 및 Redis 발행
+    """
+    try:
+        for symbol, ticker_id in TARGET_TICKERS.items():
+            try:
+                # ccxt fetch_order_book returns: {'bids': [[price, qty], ...], 'asks': [[price, qty], ...], ...}
+                orderbook = await exchange.fetch_order_book(symbol, limit=15)
+                
+                # Format data
+                # asks: 매도 잔량 (Price 오름차순 - 싸게 팔려는 사람 우선)
+                # bids: 매수 잔량 (Price 내림차순 - 비싸게 사려는 사람 우선)
+                formatted_asks = [{"price": ask[0], "quantity": ask[1]} for ask in orderbook['asks']]
+                formatted_bids = [{"price": bid[0], "quantity": bid[1]} for bid in orderbook['bids']]
+
+                data = {
+                    "type": "orderbook",
+                    "ticker_id": ticker_id,
+                    "asks": formatted_asks,
+                    "bids": formatted_bids,
+                    "timestamp": orderbook.get('timestamp')
+                }
+                
+                # Publish to Redis channel "orderbook_updates"
+                # Note: We don't necessarily need to store full orderbook in Redis key if not queried often by REST
+                # But for caching REST API response, we might want to set it.
+                # Let's set a key for initial REST load as well.
+                await redis_client.set(f"orderbook:{ticker_id}", json.dumps(data))
+                await redis_client.publish("orderbook_updates", json.dumps(data))
+                
+            except Exception as sub_e:
+                print(f"⚠️ Fetch Orderbook Error ({symbol}): {sub_e}")
 
     except Exception as e:
-        print(f"❌ Fetch Error: {e}")
+        print(f"❌ Fetch Orderbooks Job Error: {e}")
 
 async def main():
     await init_resources()
     
     scheduler = AsyncIOScheduler()
     # 1초마다 실행.
-    # max_instances=1: 이전 작업이 끝나지 않았으면 건너뜀 (중복 실행 방지)
-    # coalesce=True: 여러 번 실행 기회를 놓쳐도 한 번만 실행 (밀림 방지)
     scheduler.add_job(fetch_tickers_job, 'interval', seconds=1, max_instances=1, coalesce=True)
+    scheduler.add_job(fetch_orderbooks_job, 'interval', seconds=1, max_instances=1, coalesce=True)
     scheduler.start()
     
     print("🚀 Data Feeder Started with APScheduler (1s interval)")
