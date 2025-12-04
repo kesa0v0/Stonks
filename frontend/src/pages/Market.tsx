@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import Decimal from 'decimal.js';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
@@ -6,12 +7,33 @@ import api from '../api/client';
 import DashboardLayout from '../components/DashboardLayout';
 import { CandleChart } from '../components/CandleChart';
 import OpenOrders from '../components/OpenOrders';
+import OrderInputs from '../components/orders/OrderInputs';
 import type { OrderBookResponse, TickerResponse, Portfolio } from '../interfaces';
-import { useWebSocket } from '../hooks/useWebSocket';
+// import { useWebSocket } from '../hooks/useWebSocket';
 
 const toNumber = (v: string) => {
   const n = parseFloat(v);
   return Number.isFinite(n) ? n : 0;
+};
+
+// Helpers using Decimal for precise money/quantity calculations
+const d = (v: Decimal.Value | undefined | null) => {
+  try {
+    if (v === undefined || v === null || v === '') return new Decimal(0);
+    return new Decimal(v as Decimal.Value);
+  } catch {
+    return new Decimal(0);
+  }
+};
+
+const mulToString = (a: Decimal.Value, b: Decimal.Value, fractionDigits = 0) => {
+  return d(a).mul(d(b)).toFixed(fractionDigits);
+};
+
+const divToString = (a: Decimal.Value, b: Decimal.Value, fractionDigits = 8) => {
+  const denom = d(b);
+  if (denom.isZero()) return '0';
+  return d(a).div(denom).toFixed(fractionDigits);
 };
 
 export default function Market() {
@@ -27,8 +49,8 @@ export default function Market() {
   const currency = selectedTicker?.currency ?? 'KRW';
 
   const [orderBook, setOrderBook] = useState<OrderBookResponse | null>(null);
-  const [wsPrice, setWsPrice] = useState<number | undefined>(undefined);
-  const [wsTimestamp, setWsTimestamp] = useState<number | undefined>(undefined);
+  const [wsPrice] = useState<number | undefined>(undefined);
+  const [wsTimestamp] = useState<number | undefined>(undefined);
   
   // Form States
   const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT' | 'STOP_LOSS' | 'TAKE_PROFIT' | 'STOP_LIMIT' | 'TRAILING_STOP'>('MARKET');
@@ -41,6 +63,29 @@ export default function Market() {
   const [lastEdited, setLastEdited] = useState<'AMOUNT' | 'TOTAL'>('AMOUNT'); // Track last edited field for sync
   const [timeRange, setTimeRange] = useState<'1D' | '1W' | '3M' | '1Y' | '5Y'>('1D');
   const [chartType, setChartType] = useState<'candle' | 'area'>('candle');
+
+  // Fetch trading fee config (fallback to 0.1%)
+  const feeQ = useQuery({
+    queryKey: ['trading-fees'],
+    queryFn: async () => {
+      try {
+        const r = await api.get('config/trading').json<{ maker_fee?: string | number; taker_fee?: string | number }>();
+        return r;
+      } catch {
+        return { maker_fee: 0.001, taker_fee: 0.001 };
+      }
+    }
+  });
+  const makerFee = Number(feeQ.data?.maker_fee ?? 0.001);
+  const takerFee = Number(feeQ.data?.taker_fee ?? 0.001);
+  const effectiveFeeRate = (orderType === 'LIMIT' || orderType === 'STOP_LIMIT') ? makerFee : takerFee;
+
+  const feeInclusiveTotal = useMemo(() => {
+    const base = d(total);
+    if (base.isZero()) return '';
+    const fee = base.mul(effectiveFeeRate);
+    return base.add(fee).toFixed(0);
+  }, [total, effectiveFeeRate]);
 
   const portfolioQ = useQuery({
     queryKey: ['portfolio'],
@@ -55,9 +100,9 @@ export default function Market() {
   if (wsPrice !== undefined && selectedTicker?.current_price && selectedTicker.change_percent) {
     const initPrice = Number(selectedTicker.current_price);
     const initChange = Number(selectedTicker.change_percent);
-    const prev = initPrice / (1 + initChange / 100);
+    const prev = d(initPrice).div(d(1).add(d(initChange).div(100))).toNumber();
     if (prev !== 0) {
-      realTimeChange = ((wsPrice - prev) / prev) * 100;
+      realTimeChange = d(wsPrice).sub(prev).div(prev).mul(100).toNumber();
     }
   }
 
@@ -67,14 +112,12 @@ export default function Market() {
 
   const holdingPnL = useMemo(() => {
       if (!currentHolding || !realTimePrice) return null;
-      const avg = Number(currentHolding.average_price);
-      const qty = Number(currentHolding.quantity);
-      if (avg === 0 || qty === 0) return 0;
-      
-      const totalVal = realTimePrice * qty;
-      const costBasis = avg * qty;
-      
-      return ((totalVal - costBasis) / Math.abs(costBasis)) * 100;
+        const avg = Number(currentHolding.average_price);
+        const qty = Number(currentHolding.quantity);
+        if (avg === 0 || qty === 0) return 0;
+        const totalVal = d(realTimePrice).mul(qty);
+        const costBasis = d(avg).mul(qty);
+        return totalVal.sub(costBasis).div(costBasis.abs()).mul(100).toNumber();
   }, [currentHolding, realTimePrice]);
 
   useEffect(() => {
@@ -105,14 +148,14 @@ export default function Market() {
           if (amount) {
             const val = parseFloat(amount);
             if (!isNaN(val)) {
-                setTotal((val * realTimePrice).toFixed(0));
+                setTotal(mulToString(val, realTimePrice, 0));
             }
           }
       } else {
           if (total) {
             const val = parseFloat(total);
             if (!isNaN(val) && realTimePrice !== 0) {
-                setAmount((val / realTimePrice).toFixed(8));
+                setAmount(divToString(val, realTimePrice, 8));
             }
           }
       }
@@ -134,10 +177,10 @@ export default function Market() {
     
     // Limit mode: update total if amount exists
     if (!isNaN(newPrice) && amount && (orderType === 'LIMIT' || orderType === 'STOP_LIMIT')) {
-        const amt = parseFloat(amount);
-        if (!isNaN(amt)) {
-            setTotal((newPrice * amt).toFixed(0));
-        }
+      const amt = parseFloat(amount);
+      if (!isNaN(amt)) {
+        setTotal(mulToString(newPrice, amt, 0));
+      }
     }
   };
 
@@ -153,7 +196,7 @@ export default function Market() {
     const p = (effectivePrice && !isNaN(effectivePrice)) ? effectivePrice : 0;
     
     if (!isNaN(amt) && p !== 0) {
-        setTotal((p * amt).toFixed(0));
+      setTotal(mulToString(p, amt, 0));
     } else if (val === '') {
         setTotal('');
     }
@@ -171,8 +214,7 @@ export default function Market() {
     const p = (effectivePrice && !isNaN(effectivePrice)) ? effectivePrice : 0;
     
     if (!isNaN(tot) && p !== 0) {
-        const newAmount = tot / p;
-        setAmount(newAmount.toFixed(8)); 
+      setAmount(divToString(tot, p, 8)); 
     } else if (val === '') {
         setAmount('');
     }
@@ -397,53 +439,17 @@ export default function Market() {
 
               <form onSubmit={handleOrder} className="flex flex-col gap-3">
                 
-                {/* Price Input (Target Price for Limit/StopLimit) */}
-                {(orderType === 'LIMIT' || orderType === 'STOP_LIMIT') && (
-                    <div>
-                        <label className="text-xs font-bold text-[#90a4cb] uppercase flex justify-between">
-                            <span>Limit Price ({currency})</span>
-                        </label>
-                        <input 
-                            type="number" 
-                            className="w-full mt-1 bg-[#182234] border border-[#314368] rounded-lg px-3 py-2 text-white font-mono focus:border-[#0d59f2] focus:ring-1 focus:ring-[#0d59f2] outline-none transition-all"
-                            value={price}
-                            onChange={(e) => handlePriceChange(e.target.value)}
-                            placeholder="Price"
-                        />
-                    </div>
-                )}
-
-                {/* Stop Price Input */}
-                {(orderType === 'STOP_LOSS' || orderType === 'TAKE_PROFIT' || orderType === 'STOP_LIMIT') && (
-                    <div>
-                        <label className="text-xs font-bold text-[#90a4cb] uppercase flex justify-between">
-                            <span>Stop Price ({currency})</span>
-                        </label>
-                        <input 
-                            type="number" 
-                            className="w-full mt-1 bg-[#182234] border border-[#314368] rounded-lg px-3 py-2 text-white font-mono focus:border-[#0d59f2] focus:ring-1 focus:ring-[#0d59f2] outline-none transition-all"
-                            value={stopPrice}
-                            onChange={(e) => setStopPrice(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                            placeholder="Trigger Price"
-                        />
-                    </div>
-                )}
-
-                {/* Trailing Gap Input */}
-                {orderType === 'TRAILING_STOP' && (
-                    <div>
-                        <label className="text-xs font-bold text-[#90a4cb] uppercase flex justify-between">
-                            <span>Trailing Gap ({currency})</span>
-                        </label>
-                        <input 
-                            type="number" 
-                            className="w-full mt-1 bg-[#182234] border border-[#314368] rounded-lg px-3 py-2 text-white font-mono focus:border-[#0d59f2] focus:ring-1 focus:ring-[#0d59f2] outline-none transition-all"
-                            value={trailingGap}
-                            onChange={(e) => setTrailingGap(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                            placeholder="Gap Amount"
-                        />
-                    </div>
-                )}
+                {/* Order-specific Inputs */}
+                <OrderInputs
+                  orderType={orderType}
+                  currency={currency}
+                  price={price}
+                  stopPrice={stopPrice}
+                  trailingGap={trailingGap}
+                  onPriceChange={handlePriceChange}
+                  onStopPriceChange={(v: string) => setStopPrice(v === '' ? '' : parseFloat(v))}
+                  onTrailingGapChange={(v: string) => setTrailingGap(v === '' ? '' : parseFloat(v))}
+                />
 
                 {/* Market Price Display (for Market-like orders) */}
                 {(orderType === 'MARKET' || orderType === 'STOP_LOSS' || orderType === 'TAKE_PROFIT' || orderType === 'TRAILING_STOP') && (
@@ -493,6 +499,12 @@ export default function Market() {
                     value={total}
                     onChange={(e) => handleTotalChange(e.target.value)}
                   />
+                  {total && (
+                    <div className="mt-1 text-[11px] text-[#90a4cb] flex justify-between">
+                      <span>Estimated with fee ({(effectiveFeeRate*100).toFixed(2)}%)</span>
+                      <span className="font-mono text-white">{feeInclusiveTotal}</span>
+                    </div>
+                  )}
                 </div>
                 
                 <button 

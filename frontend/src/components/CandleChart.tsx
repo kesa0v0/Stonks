@@ -245,7 +245,7 @@ export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle', last
         timeVisible: true,
         secondsVisible: false,
         borderColor: '#314368',
-        tickMarkFormatter: (timestamp: number, tickMarkType: number, locale: string) => {
+        tickMarkFormatter: (timestamp: number) => {
             // Force KST display for axis labels
             const date = new Date(timestamp * 1000);
             const options: Intl.DateTimeFormatOptions = { timeZone: 'Asia/Seoul', hour12: false };

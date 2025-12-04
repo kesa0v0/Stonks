@@ -15,7 +15,7 @@ from backend.core.database import Base, engine, wait_for_db
 from sqlalchemy import text
 from backend.create_test_user import create_test_user
 from backend.create_tickers import init_tickers
-from backend.app.routers import market, order, auth, admin, api_key, me, ranking, human, users
+from backend.app.routers import market, order, auth, admin, api_key, me, ranking, human, users, config
 from backend.core.rate_limit import init_rate_limiter
 from backend.core.exceptions import StonksError
 from backend.app.exception_handlers import stonks_exception_handler, general_exception_handler
@@ -189,6 +189,7 @@ app.include_router(human.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
 app.include_router(api_key.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1") # New users router
+app.include_router(config.router, prefix="/api/v1")
 
 # --- Custom OpenAPI to include API Key security scheme ---
 def custom_openapi():

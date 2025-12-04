@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import Decimal from 'decimal.js';
 import api from '../api/client';
 import DashboardLayout from '../components/DashboardLayout';
 import type { Portfolio as IPortfolio, OrderListItem } from '../interfaces';
@@ -33,6 +34,13 @@ export default function Portfolio() {
     // Convert string inputs from backend to numbers for calculations
     const initialCashBalance = Number(fetchedPortfolio.cash_balance);
     const initialTotalAssetValue = Number(fetchedPortfolio.total_asset_value);
+
+    const d = (v: number | string | undefined | null) => {
+      try {
+        if (v === undefined || v === null || v === '') return new Decimal(0);
+        return new Decimal(v as Decimal.Value);
+      } catch { return new Decimal(0); }
+    };
     
     const updatedAssets = fetchedPortfolio.assets.map(a => {
       const p = prices.get(a.ticker_id); // This is a number
@@ -41,41 +49,37 @@ export default function Portfolio() {
       const assetAveragePrice = Number(a.average_price);
       const assetCurrentPrice = p !== undefined ? p : Number(a.current_price); // Use real-time price if available, else initial from API
 
-      const totalValue = assetCurrentPrice * assetQuantity;
+      const totalValueD = d(assetCurrentPrice).mul(assetQuantity);
       let profitRate = 0;
-      // Avoid division by zero if cost basis is 0
-      if (assetAveragePrice * assetQuantity !== 0) {
-          profitRate = ((totalValue - (assetAveragePrice * assetQuantity)) / Math.abs(assetAveragePrice * assetQuantity)) * 100;
+      const costBasisD = d(assetAveragePrice).mul(assetQuantity);
+      if (!costBasisD.isZero()) {
+        profitRate = totalValueD.sub(costBasisD).div(costBasisD.abs()).mul(100).toNumber();
       }
 
       return { 
           ...a, 
           quantity: assetQuantity.toString(), // Convert back to string for consistency with interface
           current_price: assetCurrentPrice.toString(),
-          total_value: totalValue.toString(),
+              total_value: totalValueD.toString(),
           profit_rate: profitRate.toFixed(2).toString()
       };
     });
 
-    const newTotalValueNum = updatedAssets.reduce((acc, cur) => acc + Number(cur.total_value), 0) + initialCashBalance;
+            const newTotalValueNum = updatedAssets.reduce((acc, cur) => acc + Number(cur.total_value), 0) + initialCashBalance;
 
     let newChange: string | undefined = undefined; 
     
     // Calculate real-time change percent
     if (fetchedPortfolio.total_asset_change_percent && initialTotalAssetValue > 0) {
         const oldChange = Number(fetchedPortfolio.total_asset_change_percent || '0');
-        
-        // Calculate previous total value (e.g., yesterday's close)
-        const divisor = (1 + oldChange / 100);
+        const divisorD = d(1).add(d(oldChange).div(100));
         let prevTotal = 0;
-
-        if (divisor !== 0) { // Avoid division by zero if oldChange is -100%
-            prevTotal = initialTotalAssetValue / divisor;
+        if (!divisorD.isZero()) {
+          prevTotal = d(initialTotalAssetValue).div(divisorD).toNumber();
         }
-        
-        if (prevTotal !== 0) { // Avoid division by zero for changeVal
-            const changeVal = ((newTotalValueNum - prevTotal) / Math.abs(prevTotal)) * 100;
-            newChange = changeVal.toFixed(2);
+        if (prevTotal !== 0) {
+          const changeVal = d(newTotalValueNum).sub(prevTotal).div(Math.abs(prevTotal)).mul(100).toNumber();
+          newChange = new Decimal(changeVal).toFixed(2);
         } else if (newTotalValueNum > 0) {
             // If prevTotal was 0 and newTotalValue is positive, it's an "infinite" gain
             newChange = 'Infinity'; // Indicate huge gain from 0
