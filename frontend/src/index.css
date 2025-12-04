@@ -12,3 +12,12 @@ body { margin: 0; }
 .market-price-readonly {
   @apply opacity-75 cursor-default;
 }
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}

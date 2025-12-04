@@ -31,8 +31,10 @@ export default function Market() {
   const [wsTimestamp, setWsTimestamp] = useState<number | undefined>(undefined);
   
   // Form States
-  const [orderType, setOrderType] = useState<'LIMIT' | 'MARKET'>('MARKET');
-  const [price, setPrice] = useState<number | ''>(''); // Unit Price
+  const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT' | 'STOP_LOSS' | 'TAKE_PROFIT' | 'STOP_LIMIT' | 'TRAILING_STOP'>('MARKET');
+  const [price, setPrice] = useState<number | ''>(''); // Unit Price / Target Price
+  const [stopPrice, setStopPrice] = useState<number | ''>(''); // Trigger Price
+  const [trailingGap, setTrailingGap] = useState<number | ''>(''); // Trailing Gap
   const [amount, setAmount] = useState<string>(''); // Quantity
   const [total, setTotal] = useState<string>(''); // Total Price
   const [side, setSide] = useState<'BUY' | 'SELL'>('BUY');
@@ -94,7 +96,6 @@ export default function Market() {
       setPrice(realTimePrice);
       
       if (lastEdited === 'AMOUNT') {
-          // Amount is anchor -> Update Total
           if (amount) {
             const val = parseFloat(amount);
             if (!isNaN(val)) {
@@ -102,7 +103,6 @@ export default function Market() {
             }
           }
       } else {
-          // Total is anchor -> Update Amount
           if (total) {
             const val = parseFloat(total);
             if (!isNaN(val) && realTimePrice !== 0) {
@@ -127,7 +127,7 @@ export default function Market() {
     setPrice(isNaN(newPrice) ? '' : newPrice);
     
     // Limit mode: update total if amount exists
-    if (!isNaN(newPrice) && amount) {
+    if (!isNaN(newPrice) && amount && (orderType === 'LIMIT' || orderType === 'STOP_LIMIT')) {
         const amt = parseFloat(amount);
         if (!isNaN(amt)) {
             setTotal((newPrice * amt).toFixed(0));
@@ -139,9 +139,14 @@ export default function Market() {
     setAmount(val);
     setLastEdited('AMOUNT');
     const amt = parseFloat(val);
-    const p = typeof price === 'number' ? price : parseFloat(price);
+    // Use current realTimePrice for market-like orders, or the input price for limit-like orders
+    const effectivePrice = (orderType === 'MARKET' || orderType === 'STOP_LOSS' || orderType === 'TAKE_PROFIT' || orderType === 'TRAILING_STOP') 
+                            ? realTimePrice 
+                            : (typeof price === 'number' ? price : parseFloat(price));
     
-    if (!isNaN(amt) && !isNaN(p)) {
+    const p = (effectivePrice && !isNaN(effectivePrice)) ? effectivePrice : 0;
+    
+    if (!isNaN(amt) && p !== 0) {
         setTotal((p * amt).toFixed(0));
     } else if (val === '') {
         setTotal('');
@@ -152,10 +157,14 @@ export default function Market() {
     setTotal(val);
     setLastEdited('TOTAL');
     const tot = parseFloat(val);
-    const p = typeof price === 'number' ? price : parseFloat(price);
+     // Use current realTimePrice for market-like orders, or the input price for limit-like orders
+    const effectivePrice = (orderType === 'MARKET' || orderType === 'STOP_LOSS' || orderType === 'TAKE_PROFIT' || orderType === 'TRAILING_STOP') 
+                            ? realTimePrice 
+                            : (typeof price === 'number' ? price : parseFloat(price));
     
-    if (!isNaN(tot) && !isNaN(p) && p !== 0) {
-        // Calculate amount
+    const p = (effectivePrice && !isNaN(effectivePrice)) ? effectivePrice : 0;
+    
+    if (!isNaN(tot) && p !== 0) {
         const newAmount = tot / p;
         setAmount(newAmount.toFixed(8)); 
     } else if (val === '') {
@@ -166,23 +175,47 @@ export default function Market() {
   // 주문 제출 핸들러
   const handleOrder = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    const payload: any = {
+        ticker_id: tickerId,
+        side: side,
+        type: orderType, 
+        quantity: toNumber(amount),
+    };
+
+    if (orderType === 'LIMIT' || orderType === 'STOP_LIMIT') {
+        payload.target_price = typeof price === 'number' ? price : toNumber(price);
+    }
+
+    if (orderType === 'STOP_LOSS' || orderType === 'TAKE_PROFIT' || orderType === 'STOP_LIMIT') {
+        payload.stop_price = typeof stopPrice === 'number' ? stopPrice : toNumber(stopPrice as string);
+    }
+
+    if (orderType === 'TRAILING_STOP') {
+        payload.trailing_gap = typeof trailingGap === 'number' ? trailingGap : toNumber(trailingGap as string);
+    }
+
     try {
-      await api.post('orders', {
-        json: {
-          ticker_id: tickerId,
-          side: side,
-          type: orderType, 
-          quantity: toNumber(amount),
-          target_price: typeof price === 'number' ? price : toNumber(price)
-        }
-      });
+      await api.post('orders', { json: payload });
       toast.success("Order Placed Successfully!");
+      // Reset relevant fields
       setAmount('');
       setTotal('');
     } catch (err) {
       console.error("Order execution failed", err);
+      toast.error("Order Failed");
     }
   };
+
+  // Tabs Configuration
+  const tabs = [
+      { id: 'MARKET', label: 'Market' },
+      { id: 'LIMIT', label: 'Limit' },
+      { id: 'STOP_LOSS', label: 'Stop Loss' },
+      { id: 'TAKE_PROFIT', label: 'Take Profit' },
+      { id: 'STOP_LIMIT', label: 'Stop Limit' },
+      { id: 'TRAILING_STOP', label: 'Trailing' },
+  ];
 
   return (
     <DashboardLayout>
@@ -276,7 +309,7 @@ export default function Market() {
             {/* Order Book */}
             <div className="flex-[2] rounded-xl border border-[#314368] bg-[#101623] p-4 flex flex-col overflow-hidden">
               <h3 className="text-white font-bold mb-3 border-b border-[#314368] pb-2">Order Book</h3>
-              <div className="flex-1 overflow-y-auto font-mono text-sm custom-scrollbar">
+              <div className="flex-1 overflow-y-auto font-mono text-sm no-scrollbar">
                 <table className="w-full">
                   <thead>
                     <tr className="text-[#90a4cb] text-xs">
@@ -333,38 +366,85 @@ export default function Market() {
                 </button>
               </div>
 
-              {/* Order Type Tabs */}
-              <div className="flex gap-4 mb-4 border-b border-[#314368] px-1">
-                <button 
-                    onClick={() => setOrderType('LIMIT')}
-                    className={`pb-2 text-sm font-bold transition-colors ${orderType === 'LIMIT' ? 'text-white border-b-2 border-[#0d59f2]' : 'text-[#90a4cb] hover:text-white'}`}
-                >
-                    Limit
-                </button>
-                <button 
-                    onClick={() => setOrderType('MARKET')}
-                    className={`pb-2 text-sm font-bold transition-colors ${orderType === 'MARKET' ? 'text-white border-b-2 border-[#0d59f2]' : 'text-[#90a4cb] hover:text-white'}`}
-                >
-                    Market
-                </button>
+              {/* Order Type Grid */}
+              <div className="grid grid-cols-3 gap-2 mb-4">
+                {tabs.map((tab) => (
+                    <button 
+                        key={tab.id}
+                        onClick={() => setOrderType(tab.id as any)}
+                        className={`py-2 rounded-md text-xs font-bold transition-all 
+                          ${orderType === tab.id 
+                            ? 'bg-[#222f49] text-[#0d59f2] border border-[#0d59f2]' 
+                            : 'bg-[#182234] text-[#90a4cb] hover:bg-[#222f49] hover:text-white border border-transparent'
+                          }`}
+                    >
+                        {tab.label}
+                    </button>
+                ))}
               </div>
 
               <form onSubmit={handleOrder} className="flex flex-col gap-3">
-                {/* Price Input */}
-                <div>
-                  <label className="text-xs font-bold text-[#90a4cb] uppercase flex justify-between">
-                      <span>Price ({currency})</span>
-                      {orderType === 'MARKET' && <span className="text-[#0d59f2] text-[10px]">Market Price</span>}
-                  </label>
-                  <input 
-                    type="number" 
-                    className={`w-full mt-1 bg-[#182234] border border-[#314368] rounded-lg px-3 py-2 text-white font-mono focus:border-[#0d59f2] focus:ring-1 focus:ring-[#0d59f2] outline-none transition-all ${orderType === 'MARKET' ? 'market-price-readonly' : ''}`}
-                    value={price}
-                    onChange={(e) => handlePriceChange(e.target.value)}
-                    readOnly={orderType === 'MARKET'}
-                    placeholder="Price"
-                  />
-                </div>
+                
+                {/* Price Input (Target Price for Limit/StopLimit) */}
+                {(orderType === 'LIMIT' || orderType === 'STOP_LIMIT') && (
+                    <div>
+                        <label className="text-xs font-bold text-[#90a4cb] uppercase flex justify-between">
+                            <span>Limit Price ({currency})</span>
+                        </label>
+                        <input 
+                            type="number" 
+                            className="w-full mt-1 bg-[#182234] border border-[#314368] rounded-lg px-3 py-2 text-white font-mono focus:border-[#0d59f2] focus:ring-1 focus:ring-[#0d59f2] outline-none transition-all"
+                            value={price}
+                            onChange={(e) => handlePriceChange(e.target.value)}
+                            placeholder="Price"
+                        />
+                    </div>
+                )}
+
+                {/* Stop Price Input */}
+                {(orderType === 'STOP_LOSS' || orderType === 'TAKE_PROFIT' || orderType === 'STOP_LIMIT') && (
+                    <div>
+                        <label className="text-xs font-bold text-[#90a4cb] uppercase flex justify-between">
+                            <span>Stop Price ({currency})</span>
+                        </label>
+                        <input 
+                            type="number" 
+                            className="w-full mt-1 bg-[#182234] border border-[#314368] rounded-lg px-3 py-2 text-white font-mono focus:border-[#0d59f2] focus:ring-1 focus:ring-[#0d59f2] outline-none transition-all"
+                            value={stopPrice}
+                            onChange={(e) => setStopPrice(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                            placeholder="Trigger Price"
+                        />
+                    </div>
+                )}
+
+                {/* Trailing Gap Input */}
+                {orderType === 'TRAILING_STOP' && (
+                    <div>
+                        <label className="text-xs font-bold text-[#90a4cb] uppercase flex justify-between">
+                            <span>Trailing Gap ({currency})</span>
+                        </label>
+                        <input 
+                            type="number" 
+                            className="w-full mt-1 bg-[#182234] border border-[#314368] rounded-lg px-3 py-2 text-white font-mono focus:border-[#0d59f2] focus:ring-1 focus:ring-[#0d59f2] outline-none transition-all"
+                            value={trailingGap}
+                            onChange={(e) => setTrailingGap(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                            placeholder="Gap Amount"
+                        />
+                    </div>
+                )}
+
+                {/* Market Price Display (for Market-like orders) */}
+                {(orderType === 'MARKET' || orderType === 'STOP_LOSS' || orderType === 'TAKE_PROFIT' || orderType === 'TRAILING_STOP') && (
+                     <div>
+                        <label className="text-xs font-bold text-[#90a4cb] uppercase flex justify-between">
+                            <span>Price ({currency})</span>
+                            <span className="text-[#0d59f2] text-[10px]">Market Price</span>
+                        </label>
+                        <div className="w-full mt-1 bg-[#182234]/50 border border-[#314368] rounded-lg px-3 py-2 text-white/70 font-mono cursor-default">
+                            {realTimePrice ? realTimePrice.toLocaleString() : '-'}
+                        </div>
+                    </div>
+                )}
 
                 {/* Amount Input */}
                 <div>
@@ -396,7 +476,7 @@ export default function Market() {
                   className={`w-full py-3 rounded-lg font-bold text-white mt-2 transition-all hover:brightness-110 active:scale-95
                     ${side === 'BUY' ? 'bg-profit' : 'bg-loss'}`}
                 >
-                  {orderType === 'MARKET' ? 'Market ' : ''}{side}
+                  {orderType.replace('_', ' ')} {side}
                 </button>
               </form>
             </div>
