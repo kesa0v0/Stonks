@@ -54,7 +54,7 @@ export default function Dashboard() {
       const totalValue = assetCurrentPrice * assetQuantity;
       let profitRate = 0;
       if (assetAveragePrice * assetQuantity !== 0) {
-          profitRate = ((totalValue - (assetAveragePrice * assetQuantity)) / (assetAveragePrice * assetQuantity)) * 100;
+          profitRate = ((totalValue - (assetAveragePrice * assetQuantity)) / Math.abs(assetAveragePrice * assetQuantity)) * 100;
       }
 
       return {

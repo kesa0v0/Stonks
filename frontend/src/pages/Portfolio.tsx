@@ -45,7 +45,7 @@ export default function Portfolio() {
       let profitRate = 0;
       // Avoid division by zero if cost basis is 0
       if (assetAveragePrice * assetQuantity !== 0) {
-          profitRate = ((totalValue - (assetAveragePrice * assetQuantity)) / (assetAveragePrice * assetQuantity)) * 100;
+          profitRate = ((totalValue - (assetAveragePrice * assetQuantity)) / Math.abs(assetAveragePrice * assetQuantity)) * 100;
       }
 
       return { 
@@ -74,7 +74,7 @@ export default function Portfolio() {
         }
         
         if (prevTotal !== 0) { // Avoid division by zero for changeVal
-            const changeVal = ((newTotalValueNum - prevTotal) / prevTotal) * 100;
+            const changeVal = ((newTotalValueNum - prevTotal) / Math.abs(prevTotal)) * 100;
             newChange = changeVal.toFixed(2);
         } else if (newTotalValueNum > 0) {
             // If prevTotal was 0 and newTotalValue is positive, it's an "infinite" gain
