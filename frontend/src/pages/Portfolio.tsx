@@ -3,7 +3,7 @@ import Decimal from 'decimal.js';
 import api from '../api/client';
 import DashboardLayout from '../components/DashboardLayout';
 import type { Portfolio as IPortfolio, OrderListItem } from '../interfaces';
-import { usePricesAll } from '../store/prices';
+import { usePricesAll, usePricesVersion } from '../store/prices';
 import OpenOrders from '../components/OpenOrders';
 import HoldingsTable from '../components/HoldingsTable';
 
@@ -11,6 +11,7 @@ export default function Portfolio() {
   const [fetchedPortfolio, setFetchedPortfolio] = useState<IPortfolio | null>(null);
   const [orders, setOrders] = useState<OrderListItem[]>([]);
   const prices = usePricesAll();
+  const pricesVersion = usePricesVersion();
 
   useEffect(() => {
     const fetchData = async () => {
@@ -102,7 +103,7 @@ export default function Portfolio() {
         total_asset_value: newTotalValueNum.toString(),
         total_asset_change_percent: newChange
     };
-  }, [fetchedPortfolio, prices]);
+  }, [fetchedPortfolio, pricesVersion]);
 
   const isLoading = !portfolio;
 

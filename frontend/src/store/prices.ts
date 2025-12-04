@@ -5,6 +5,8 @@ class PricesStore {
   private prices: Map<string, number> = new Map();
   private globalListeners = new Set<() => void>();
   private keyListeners: Map<string, Set<() => void>> = new Map();
+  private version = 0;
+  private versionListeners = new Set<() => void>();
 
   subscribeAll = (listener: () => void) => {
     this.globalListeners.add(listener);
@@ -23,6 +25,11 @@ class PricesStore {
 
   getSnapshotAll = () => this.prices;
   getSnapshotKey = (key: string) => this.prices.get(key);
+  getSnapshotVersion = () => this.version;
+  subscribeVersion = (listener: () => void) => {
+    this.versionListeners.add(listener);
+    return () => this.versionListeners.delete(listener);
+  };
 
   updateBatch = (updates: Map<string, number>) => {
     if (updates.size === 0) return;
@@ -37,6 +44,7 @@ class PricesStore {
       }
     }
     if (!anyKeyChanged) return;
+    this.version++;
     // Notify per-key listeners first
     for (const k of changedKeys) {
       const set = this.keyListeners.get(k);
@@ -48,6 +56,12 @@ class PricesStore {
     }
     // Then notify global listeners
     for (const l of this.globalListeners) {
+      try { l(); } catch {
+        // swallow listener errors
+      }
+    }
+    // And notify version listeners
+    for (const l of this.versionListeners) {
       try { l(); } catch {
         // swallow listener errors
       }
@@ -70,5 +84,13 @@ export function usePrice(tickerId: string) {
     (listener) => pricesStore.subscribeKey(tickerId, listener),
     () => pricesStore.getSnapshotKey(tickerId),
     () => pricesStore.getSnapshotKey(tickerId)
+  );
+}
+
+export function usePricesVersion() {
+  return useSyncExternalStore(
+    pricesStore.subscribeVersion,
+    pricesStore.getSnapshotVersion,
+    pricesStore.getSnapshotVersion
   );
 }

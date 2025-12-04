@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import api from '../api/client';
 import DashboardLayout from '../components/DashboardLayout';
 import type { TickerResponse, MoverResponse, Portfolio } from '../interfaces';
-import { usePricesAll } from '../store/prices';
+import { usePricesAll, usePricesVersion } from '../store/prices';
 import HoldingsTable from '../components/HoldingsTable';
 import OpenOrders from '../components/OpenOrders';
 
@@ -13,6 +13,7 @@ import OpenOrders from '../components/OpenOrders';
 export default function Dashboard() {
   const navigate = useNavigate();
   const prices = usePricesAll();
+  const pricesVersion = usePricesVersion();
 
   // Categories & search
   const [category, setCategory] = useState<'ALL' | 'KRX' | 'US' | 'CRYPTO' | 'HUMAN'>('ALL');
@@ -118,19 +119,19 @@ export default function Dashboard() {
 
   const displayedTickers = useMemo(() => {
     return filteredTickers.map(mergePrice);
-  }, [filteredTickers, prices]);
+  }, [filteredTickers, pricesVersion]);
 
   const displayedGainers = useMemo(() => {
     return (gainersQ.data || []).map(mergeMover);
-  }, [gainersQ.data, prices]);
+  }, [gainersQ.data, pricesVersion]);
 
   const displayedLosers = useMemo(() => {
     return (losersQ.data || []).map(mergeMover);
-  }, [losersQ.data, prices]);
+  }, [losersQ.data, pricesVersion]);
 
   const displayedTrending = useMemo(() => {
     return (trendingQ.data || []).map(mergeMover);
-  }, [trendingQ.data, prices]);
+  }, [trendingQ.data, pricesVersion]);
 
   //
 

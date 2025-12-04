@@ -21,7 +21,7 @@ export function usePrices() {
 
   useEffect(() => {
     // Start a 500ms interval for throttled batch updates
-    timerRef.current = window.setInterval(flush, 500);
+    timerRef.current = window.setInterval(flush, 250);
     return () => {
       if (timerRef.current) window.clearInterval(timerRef.current);
       // Final flush on cleanup

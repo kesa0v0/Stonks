@@ -9,7 +9,7 @@ interface HoldingsTableProps {
 }
 
 export default function HoldingsTable({ assets, isLoading }: HoldingsTableProps) {
-  const navigate = useNavigate();
+  // navigation handled in row component
 
   if (isLoading) {
     return (
@@ -56,56 +56,64 @@ export default function HoldingsTable({ assets, isLoading }: HoldingsTableProps)
             </tr>
           </thead>
           <tbody className="divide-y divide-[#314368]">
-            {assets.map((asset) => {
-              // Subscribe to just this asset's price for fine-grained re-renders
-              const rtPrice = usePrice(asset.ticker_id);
-              const quantity = new Decimal(asset.quantity);
-              const avgPrice = new Decimal(asset.average_price);
-              const currentPrice = new Decimal(rtPrice ?? asset.current_price);
-              const totalValue = currentPrice.mul(quantity);
-              const profitRate = new Decimal(asset.profit_rate);
-              
-              // Calculate PnL Value: (Current Price - Avg Price) * Quantity
-              // Or simpler: Total Value - (Avg Price * Quantity)
-              const pnlValue = totalValue.sub(avgPrice.mul(quantity));
-              const isPositive = pnlValue.greaterThanOrEqualTo(0);
-              const pnlColor = isPositive ? 'text-profit' : 'text-loss';
-
-              return (
-                <tr key={asset.ticker_id} className="hover:bg-[#182234] transition-colors">
-                  <td className="px-4 py-3">
-                    <div className="flex flex-col">
-                      <span className="text-white font-bold">{asset.symbol}</span>
-                      <span className="text-[#90a4cb] text-xs">{asset.name}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-right text-white font-mono">
-                    {quantity.toFixed(4)}
-                  </td>
-                  <td className="px-4 py-3 text-right text-[#90a4cb] font-mono">
-                    {avgPrice.toFixed(0)}
-                  </td>
-                  <td className="px-4 py-3 text-right text-white font-mono font-medium">
-                    {currentPrice.toFixed(0)}
-                  </td>
-                  <td className="px-4 py-3 text-right text-white font-bold font-mono">
-                    {totalValue.floor().toString()}
-                  </td>
-                  <td className={`px-4 py-3 text-right font-mono font-medium ${pnlColor}`}>
-                    <div className="flex flex-col items-end">
-                      <span>{isPositive ? '+' : ''}{pnlValue.floor().toString()}</span>
-                      <span className="text-xs">({isPositive ? '+' : ''}{profitRate.toFixed(2)}%)</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <button onClick={() => navigate(`/market/${asset.ticker_id}`)} className="h-8 px-4 rounded-md bg-primary text-background-dark font-semibold text-sm hover:bg-primary/90">Trade</button>
-                  </td>
-                </tr>
-              );
-            })}
+            {assets.map((asset) => (
+              <HoldingRow key={asset.ticker_id} asset={asset} />
+            ))}
           </tbody>
         </table>
       </div>
     </div>
+  );
+}
+
+function HoldingRow({ asset }: { asset: Asset }) {
+  const navigate = useNavigate();
+  // Hooks must be at top-level in a component
+  // Subscribe to just this asset's price for fine-grained re-renders
+  const rtPrice = usePrice(asset.ticker_id);
+
+  const quantity = new Decimal(asset.quantity);
+  const avgPrice = new Decimal(asset.average_price);
+  const currentPrice = new Decimal(rtPrice ?? asset.current_price);
+  const totalValue = currentPrice.mul(quantity);
+  const pnlValue = totalValue.sub(avgPrice.mul(quantity));
+  const isPositive = pnlValue.greaterThanOrEqualTo(0);
+  const pnlColor = isPositive ? 'text-profit' : 'text-loss';
+  const profitRate = (() => {
+    const costBasis = avgPrice.mul(quantity);
+    if (costBasis.isZero()) return new Decimal(0);
+    return totalValue.sub(costBasis).div(costBasis.abs()).mul(100);
+  })();
+
+  return (
+    <tr className="hover:bg-[#182234] transition-colors">
+      <td className="px-4 py-3">
+        <div className="flex flex-col">
+          <span className="text-white font-bold">{asset.symbol}</span>
+          <span className="text-[#90a4cb] text-xs">{asset.name}</span>
+        </div>
+      </td>
+      <td className="px-4 py-3 text-right text-white font-mono">
+        {quantity.toFixed(4)}
+      </td>
+      <td className="px-4 py-3 text-right text-[#90a4cb] font-mono">
+        {avgPrice.toFixed(0)}
+      </td>
+      <td className="px-4 py-3 text-right text-white font-mono font-medium">
+        {currentPrice.toFixed(0)}
+      </td>
+      <td className="px-4 py-3 text-right text-white font-bold font-mono">
+        {totalValue.floor().toString()}
+      </td>
+      <td className={`px-4 py-3 text-right font-mono font-medium ${pnlColor}`}>
+        <div className="flex flex-col items-end">
+          <span>{isPositive ? '+' : ''}{pnlValue.floor().toString()}</span>
+          <span className="text-xs">({isPositive ? '+' : ''}{profitRate.toFixed(2)}%)</span>
+        </div>
+      </td>
+      <td className="px-4 py-3 text-center">
+        <button onClick={() => navigate(`/market/${asset.ticker_id}`)} className="h-8 px-4 rounded-md bg-primary text-background-dark font-semibold text-sm hover:bg-primary/90">Trade</button>
+      </td>
+    </tr>
   );
 }
