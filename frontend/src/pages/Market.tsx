@@ -27,6 +27,7 @@ export default function Market() {
 
   const [orderBook, setOrderBook] = useState<OrderBookResponse | null>(null);
   const [wsPrice, setWsPrice] = useState<number | undefined>(undefined);
+  const [wsTimestamp, setWsTimestamp] = useState<number | undefined>(undefined);
   
   const [price, setPrice] = useState<number>(3500); // 임시 초기값
   const [amount, setAmount] = useState<string>('');
@@ -40,6 +41,9 @@ export default function Market() {
 
     if (msg.type === 'ticker' || (!msg.type && msg.price)) {
       setWsPrice(msg.price);
+      if (msg.timestamp) {
+        setWsTimestamp(msg.timestamp);
+      }
     } else if (msg.type === 'orderbook') {
       setOrderBook(msg);
     }
@@ -79,7 +83,6 @@ export default function Market() {
       }
     };
     fetchOrderBook();
-    // Polling 제거됨 (WebSocket으로 대체)
   }, [tickerId]);
 
   // 주문 제출 핸들러
@@ -175,7 +178,13 @@ export default function Market() {
               </div>
               {/* Chart Area */}
               <div className="flex-1 w-full bg-[#101623] rounded-lg overflow-hidden border border-[#314368]/30 relative">
-                 <CandleChart tickerId={tickerId} range={timeRange} chartType={chartType} />
+                 <CandleChart 
+                   tickerId={tickerId} 
+                   range={timeRange} 
+                   chartType={chartType} 
+                   lastPrice={realTimePrice}
+                   lastPriceTimestamp={wsTimestamp}
+                 />
               </div>
             </div>
           </div>

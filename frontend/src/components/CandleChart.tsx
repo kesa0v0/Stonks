@@ -17,9 +17,11 @@ interface ChartProps {
   tickerId: string;
   range?: '1D' | '1W' | '3M' | '1Y' | '5Y';
   chartType?: 'candle' | 'area';
+  lastPrice?: number;
+  lastPriceTimestamp?: number; // In milliseconds
 }
 
-export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle' }: ChartProps) => {
+export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle', lastPrice, lastPriceTimestamp }: ChartProps) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick" | "Area"> | null>(null);
@@ -98,7 +100,7 @@ export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle' }: Ch
     }
 
     try {
-      console.log(`[CandleChart] Loading data for ${tickerId} (${range}) from ${fromTime.toISOString()}`);
+      // console.log(`[CandleChart] Loading data for ${tickerId} (${range}) from ${fromTime.toISOString()}`);
       
       const data = await api.get(`market/candles/${tickerId}`, {
         searchParams: { 
@@ -122,7 +124,7 @@ export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle' }: Ch
         }
         setStatus('ready');
       } else {
-        console.warn("[CandleChart] No data found.");
+        // console.warn("[CandleChart] No data found.");
         setStatus('empty');
         hasMoreHistory.current = false;
       }
@@ -175,28 +177,52 @@ export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle' }: Ch
     }
   }, [tickerId, interval, transformData]);
 
-  // Real-time Update (Polling)
+  // Real-time Update (from props)
   useEffect(() => {
-    const poll = setInterval(async () => {
-      if (!seriesRef.current) return;
-      try {
-          const data = await api.get(`market/candles/${tickerId}`, {
-            searchParams: { interval, limit: 5 }
-          }).json<CandleData[]>();
-          
-          if (data.length > 0) {
-              const formatted = transformData(data);
-              formatted.forEach(bar => {
-                  seriesRef.current?.update(bar);
-              });
-          }
-      } catch (e) {
-          // silent fail
-      }
-    }, 2000);
+    if (!seriesRef.current || !lastPrice || !lastPriceTimestamp) return;
+    
+    const lastBar = allDataRef.current[allDataRef.current.length - 1];
+    const lastPriceTimeSeconds = Math.floor(lastPriceTimestamp / 1000);
+    
+    // Calculate expected bar time (truncate to minute/day start)
+    // For 1m interval:
+    let newBarTime = lastPriceTimeSeconds - (lastPriceTimeSeconds % 60);
+    if (interval === '1d') {
+        // UTC day start
+        newBarTime = lastPriceTimeSeconds - (lastPriceTimeSeconds % 86400); 
+        // Note: Timezone handling for '1d' might be tricky if server uses UTC. 
+        // Assuming simplified UTC days for now or matching server logic.
+    }
 
-    return () => clearInterval(poll);
-  }, [tickerId, interval, transformData]);
+    // If we have no data, or the new price belongs to a new bar
+    if (!lastBar || newBarTime > (lastBar.time as number)) {
+        const newBar = {
+            time: newBarTime as UTCTimestamp,
+            open: lastPrice,
+            high: lastPrice,
+            low: lastPrice,
+            close: lastPrice,
+            value: lastPrice, // for Area chart
+        };
+        
+        seriesRef.current.update(newBar);
+        allDataRef.current.push(newBar);
+        
+    } else {
+        // Update existing bar
+        const updatedBar = {
+            ...lastBar,
+            high: Math.max(lastBar.high, lastPrice),
+            low: Math.min(lastBar.low, lastPrice),
+            close: lastPrice,
+            value: lastPrice, // for Area chart
+        };
+        
+        seriesRef.current.update(updatedBar);
+        allDataRef.current[allDataRef.current.length - 1] = updatedBar;
+    }
+    
+  }, [lastPrice, lastPriceTimestamp, interval]);
 
   // Initialize Chart & Event Listeners
   useEffect(() => {
