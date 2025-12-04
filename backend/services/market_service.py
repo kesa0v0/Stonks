@@ -82,9 +82,9 @@ async def get_all_market_status() -> MarketStatusResponse:
 
 async def get_active_tickers(db: AsyncSession) -> List[TickerResponse]:
     """
-    상장된 모든 활성 종목 리스트를 조회합니다. (현재가, 변동률 포함)
+    상장된 모든 활성 종목 리스트를 조회합니다. (현재가, 변동률, 일일 거래량 포함)
     """
-    # Latest 1m candle (Current Price & Volume)
+    # Latest 1m candle (for Current Price)
     curr_stmt = (
         select(Candle)
         .where(Candle.interval == '1m')
@@ -94,7 +94,7 @@ async def get_active_tickers(db: AsyncSession) -> List[TickerResponse]:
     )
     curr = aliased(Candle, curr_stmt)
 
-    # Latest 1d candle (Previous Close)
+    # Latest 1d candle (for Previous Close)
     prev_stmt = (
         select(Candle)
         .where(Candle.interval == '1d')
@@ -103,14 +103,39 @@ async def get_active_tickers(db: AsyncSession) -> List[TickerResponse]:
         .subquery()
     )
     prev = aliased(Candle, prev_stmt)
+    
+    # Daily Volume (from 00:00 UTC today)
+    utc_tz = ZoneInfo("UTC")
+    today_start_utc = datetime.now(utc_tz).replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    daily_volume_stmt = (
+        select(
+            Candle.ticker_id,
+            func.sum(Candle.volume).label("daily_volume")
+        )
+        .where(
+            Candle.interval == '1m',
+            Candle.timestamp >= today_start_utc
+        )
+        .group_by(Candle.ticker_id)
+        .subquery()
+    )
+    daily_volume = aliased(daily_volume_stmt, name="daily_volume")
+
 
     # Calculate Change %
     change_expr = (curr.close - prev.close) / prev.close * 100
 
     stmt = (
-        select(Ticker, curr, change_expr.label("change_percent"))
+        select(
+            Ticker, 
+            curr, 
+            change_expr.label("change_percent"),
+            daily_volume.c.daily_volume
+        )
         .outerjoin(curr, Ticker.id == curr.ticker_id)
         .outerjoin(prev, Ticker.id == prev.ticker_id)
+        .outerjoin(daily_volume, Ticker.id == daily_volume.c.ticker_id)
         .where(Ticker.is_active == True)
     )
 
@@ -119,20 +144,20 @@ async def get_active_tickers(db: AsyncSession) -> List[TickerResponse]:
 
     tickers = []
     for row in rows:
-        ticker_obj, candle_1m, change_pct = row
+        ticker_obj, candle_1m, change_pct, d_volume = row
         
         # Build response
         t_res = TickerResponse.model_validate(ticker_obj)
         
         if candle_1m:
             t_res.current_price = str(candle_1m.close)
-            t_res.volume = str(candle_1m.volume)
+        
+        # Use daily volume if available, otherwise '0'
+        t_res.volume = str(d_volume) if d_volume is not None else '0'
             
         if change_pct is not None:
             t_res.change_percent = f"{change_pct:.2f}"
         else:
-             # If no data, 0.00 or None. Let's default to 0.00 if price exists? 
-             # Or None. None is safer to indicate "no data".
              pass
 
         tickers.append(t_res)
@@ -273,10 +298,9 @@ async def get_current_price_info(redis_client: async_redis.Redis, ticker_id: str
 
 async def get_top_movers(db: AsyncSession, type: str, limit: int) -> List[MoverResponse]:
     """
-    등락률 상위(Gainers) 또는 하위(Losers) 종목 조회
+    등락률 상위(Gainers) 또는 하위(Losers) 종목 조회 (일일 거래량 포함)
     """
-    # 1. Latest 1m candles (Current Price)
-    # Postgres specific DISTINCT ON
+    # 1. Latest 1m candles (for Current Price)
     curr_stmt = (
         select(Candle)
         .where(Candle.interval == '1m')
@@ -286,7 +310,7 @@ async def get_top_movers(db: AsyncSession, type: str, limit: int) -> List[MoverR
     )
     curr = aliased(Candle, curr_stmt)
 
-    # 2. Latest 1d candles (Previous Close)
+    # 2. Latest 1d candles (for Previous Close)
     prev_stmt = (
         select(Candle)
         .where(Candle.interval == '1d')
@@ -295,15 +319,38 @@ async def get_top_movers(db: AsyncSession, type: str, limit: int) -> List[MoverR
         .subquery()
     )
     prev = aliased(Candle, prev_stmt)
+    
+    # 3. Daily Volume (from 00:00 UTC today)
+    utc_tz = ZoneInfo("UTC")
+    today_start_utc = datetime.now(utc_tz).replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    daily_volume_stmt = (
+        select(
+            Candle.ticker_id,
+            func.sum(Candle.volume).label("daily_volume")
+        )
+        .where(
+            Candle.interval == '1m',
+            Candle.timestamp >= today_start_utc
+        )
+        .group_by(Candle.ticker_id)
+        .subquery()
+    )
+    daily_volume = aliased(daily_volume_stmt, name="daily_volume")
 
-    # 3. Join & Calculate
-    # change_pct = (curr.close - prev.close) / prev.close * 100
+    # 4. Join & Calculate Change %
     change_expr = (curr.close - prev.close) / prev.close * 100
 
     stmt = (
-        select(Ticker, curr, change_expr.label("change_percent"))
+        select(
+            Ticker, 
+            curr, 
+            change_expr.label("change_percent"),
+            daily_volume.c.daily_volume
+        )
         .join(curr, Ticker.id == curr.ticker_id)
         .join(prev, Ticker.id == prev.ticker_id)
+        .outerjoin(daily_volume, Ticker.id == daily_volume.c.ticker_id)
         .where(Ticker.is_active == True)
     )
 
@@ -319,21 +366,23 @@ async def get_top_movers(db: AsyncSession, type: str, limit: int) -> List[MoverR
 
     movers = []
     for row in rows:
-        ticker, candle_1m, change_pct = row
+        ticker, candle_1m, change_pct, d_volume = row
+        daily_vol = d_volume if d_volume is not None else 0
+        
         movers.append(MoverResponse(
             ticker=TickerResponse.model_validate(ticker),
             price=str(candle_1m.close),
             change_percent=f"{change_pct:.2f}",
-            volume=str(candle_1m.volume),
-            value=str(candle_1m.close * candle_1m.volume)
+            volume=str(daily_vol),
+            value=str(candle_1m.close * daily_vol)
         ))
     return movers
 
 async def get_trending_tickers(db: AsyncSession, limit: int) -> List[MoverResponse]:
     """
-    거래대금(Value) 급증 종목 조회 (최근 1분봉 기준)
+    거래대금(Value) 상위 종목 조회 (일일 기준)
     """
-    # Latest 1m candle
+    # Latest 1m candle (for Current Price)
     curr_stmt = (
         select(Candle)
         .where(Candle.interval == '1m')
@@ -343,9 +392,24 @@ async def get_trending_tickers(db: AsyncSession, limit: int) -> List[MoverRespon
     )
     curr = aliased(Candle, curr_stmt)
     
-    # Calculate Value = close * volume
-    value_expr = curr.close * curr.volume
+    # Daily Volume (from 00:00 UTC today)
+    utc_tz = ZoneInfo("UTC")
+    today_start_utc = datetime.now(utc_tz).replace(hour=0, minute=0, second=0, microsecond=0)
     
+    daily_volume_stmt = (
+        select(
+            Candle.ticker_id,
+            func.sum(Candle.volume).label("daily_volume")
+        )
+        .where(
+            Candle.interval == '1m',
+            Candle.timestamp >= today_start_utc
+        )
+        .group_by(Candle.ticker_id)
+        .subquery()
+    )
+    daily_volume = aliased(daily_volume_stmt, name="daily_volume")
+
     # We also need prev_close for change_percent
     prev_stmt = (
         select(Candle)
@@ -357,13 +421,23 @@ async def get_trending_tickers(db: AsyncSession, limit: int) -> List[MoverRespon
     prev = aliased(Candle, prev_stmt)
     
     change_expr = (curr.close - prev.close) / prev.close * 100
+    
+    # Calculate daily trade value = current_price * daily_volume
+    daily_value_expr = curr.close * daily_volume.c.daily_volume
 
     stmt = (
-        select(Ticker, curr, change_expr.label("change_percent"), value_expr.label("trade_value"))
+        select(
+            Ticker, 
+            curr, 
+            change_expr.label("change_percent"), 
+            daily_volume.c.daily_volume,
+            daily_value_expr.label("daily_trade_value")
+        )
         .join(curr, Ticker.id == curr.ticker_id)
+        .join(daily_volume, Ticker.id == daily_volume.c.ticker_id) # Must have volume today to be trending
         .outerjoin(prev, Ticker.id == prev.ticker_id) # Use outerjoin in case 1d is missing
         .where(Ticker.is_active == True)
-        .order_by(desc("trade_value"))
+        .order_by(desc("daily_trade_value"))
         .limit(limit)
     )
     
@@ -372,14 +446,14 @@ async def get_trending_tickers(db: AsyncSession, limit: int) -> List[MoverRespon
     
     trends = []
     for row in rows:
-        ticker, candle_1m, change_pct, trade_val = row
+        ticker, candle_1m, change_pct, d_volume, d_value = row
         change_str = f"{change_pct:.2f}" if change_pct is not None else "0.00"
         
         trends.append(MoverResponse(
             ticker=TickerResponse.model_validate(ticker),
             price=str(candle_1m.close),
             change_percent=change_str,
-            volume=str(candle_1m.volume),
-            value=str(trade_val)
+            volume=str(d_volume) if d_volume is not None else '0',
+            value=str(d_value) if d_value is not None else '0'
         ))
     return trends

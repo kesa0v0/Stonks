@@ -5,6 +5,7 @@ import api from '../api/client';
 import DashboardLayout from '../components/DashboardLayout';
 import { CandleChart } from '../components/CandleChart';
 import type { OrderBookResponse, TickerResponse } from '../interfaces';
+import { usePrices } from '../hooks/usePrices';
 
 const toNumber = (v: string) => {
   const n = parseFloat(v);
@@ -14,6 +15,8 @@ const toNumber = (v: string) => {
 export default function Market() {
   const { tickerId: routeTickerId } = useParams<{ tickerId: string }>();
   const tickerId = routeTickerId ?? 'CRYPTO-COIN-ETH';
+  const prices = usePrices();
+  
   const tickersQ = useQuery({
     queryKey: ['tickers'],
     queryFn: () => api.get('market/tickers').json<TickerResponse[]>(),
@@ -21,6 +24,21 @@ export default function Market() {
   const selectedTicker = useMemo(() => (tickersQ.data || []).find(t => t.id === tickerId), [tickersQ.data, tickerId]);
   const symbol = selectedTicker?.symbol ?? (tickerId.split('-').pop() || tickerId);
   const currency = selectedTicker?.currency ?? 'KRW';
+
+  // Real-time Price Logic
+  const wsPrice = prices.get(tickerId);
+  const realTimePrice = wsPrice !== undefined ? wsPrice : (selectedTicker?.current_price ? Number(selectedTicker.current_price) : undefined);
+
+  let realTimeChange = selectedTicker?.change_percent ? Number(selectedTicker.change_percent) : 0;
+  if (wsPrice !== undefined && selectedTicker?.current_price && selectedTicker.change_percent) {
+    const initPrice = Number(selectedTicker.current_price);
+    const initChange = Number(selectedTicker.change_percent);
+    const prev = initPrice / (1 + initChange / 100);
+    if (prev !== 0) {
+      realTimeChange = ((wsPrice - prev) / prev) * 100;
+    }
+  }
+
   const [orderBook, setOrderBook] = useState<OrderBookResponse | null>(null);
   const [price, setPrice] = useState<number>(3500); // 임시 초기값
   const [amount, setAmount] = useState<string>('');
@@ -36,6 +54,14 @@ export default function Market() {
     }
   }, [tickerId]);
 
+  // Update form price when ticker loads (optional, but good UX)
+  useEffect(() => {
+    if (realTimePrice) {
+        // Only set if user hasn't touched it? 
+        // Or just init. stick to init logic or manual.
+        // existing code didn't update it. I will leave it.
+    }
+      }, [tickerId]); // Removed logic to auto-update form price to avoid annoying user
   // 데이터 로드 (호가창)
   useEffect(() => {
     const fetchOrderBook = async () => {
@@ -91,8 +117,8 @@ export default function Market() {
           <div className="flex gap-4">
             <div className="text-right hidden sm:block">
               <p className="text-[#90a4cb] text-xs uppercase font-bold">24h Change</p>
-              <p className={`font-mono font-bold ${(Number(selectedTicker?.change_percent || 0) >= 0) ? 'text-profit' : 'text-loss'}`}>
-                {selectedTicker?.change_percent ? `${Number(selectedTicker.change_percent) >= 0 ? '+' : ''}${Number(selectedTicker.change_percent).toFixed(2)}%` : '-'}
+              <p className={`font-mono font-bold ${(realTimeChange >= 0) ? 'text-profit' : 'text-loss'}`}>
+                {realTimeChange >= 0 ? '+' : ''}{realTimeChange.toFixed(2)}%
               </p>
             </div>
             <div className="text-right hidden sm:block">
@@ -180,7 +206,7 @@ export default function Market() {
                     {/* Current Price Divider */}
                     <tr className="border-y border-[#314368] bg-[#222f49]/50">
                       <td colSpan={3} className="py-2 text-center text-lg font-bold text-white">
-                        {price.toLocaleString()} <span className="text-xs text-[#90a4cb] font-normal">KRW</span>
+                        {realTimePrice ? realTimePrice.toLocaleString() : '-'} <span className="text-xs text-[#90a4cb] font-normal">KRW</span>
                       </td>
                     </tr>
 

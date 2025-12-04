@@ -4,11 +4,14 @@ import { useQuery } from '@tanstack/react-query';
 import api from '../api/client';
 import DashboardLayout from '../components/DashboardLayout';
 import type { TickerResponse, MoverResponse } from '../interfaces';
+import { usePrices } from '../hooks/usePrices';
 
 //
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const prices = usePrices();
+
   // Categories & search
   const [category, setCategory] = useState<'ALL' | 'KRX' | 'US' | 'CRYPTO' | 'HUMAN'>('ALL');
   const [search, setSearch] = useState('');
@@ -39,6 +42,65 @@ export default function Dashboard() {
       (search.trim() ? (t.symbol.toLowerCase().includes(search.toLowerCase()) || t.name.toLowerCase().includes(search.toLowerCase())) : true));
   }, [tickersQ.data, category, search]);
 
+  // Merge real-time prices
+  const mergePrice = (t: TickerResponse) => {
+    const p = prices.get(t.id);
+    if (p === undefined) return t;
+    
+    const current = Number(t.current_price || 0);
+    const change = Number(t.change_percent || 0);
+    
+    // Calculate previous close from initial data
+    const prev = current / (1 + change / 100);
+    
+    // Calculate new change percent
+    // Avoid division by zero if prev is 0 (unlikely but possible)
+    const newChange = prev !== 0 ? ((p - prev) / prev) * 100 : 0;
+    
+    return { ...t, current_price: String(p), change_percent: String(newChange) };
+  };
+
+  // Helper to merge real-time price into MoverResponse
+  const mergeMover = (m: MoverResponse) => {
+    const p = prices.get(m.ticker.id);
+    if (p === undefined) return m;
+    
+    const currentPrice = p;
+    // Use the pricing data from the MoverResponse itself as the baseline
+    const initialPrice = Number(m.price);
+    const initialChange = Number(m.change_percent);
+    
+    const prev = initialPrice / (1 + initialChange / 100);
+    const newChange = prev !== 0 ? ((currentPrice - prev) / prev) * 100 : 0;
+    
+    return {
+      ...m,
+      price: String(currentPrice),
+      change_percent: String(newChange),
+      ticker: { 
+        ...m.ticker, 
+        current_price: String(currentPrice), 
+        change_percent: String(newChange) 
+      }
+    };
+  };
+
+  const displayedTickers = useMemo(() => {
+    return filteredTickers.map(mergePrice);
+  }, [filteredTickers, prices]);
+
+  const displayedGainers = useMemo(() => {
+    return (gainersQ.data || []).map(mergeMover);
+  }, [gainersQ.data, prices]);
+
+  const displayedLosers = useMemo(() => {
+    return (losersQ.data || []).map(mergeMover);
+  }, [losersQ.data, prices]);
+
+  const displayedTrending = useMemo(() => {
+    return (trendingQ.data || []).map(mergeMover);
+  }, [trendingQ.data, prices]);
+
   //
 
   const onTrade = (t: TickerResponse) => {
@@ -58,13 +120,13 @@ export default function Dashboard() {
           <section className="p-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Card title="Top Gainers" icon="trending_up" iconClass="text-profit">
-                <ListMovers data={gainersQ.data} positive />
+                <ListMovers data={displayedGainers} />
               </Card>
               <Card title="Top Losers" icon="trending_down" iconClass="text-loss">
-                <ListMovers data={losersQ.data} />
+                <ListMovers data={displayedLosers} />
               </Card>
               <Card title="Trending Now" icon="bolt" iconClass="text-profit">
-                <ListMovers data={trendingQ.data} positive />
+                <ListMovers data={displayedTrending} />
               </Card>
             </div>
           </section>
@@ -111,7 +173,7 @@ export default function Dashboard() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#314368]">
-                    {filteredTickers.slice(0, 50).map(t => {
+                    {displayedTickers.slice(0, 50).map(t => {
                       const change = Number(t.change_percent || 0);
                       const isPositive = change >= 0;
                       return (
@@ -160,16 +222,23 @@ function Card({ title, icon, iconClass, children }: { title: string; icon: strin
   );
 }
 
-function ListMovers({ data, positive }: { data?: MoverResponse[]; positive?: boolean }) {
+function ListMovers({ data }: { data?: MoverResponse[] }) {
   const items = (data || []).slice(0, 3);
   return (
     <>
-      {items.map((m, i) => (
-        <div key={i} className="flex justify-between items-center">
-          <p className="text-white tracking-light text-lg font-bold">{m.ticker.symbol}</p>
-          <p className={`${(positive ?? false) || Number(m.change_percent) > 0 ? 'text-profit' : 'text-loss'} text-base font-medium`}>{Number(m.change_percent).toFixed(1)}%</p>
-        </div>
-      ))}
+      {items.map((m, i) => {
+        const change = Number(m.change_percent);
+        const isPositive = change >= 0;
+
+        return (
+          <div key={i} className="flex justify-between items-center">
+            <p className="text-white tracking-light text-lg font-bold">{m.ticker.symbol}</p>
+            <p className={`${isPositive ? 'text-profit' : 'text-loss'} text-base font-medium`}>
+              {m.change_percent ? `${isPositive ? '+' : ''}${change.toFixed(1)}%` : '-'}
+            </p>
+          </div>
+        );
+      })}
     </>
   );
 }

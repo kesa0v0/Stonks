@@ -1,11 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import api from '../api/client';
 import DashboardLayout from '../components/DashboardLayout';
 import type { Portfolio as IPortfolio, OrderListItem } from '../interfaces';
+import { usePrices } from '../hooks/usePrices';
 
 export default function Portfolio() {
-  const [portfolio, setPortfolio] = useState<IPortfolio | null>(null);
+  const [fetchedPortfolio, setFetchedPortfolio] = useState<IPortfolio | null>(null);
   const [orders, setOrders] = useState<OrderListItem[]>([]);
+  const prices = usePrices();
 
   useEffect(() => {
     const fetchData = async () => {
@@ -14,7 +16,7 @@ export default function Portfolio() {
           api.get('me/portfolio').json<IPortfolio>(),
           api.get('me/orders').json<OrderListItem[]>()
         ]);
-        setPortfolio(pf);
+        setFetchedPortfolio(pf);
         setOrders(ord);
       } catch (err) {
         console.error("Failed to load portfolio data", err);
@@ -22,6 +24,41 @@ export default function Portfolio() {
     };
     fetchData();
   }, []);
+
+  const portfolio = useMemo(() => {
+    if (!fetchedPortfolio) return null;
+
+    const updatedAssets = fetchedPortfolio.assets.map(a => {
+      const p = prices.get(a.ticker_id);
+      if (p !== undefined) {
+        return { ...a, current_price: p, total_value: p * a.quantity };
+      }
+      return a;
+    });
+
+    const newTotalValue = updatedAssets.reduce((acc, cur) => acc + cur.total_value, 0) + fetchedPortfolio.cash_balance;
+
+    // Calculate real-time change percent
+    let newChange = fetchedPortfolio.total_asset_change_percent;
+    if (fetchedPortfolio.total_asset_change_percent && fetchedPortfolio.total_asset_value > 0) {
+        const oldTotal = fetchedPortfolio.total_asset_value;
+        const oldChange = Number(fetchedPortfolio.total_asset_change_percent);
+        // Calculate previous total value (e.g., yesterday's close)
+        const prevTotal = oldTotal / (1 + oldChange / 100);
+        
+        if (prevTotal !== 0) {
+             const changeVal = ((newTotalValue - prevTotal) / prevTotal) * 100;
+             newChange = changeVal.toFixed(2);
+        }
+    }
+
+    return {
+        ...fetchedPortfolio,
+        assets: updatedAssets,
+        total_asset_value: newTotalValue,
+        total_asset_change_percent: newChange
+    };
+  }, [fetchedPortfolio, prices]);
 
   const isLoading = !portfolio;
 
