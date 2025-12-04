@@ -102,14 +102,22 @@ export default function Portfolio() {
 
   const isLoading = !portfolio;
 
-  // 도넛 차트용 데이터 계산 (간단 예시)
-  const stockVal = portfolio ? portfolio.assets.filter(a => !a.ticker_id.includes('COIN')).reduce((acc, cur) => acc + Number(cur.total_value), 0) : 0;
-  const cryptoVal = portfolio ? portfolio.assets.filter(a => a.ticker_id.includes('COIN')).reduce((acc, cur) => acc + Number(cur.total_value), 0) : 0;
-  const totalValNum = portfolio ? Math.max(Number(portfolio.total_asset_value), 1) : 1; // 0 나누기 방지
+  // Asset Allocation (Long Only) Calculation
+  // We filter only positive values (Long positions) for the chart to represent "Asset Allocation".
+  // Short positions are liabilities and are excluded from the "What do I own?" breakdown visual.
+  
+  const longAssets = portfolio ? portfolio.assets.filter(a => Number(a.total_value) > 0) : [];
+  
+  const stockVal = longAssets.filter(a => !a.ticker_id.includes('COIN')).reduce((acc, cur) => acc + Number(cur.total_value), 0);
+  const cryptoVal = longAssets.filter(a => a.ticker_id.includes('COIN')).reduce((acc, cur) => acc + Number(cur.total_value), 0);
+  const cashVal = portfolio ? Number(portfolio.cash_balance) : 0;
+
+  const totalGrossAssets = stockVal + cryptoVal + cashVal;
+  const totalValNum = Math.max(totalGrossAssets, 1); // Avoid division by zero
   
   const stockPct = (stockVal / totalValNum) * 100;
   const cryptoPct = (cryptoVal / totalValNum) * 100;
-  const cashPct = portfolio ? (Number(portfolio.cash_balance) / totalValNum) * 100 : 0;
+  const cashPct = (cashVal / totalValNum) * 100;
 
   // SVG Dash Arrays for Donut Chart
   const r = 15.9155;
@@ -167,8 +175,8 @@ export default function Portfolio() {
                   <path className="stroke-[#10b981]" strokeDasharray={cashDash} strokeDashoffset={cashOffset} d={`M18 2.0845 a ${r} ${r} 0 0 1 0 31.831 a ${r} ${r} 0 0 1 0 -31.831`} fill="none" strokeWidth="3" />
                 </svg>
                 <div className="absolute flex flex-col items-center justify-center">
-                  <p className="text-[#90a4cb] text-sm">Total Value</p>
-                  <p className="text-white text-xl font-bold">${Math.floor(Number(portfolio.total_asset_value)).toLocaleString()}</p>
+                  <p className="text-[#90a4cb] text-sm">Total Assets</p>
+                  <p className="text-white text-xl font-bold">${Math.floor(totalGrossAssets).toLocaleString()}</p>
                 </div>
               </>
             )}
