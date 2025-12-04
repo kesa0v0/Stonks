@@ -133,33 +133,51 @@ def health_check():
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    
-    # 각 클라이언트마다 Redis Pub/Sub 연결 생성
-    r = redis.Redis(
-        host=settings.REDIS_HOST, 
-        port=settings.REDIS_PORT, 
-        decode_responses=True
+
+    # 각 클라이언트마다 Redis Pub/Sub 연결 생성 (asyncio 버전 사용)
+    import redis.asyncio as async_redis
+    import asyncio
+
+    r = async_redis.Redis(
+        host=settings.REDIS_HOST,
+        port=settings.REDIS_PORT,
+        decode_responses=True,
     )
     pubsub = r.pubsub()
-    await pubsub.subscribe(constants.REDIS_CHANNEL_MARKET_UPDATES) # 워커가 쏘는 채널 구독
+    await pubsub.subscribe(constants.REDIS_CHANNEL_MARKET_UPDATES)  # 워커가 쏘는 채널 구독
 
     print("🟢 Client Connected to WebSocket")
 
     try:
+        async def keepalive():
+            while True:
+                await asyncio.sleep(20)
+                try:
+                    await websocket.send_text("{\"type\":\"keepalive\"}")
+                except Exception:
+                    break
+
+        ka_task = asyncio.create_task(keepalive())
+
         # Redis 메시지 루프
         async for message in pubsub.listen():
-            if message['type'] == 'message':
-                # Redis에서 받은 데이터를 그대로 웹소켓으로 쏘기
-                # data 예시: {"ticker_id": "...", "price": 123.4, "timestamp": ...}
-                await websocket.send_text(message['data'])
+            if message["type"] == "message":
+                # Redis에서 받은 데이터를 그대로 웹소켓으로 전송
+                await websocket.send_text(message["data"])
     except WebSocketDisconnect:
         print("🔴 Client Disconnected")
     except Exception as e:
         print(f"❌ WebSocket Error: {e}")
     finally:
-        await pubsub.unsubscribe()
-        await pubsub.close()
-        await r.close()
+        try:
+            ka_task.cancel()
+        except Exception:
+            pass
+        try:
+            await pubsub.unsubscribe()
+            await pubsub.close()
+        finally:
+            await r.close()
 
 
 app.include_router(auth.router, prefix="/api/v1/auth")
