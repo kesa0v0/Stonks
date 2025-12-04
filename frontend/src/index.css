@@ -8,3 +8,7 @@ body { margin: 0; }
 
 /* Using Tailwind theme colors directly via classes:
 	 text-profit, text-loss, bg-profit, bg-loss, border-profit, border-loss */
+
+.market-price-readonly {
+  @apply opacity-75 cursor-default;
+}

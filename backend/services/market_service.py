@@ -257,10 +257,11 @@ async def get_orderbook_data(db: AsyncSession, ticker_id: str) -> OrderBookRespo
     특정 종목의 내부 호가창(Orderbook)을 조회합니다.
     """
     # 매수/매도 별로 그룹화하여 집계
+    # PENDING LIMIT 주문의 경우, target_price가 호가입니다. (price는 체결가)
     stmt = (
         select(
             Order.side,
-            Order.price, # LIMIT 주문이므로 price는 null이 아님
+            Order.target_price.label("price"), 
             func.sum(Order.unfilled_quantity).label("quantity")
         )
         .where(
@@ -268,7 +269,7 @@ async def get_orderbook_data(db: AsyncSession, ticker_id: str) -> OrderBookRespo
             Order.status == OrderStatus.PENDING,
             Order.type == OrderType.LIMIT
         )
-        .group_by(Order.side, Order.price)
+        .group_by(Order.side, Order.target_price)
     )
     
     result = await db.execute(stmt)
@@ -278,7 +279,11 @@ async def get_orderbook_data(db: AsyncSession, ticker_id: str) -> OrderBookRespo
     asks = []
     
     for side, price, quantity in rows:
-        entry = OrderBookEntry(price=float(price), quantity=float(quantity))
+        # price나 quantity가 None일 경우 방어
+        p_val = float(price) if price is not None else 0.0
+        q_val = float(quantity) if quantity is not None else 0.0
+        
+        entry = OrderBookEntry(price=p_val, quantity=q_val)
         if side == OrderSide.BUY:
             bids.append(entry)
         else:

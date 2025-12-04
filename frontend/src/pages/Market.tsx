@@ -29,9 +29,13 @@ export default function Market() {
   const [wsPrice, setWsPrice] = useState<number | undefined>(undefined);
   const [wsTimestamp, setWsTimestamp] = useState<number | undefined>(undefined);
   
-  const [price, setPrice] = useState<number>(3500); // 임시 초기값
-  const [amount, setAmount] = useState<string>('');
+  // Form States
+  const [orderType, setOrderType] = useState<'LIMIT' | 'MARKET'>('LIMIT');
+  const [price, setPrice] = useState<number | ''>(''); // Unit Price
+  const [amount, setAmount] = useState<string>(''); // Quantity
+  const [total, setTotal] = useState<string>(''); // Total Price
   const [side, setSide] = useState<'BUY' | 'SELL'>('BUY');
+  const [lastEdited, setLastEdited] = useState<'AMOUNT' | 'TOTAL'>('AMOUNT'); // Track last edited field for sync
   const [timeRange, setTimeRange] = useState<'1D' | '1W' | '3M' | '1Y' | '5Y'>('1D');
   const [chartType, setChartType] = useState<'candle' | 'area'>('candle');
 
@@ -67,12 +71,10 @@ export default function Market() {
   useEffect(() => {
     try {
       window.localStorage.setItem('lastMarketTickerId', tickerId);
-    } catch {
-      /* ignore persistence errors */
-    }
+    } catch { /* ignore persistence errors */ }
   }, [tickerId]);
 
-  // 초기 데이터 로드 (호가창) - 빠른 렌더링을 위해 1회만 실행
+  // 초기 데이터 로드 (호가창)
   useEffect(() => {
     const fetchOrderBook = async () => {
       try {
@@ -85,6 +87,81 @@ export default function Market() {
     fetchOrderBook();
   }, [tickerId]);
 
+  // Market Mode: Sync Price & Auto-calculate
+  useEffect(() => {
+    if (orderType === 'MARKET' && realTimePrice) {
+      setPrice(realTimePrice);
+      
+      if (lastEdited === 'AMOUNT') {
+          // Amount is anchor -> Update Total
+          if (amount) {
+            const val = parseFloat(amount);
+            if (!isNaN(val)) {
+                setTotal((val * realTimePrice).toFixed(0));
+            }
+          }
+      } else {
+          // Total is anchor -> Update Amount
+          if (total) {
+            const val = parseFloat(total);
+            if (!isNaN(val) && realTimePrice !== 0) {
+                setAmount((val / realTimePrice).toFixed(8));
+            }
+          }
+      }
+    }
+  }, [orderType, realTimePrice, lastEdited, amount, total]);
+
+  // Initialize Price for Limit Mode
+  useEffect(() => {
+      if (orderType === 'LIMIT' && realTimePrice && price === '') {
+          setPrice(realTimePrice);
+      }
+  }, [orderType, realTimePrice, price]);
+
+
+  // Input Handlers
+  const handlePriceChange = (val: string) => {
+    const newPrice = parseFloat(val);
+    setPrice(isNaN(newPrice) ? '' : newPrice);
+    
+    // Limit mode: update total if amount exists
+    if (!isNaN(newPrice) && amount) {
+        const amt = parseFloat(amount);
+        if (!isNaN(amt)) {
+            setTotal((newPrice * amt).toFixed(0));
+        }
+    }
+  };
+
+  const handleAmountChange = (val: string) => {
+    setAmount(val);
+    setLastEdited('AMOUNT');
+    const amt = parseFloat(val);
+    const p = typeof price === 'number' ? price : parseFloat(price);
+    
+    if (!isNaN(amt) && !isNaN(p)) {
+        setTotal((p * amt).toFixed(0));
+    } else if (val === '') {
+        setTotal('');
+    }
+  };
+
+  const handleTotalChange = (val: string) => {
+    setTotal(val);
+    setLastEdited('TOTAL');
+    const tot = parseFloat(val);
+    const p = typeof price === 'number' ? price : parseFloat(price);
+    
+    if (!isNaN(tot) && !isNaN(p) && p !== 0) {
+        // Calculate amount
+        const newAmount = tot / p;
+        setAmount(newAmount.toFixed(8)); 
+    } else if (val === '') {
+        setAmount('');
+    }
+  };
+
   // 주문 제출 핸들러
   const handleOrder = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,13 +170,14 @@ export default function Market() {
         json: {
           ticker_id: tickerId,
           side: side,
-          type: 'LIMIT', // 예시로 지정가 주문
+          type: orderType, 
           quantity: toNumber(amount),
-          target_price: price
+          target_price: typeof price === 'number' ? price : toNumber(price)
         }
       });
       toast.success("Order Placed Successfully!");
       setAmount('');
+      setTotal('');
     } catch (err) {
       console.error("Order execution failed", err);
     }
@@ -209,8 +287,8 @@ export default function Market() {
                     {orderBook?.asks.slice(0, 8).reverse().map((ask, i) => (
                       <tr key={`ask-${i}`} className="hover:bg-[#182234] transition-colors relative">
                         <td className="text-loss py-1">{ask.price.toLocaleString()}</td>
-                        <td className="text-right text-white/70">{ask.quantity.toFixed(4)}</td>
-                        <td className="text-right text-white/40">{(ask.price * ask.quantity).toLocaleString()}</td>
+                        <td className="text-right text-white/70">{Number(ask.quantity).toFixed(4)}</td>
+                        <td className="text-right text-white/40">{(ask.price * Number(ask.quantity)).toLocaleString()}</td>
                       </tr>
                     ))}
                     
@@ -225,8 +303,8 @@ export default function Market() {
                     {orderBook?.bids.slice(0, 8).map((bid, i) => (
                       <tr key={`bid-${i}`} className="hover:bg-[#2a1818] transition-colors relative">
                         <td className="text-profit py-1">{bid.price.toLocaleString()}</td>
-                        <td className="text-right text-white/70">{bid.quantity.toFixed(4)}</td>
-                        <td className="text-right text-white/40">{(bid.price * bid.quantity).toLocaleString()}</td>
+                        <td className="text-right text-white/70">{Number(bid.quantity).toFixed(4)}</td>
+                        <td className="text-right text-white/40">{(bid.price * Number(bid.quantity)).toLocaleString()}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -236,6 +314,7 @@ export default function Market() {
 
             {/* Trade Form */}
             <div className="flex-[2] rounded-xl border border-[#314368] bg-[#101623] p-4 flex flex-col justify-center">
+              {/* Side Toggle */}
               <div className="flex bg-[#182234] rounded-lg p-1 mb-4">
                 <button 
                   onClick={() => setSide('BUY')}
@@ -251,16 +330,40 @@ export default function Market() {
                 </button>
               </div>
 
+              {/* Order Type Tabs */}
+              <div className="flex gap-4 mb-4 border-b border-[#314368] px-1">
+                <button 
+                    onClick={() => setOrderType('LIMIT')}
+                    className={`pb-2 text-sm font-bold transition-colors ${orderType === 'LIMIT' ? 'text-white border-b-2 border-[#0d59f2]' : 'text-[#90a4cb] hover:text-white'}`}
+                >
+                    Limit
+                </button>
+                <button 
+                    onClick={() => setOrderType('MARKET')}
+                    className={`pb-2 text-sm font-bold transition-colors ${orderType === 'MARKET' ? 'text-white border-b-2 border-[#0d59f2]' : 'text-[#90a4cb] hover:text-white'}`}
+                >
+                    Market
+                </button>
+              </div>
+
               <form onSubmit={handleOrder} className="flex flex-col gap-3">
+                {/* Price Input */}
                 <div>
-                  <label className="text-xs font-bold text-[#90a4cb] uppercase">Price ({currency})</label>
+                  <label className="text-xs font-bold text-[#90a4cb] uppercase flex justify-between">
+                      <span>Price ({currency})</span>
+                      {orderType === 'MARKET' && <span className="text-[#0d59f2] text-[10px]">Market Price</span>}
+                  </label>
                   <input 
                     type="number" 
-                    className="w-full mt-1 bg-[#182234] border border-[#314368] rounded-lg px-3 py-2 text-white font-mono focus:border-[#0d59f2] focus:ring-1 focus:ring-[#0d59f2] outline-none transition-all"
+                    className={`w-full mt-1 bg-[#182234] border border-[#314368] rounded-lg px-3 py-2 text-white font-mono focus:border-[#0d59f2] focus:ring-1 focus:ring-[#0d59f2] outline-none transition-all ${orderType === 'MARKET' ? 'market-price-readonly' : ''}`}
                     value={price}
-                    onChange={(e) => setPrice(parseFloat(e.target.value))}
+                    onChange={(e) => handlePriceChange(e.target.value)}
+                    readOnly={orderType === 'MARKET'}
+                    placeholder="Price"
                   />
                 </div>
+
+                {/* Amount Input */}
                 <div>
                   <label className="text-xs font-bold text-[#90a4cb] uppercase">Amount ({symbol})</label>
                   <input 
@@ -269,28 +372,28 @@ export default function Market() {
                     className="w-full mt-1 bg-[#182234] border border-[#314368] rounded-lg px-3 py-2 text-white font-mono focus:border-[#0d59f2] focus:ring-1 focus:ring-[#0d59f2] outline-none transition-all"
                     placeholder="0.00"
                     value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
+                    onChange={(e) => handleAmountChange(e.target.value)}
+                  />
+                </div>
+
+                {/* Total Input */}
+                <div>
+                  <label className="text-xs font-bold text-[#90a4cb] uppercase">Total ({currency})</label>
+                  <input 
+                    type="number" 
+                    className="w-full mt-1 bg-[#182234] border border-[#314368] rounded-lg px-3 py-2 text-white font-mono focus:border-[#0d59f2] focus:ring-1 focus:ring-[#0d59f2] outline-none transition-all"
+                    placeholder="0"
+                    value={total}
+                    onChange={(e) => handleTotalChange(e.target.value)}
                   />
                 </div>
                 
-                <div className="mt-2 pt-3 border-t border-[#314368] flex justify-between text-sm">
-                  <span className="text-[#90a4cb]">Total</span>
-                  <span className="text-white font-bold">{(price * (parseFloat(amount) || 0)).toLocaleString()} {currency}</span>
-                </div>
-
                 <button 
                   type="submit" 
                   className={`w-full py-3 rounded-lg font-bold text-white mt-2 transition-all hover:brightness-110 active:scale-95
                     ${side === 'BUY' ? 'bg-profit' : 'bg-loss'}`}
                 >
-                  Buy
-                </button>
-                <button 
-                  type="submit" 
-                  className={`w-full py-3 rounded-lg font-bold text-white mt-2 transition-all hover:brightness-110 active:scale-95
-                    ${side === 'SELL' ? 'bg-loss' : 'bg-profit'}`}
-                >
-                  Sell
+                  {orderType === 'MARKET' ? 'Market ' : ''}{side}
                 </button>
               </form>
             </div>

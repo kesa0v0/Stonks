@@ -110,6 +110,8 @@ export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle', last
         }
       }).json<CandleData[]>();
 
+      if (!seriesRef.current) return;
+
       if (data.length > 0) {
         const formatted = transformData(data);
         const unique = formatted.filter((v, i, a) => a.findIndex(t => t.time === v.time) === i);
