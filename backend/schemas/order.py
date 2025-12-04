@@ -59,6 +59,8 @@ class OrderListResponse(BaseModel):
     quantity: DecimalStr
     price: Optional[DecimalStr] = None
     target_price: Optional[DecimalStr] = None
+    stop_price: Optional[DecimalStr] = None
+    trailing_gap: Optional[DecimalStr] = None
     created_at: datetime
 
     model_config = ConfigDict(

@@ -6,7 +6,7 @@ import api from '../api/client';
 import DashboardLayout from '../components/DashboardLayout';
 import { CandleChart } from '../components/CandleChart';
 import OpenOrders from '../components/OpenOrders';
-import type { OrderBookResponse, TickerResponse } from '../interfaces';
+import type { OrderBookResponse, TickerResponse, Portfolio } from '../interfaces';
 import { useWebSocket } from '../hooks/useWebSocket';
 
 const toNumber = (v: string) => {
@@ -25,6 +25,16 @@ export default function Market() {
   const selectedTicker = useMemo(() => (tickersQ.data || []).find(t => t.id === tickerId), [tickersQ.data, tickerId]);
   const symbol = selectedTicker?.symbol ?? (tickerId.split('-').pop() || tickerId);
   const currency = selectedTicker?.currency ?? 'KRW';
+
+  const portfolioQ = useQuery({
+    queryKey: ['portfolio'],
+    queryFn: () => api.get('me/portfolio').json<Portfolio>(),
+    refetchInterval: 5000, // Refresh every 5 seconds
+  });
+
+  const currentHolding = useMemo(() => {
+    return portfolioQ.data?.assets.find(a => a.ticker_id === tickerId);
+  }, [portfolioQ.data, tickerId]);
 
   const [orderBook, setOrderBook] = useState<OrderBookResponse | null>(null);
   const [wsPrice, setWsPrice] = useState<number | undefined>(undefined);
@@ -176,6 +186,12 @@ export default function Market() {
   const handleOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    const qty = toNumber(amount);
+    if (qty <= 0) {
+        toast.error("Please enter a valid amount.");
+        return;
+    }
+
     const payload: any = {
         ticker_id: tickerId,
         side: side,
@@ -449,6 +465,11 @@ export default function Market() {
                 {/* Amount Input */}
                 <div>
                   <label className="text-xs font-bold text-[#90a4cb] uppercase">Amount ({symbol})</label>
+                  {currentHolding && (
+                    <p className="text-xs text-[#90a4cb] mb-1">
+                      Holding: <span className="font-mono text-white">{Number(currentHolding.quantity).toLocaleString(undefined, { maximumFractionDigits: 4 })}</span>
+                    </p>
+                  )}
                   <input 
                     type="number" 
                     step="0.0001"

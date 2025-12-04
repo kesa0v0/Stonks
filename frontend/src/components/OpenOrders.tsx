@@ -77,15 +77,42 @@ export default function OpenOrders({ tickerId }: OpenOrdersProps) {
                     <th className="px-4 py-3">Time</th>
                     {!tickerId && <th className="px-4 py-3">Ticker</th>}
                     <th className="px-4 py-3 text-center">Side</th>
-                    <th className="px-4 py-3 text-right">Price</th>
+                    <th className="px-4 py-3 text-center">Type</th>
+                    <th className="px-4 py-3 text-right">Condition</th>
                     <th className="px-4 py-3 text-right">Amount</th>
-                    <th className="px-4 py-3 text-right">Filled</th>
                     <th className="px-4 py-3 text-center">Status</th>
                     <th className="px-4 py-3 text-center">Action</th>
                 </tr>
             </thead>
             <tbody className="divide-y divide-[#314368]">
-                {orders.map(order => (
+                {orders.map(order => {
+                    let conditionText = '-';
+                    const targetPrice = order.target_price ? Number(order.target_price).toLocaleString() : null;
+                    const stopPrice = order.stop_price ? Number(order.stop_price).toLocaleString() : null;
+                    const gap = order.trailing_gap ? Number(order.trailing_gap).toLocaleString() : null;
+
+                    switch(order.type) {
+                        case 'LIMIT':
+                            conditionText = `${targetPrice} (Target)`;
+                            break;
+                        case 'STOP_LOSS':
+                        case 'TAKE_PROFIT':
+                            conditionText = `${stopPrice} (Trigger)`;
+                            break;
+                        case 'STOP_LIMIT':
+                            conditionText = `Trig: ${stopPrice} → Lim: ${targetPrice}`;
+                            break;
+                        case 'TRAILING_STOP':
+                            conditionText = `Trig: ${stopPrice} (Gap: ${gap})`;
+                            break;
+                        case 'MARKET':
+                            conditionText = 'Market Price';
+                            break;
+                        default:
+                            conditionText = targetPrice || stopPrice || '-';
+                    }
+
+                    return (
                     <tr key={order.id} className="hover:bg-[#182234] transition-colors">
                         <td className="px-4 py-3 text-white/70 whitespace-nowrap">
                             {new Date(order.created_at).toLocaleString()}
@@ -100,29 +127,14 @@ export default function OpenOrders({ tickerId }: OpenOrdersProps) {
                                 {order.side}
                             </span>
                         </td>
-                        <td className="px-4 py-3 text-right font-mono text-white">
-                            {order.price 
-                                ? Number(order.price).toLocaleString() 
-                                : (order.target_price 
-                                    ? Number(order.target_price).toLocaleString() 
-                                    : 'Market')}
+                        <td className="px-4 py-3 text-center text-xs font-bold text-white/80">
+                            {order.type.replace('_', ' ')}
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono text-white text-xs">
+                            {conditionText}
                         </td>
                         <td className="px-4 py-3 text-right font-mono text-white">
                              {Number(order.quantity).toLocaleString()}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono text-white/60">
-                             {/* Assuming API returns filled or calculate it? 
-                                The OrderListItem interface currently has 'quantity' (total) and maybe 'unfilled_quantity'? 
-                                Let's check interface. If not, assume 0 filled for now or check API response type.
-                                The 'OrderListResponse' in backend has 'quantity'. 'unfilled_quantity' is in Detail but List?
-                                'OrderListResponse' in backend/schemas/order.py doesn't have unfilled_quantity explicitly listed 
-                                but ConfigDict(extra='ignore') might hide it if not in schema.
-                                Actually `me.py` calls `get_user_open_orders`. 
-                                Let's assume 0% filled for PENDING orders usually, or check schema.
-                                Schema `OrderListResponse` only has `quantity`.
-                                For now, let's just show Total Quantity.
-                             */}
-                             -
                         </td>
                         <td className="px-4 py-3 text-center">
                             <span className="text-xs font-bold text-yellow-500 uppercase">{order.status}</span>
@@ -136,7 +148,8 @@ export default function OpenOrders({ tickerId }: OpenOrdersProps) {
                             </button>
                         </td>
                     </tr>
-                ))}
+                    );
+                })}
             </tbody>
         </table>
       </div>
