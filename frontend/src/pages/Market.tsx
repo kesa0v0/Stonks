@@ -26,16 +26,6 @@ export default function Market() {
   const symbol = selectedTicker?.symbol ?? (tickerId.split('-').pop() || tickerId);
   const currency = selectedTicker?.currency ?? 'KRW';
 
-  const portfolioQ = useQuery({
-    queryKey: ['portfolio'],
-    queryFn: () => api.get('me/portfolio').json<Portfolio>(),
-    refetchInterval: 5000, // Refresh every 5 seconds
-  });
-
-  const currentHolding = useMemo(() => {
-    return portfolioQ.data?.assets.find(a => a.ticker_id === tickerId);
-  }, [portfolioQ.data, tickerId]);
-
   const [orderBook, setOrderBook] = useState<OrderBookResponse | null>(null);
   const [wsPrice, setWsPrice] = useState<number | undefined>(undefined);
   const [wsTimestamp, setWsTimestamp] = useState<number | undefined>(undefined);
@@ -52,21 +42,11 @@ export default function Market() {
   const [timeRange, setTimeRange] = useState<'1D' | '1W' | '3M' | '1Y' | '5Y'>('1D');
   const [chartType, setChartType] = useState<'candle' | 'area'>('candle');
 
-  // WebSocket Event Handler
-  const onMessage = useCallback((msg: any) => {
-    if (!msg || msg.ticker_id !== tickerId) return;
-
-    if (msg.type === 'ticker' || (!msg.type && msg.price)) {
-      setWsPrice(msg.price);
-      if (msg.timestamp) {
-        setWsTimestamp(msg.timestamp);
-      }
-    } else if (msg.type === 'orderbook') {
-      setOrderBook(msg);
-    }
-  }, [tickerId]);
-
-  useWebSocket(onMessage);
+  const portfolioQ = useQuery({
+    queryKey: ['portfolio'],
+    queryFn: () => api.get('me/portfolio').json<Portfolio>(),
+    refetchInterval: 5000, // Refresh every 5 seconds
+  });
 
   // Real-time Price Logic
   const realTimePrice = wsPrice !== undefined ? wsPrice : (selectedTicker?.current_price ? Number(selectedTicker.current_price) : undefined);
@@ -80,6 +60,22 @@ export default function Market() {
       realTimeChange = ((wsPrice - prev) / prev) * 100;
     }
   }
+
+  const currentHolding = useMemo(() => {
+    return portfolioQ.data?.assets.find(a => a.ticker_id === tickerId);
+  }, [portfolioQ.data, tickerId]);
+
+  const holdingPnL = useMemo(() => {
+      if (!currentHolding || !realTimePrice) return null;
+      const avg = Number(currentHolding.average_price);
+      const qty = Number(currentHolding.quantity);
+      if (avg === 0 || qty === 0) return 0;
+      
+      const totalVal = realTimePrice * qty;
+      const costBasis = avg * qty;
+      
+      return ((totalVal - costBasis) / Math.abs(costBasis)) * 100;
+  }, [currentHolding, realTimePrice]);
 
   useEffect(() => {
     try {
@@ -466,9 +462,16 @@ export default function Market() {
                 <div>
                   <label className="text-xs font-bold text-[#90a4cb] uppercase">Amount ({symbol})</label>
                   {currentHolding && (
-                    <p className="text-xs text-[#90a4cb] mb-1">
-                      Holding: <span className="font-mono text-white">{Number(currentHolding.quantity).toLocaleString(undefined, { maximumFractionDigits: 4 })}</span>
-                    </p>
+                    <div className="flex justify-between text-xs mb-1">
+                        <span className="text-[#90a4cb]">
+                            Holding: <span className="font-mono text-white">{Number(currentHolding.quantity).toLocaleString(undefined, { maximumFractionDigits: 4 })}</span>
+                        </span>
+                        {holdingPnL !== null && (
+                            <span className={`font-mono font-bold ${holdingPnL >= 0 ? 'text-profit' : 'text-loss'}`}>
+                                {holdingPnL >= 0 ? '+' : ''}{holdingPnL.toFixed(2)}%
+                            </span>
+                        )}
+                    </div>
                   )}
                   <input 
                     type="number" 
