@@ -54,9 +54,11 @@ class OrderListResponse(BaseModel):
     id: UUID
     ticker_id: str
     side: str
+    type: str
     status: str
     quantity: DecimalStr
     price: Optional[DecimalStr] = None
+    target_price: Optional[DecimalStr] = None
     created_at: datetime
 
     model_config = ConfigDict(

@@ -59,9 +59,11 @@ export interface OrderListItem {
   id: string;
   ticker_id: string;
   side: 'BUY' | 'SELL' | string;
+  type: 'MARKET' | 'LIMIT' | 'STOP_LOSS' | string;
   status: string;
   quantity: string; // DecimalStr
   price?: string;   // DecimalStr
+  target_price?: string; // DecimalStr
   created_at: string;
 }
 

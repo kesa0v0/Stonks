@@ -101,8 +101,11 @@ export default function OpenOrders({ tickerId }: OpenOrdersProps) {
                             </span>
                         </td>
                         <td className="px-4 py-3 text-right font-mono text-white">
-                            {/* Price might be null for Market orders, but Open Orders are usually Limit */}
-                            {order.price ? Number(order.price).toLocaleString() : 'Market'}
+                            {order.price 
+                                ? Number(order.price).toLocaleString() 
+                                : (order.target_price 
+                                    ? Number(order.target_price).toLocaleString() 
+                                    : 'Market')}
                         </td>
                         <td className="px-4 py-3 text-right font-mono text-white">
                              {Number(order.quantity).toLocaleString()}
