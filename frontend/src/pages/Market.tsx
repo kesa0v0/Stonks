@@ -278,6 +278,10 @@ export default function Market() {
       // Reset relevant fields
       setAmount('');
       setTotal('');
+      // Notify OpenOrders to refresh immediately
+      try {
+        window.dispatchEvent(new Event('orders:updated'));
+      } catch { /* ignore */ }
     } catch (err) {
       console.error("Order execution failed", err);
       toast.error("Order Failed");

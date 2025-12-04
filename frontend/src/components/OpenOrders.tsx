@@ -30,9 +30,15 @@ export default function OpenOrders({ tickerId }: OpenOrdersProps) {
 
   useEffect(() => {
     fetchOrders();
-    // Optional: Polling or use a global event bus for order updates
+    // Polling for background refresh
     const interval = setInterval(fetchOrders, 5000);
-    return () => clearInterval(interval);
+    // Immediate refresh on order placement events
+    const onUpdated = () => { fetchOrders(); };
+    window.addEventListener('orders:updated', onUpdated as EventListener);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('orders:updated', onUpdated as EventListener);
+    };
   }, [tickerId]);
 
   const handleCancel = async (orderId: string) => {
