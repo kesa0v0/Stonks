@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import Decimal from 'decimal.js';
 import type { Asset } from '../interfaces';
 
 interface HoldingsTableProps {
@@ -55,16 +56,16 @@ export default function HoldingsTable({ assets, isLoading }: HoldingsTableProps)
           </thead>
           <tbody className="divide-y divide-[#314368]">
             {assets.map((asset) => {
-              const quantity = Number(asset.quantity);
-              const avgPrice = Number(asset.average_price);
-              const currentPrice = Number(asset.current_price);
-              const totalValue = Number(asset.total_value);
-              const profitRate = Number(asset.profit_rate);
+              const quantity = new Decimal(asset.quantity);
+              const avgPrice = new Decimal(asset.average_price);
+              const currentPrice = new Decimal(asset.current_price);
+              const totalValue = new Decimal(asset.total_value);
+              const profitRate = new Decimal(asset.profit_rate);
               
               // Calculate PnL Value: (Current Price - Avg Price) * Quantity
               // Or simpler: Total Value - (Avg Price * Quantity)
-              const pnlValue = totalValue - (avgPrice * quantity);
-              const isPositive = pnlValue >= 0;
+              const pnlValue = totalValue.sub(avgPrice.mul(quantity));
+              const isPositive = pnlValue.greaterThanOrEqualTo(0);
               const pnlColor = isPositive ? 'text-profit' : 'text-loss';
 
               return (
@@ -76,20 +77,20 @@ export default function HoldingsTable({ assets, isLoading }: HoldingsTableProps)
                     </div>
                   </td>
                   <td className="px-4 py-3 text-right text-white font-mono">
-                    {quantity.toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                    {quantity.toFixed(4)}
                   </td>
                   <td className="px-4 py-3 text-right text-[#90a4cb] font-mono">
-                    {avgPrice.toLocaleString()}
+                    {avgPrice.toFixed(0)}
                   </td>
                   <td className="px-4 py-3 text-right text-white font-mono font-medium">
-                    {currentPrice.toLocaleString()}
+                    {currentPrice.toFixed(0)}
                   </td>
                   <td className="px-4 py-3 text-right text-white font-bold font-mono">
-                    {Math.floor(totalValue).toLocaleString()}
+                    {totalValue.floor().toString()}
                   </td>
                   <td className={`px-4 py-3 text-right font-mono font-medium ${pnlColor}`}>
                     <div className="flex flex-col items-end">
-                      <span>{isPositive ? '+' : ''}{Math.floor(pnlValue).toLocaleString()}</span>
+                      <span>{isPositive ? '+' : ''}{pnlValue.floor().toString()}</span>
                       <span className="text-xs">({isPositive ? '+' : ''}{profitRate.toFixed(2)}%)</span>
                     </div>
                   </td>

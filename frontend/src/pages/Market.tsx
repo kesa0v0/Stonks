@@ -80,12 +80,14 @@ export default function Market() {
   const takerFee = Number(feeQ.data?.taker_fee ?? 0.001);
   const effectiveFeeRate = (orderType === 'LIMIT' || orderType === 'STOP_LIMIT') ? makerFee : takerFee;
 
-  const feeInclusiveTotal = useMemo(() => {
+  const feeAdjustedTotal = useMemo(() => {
     const base = d(total);
     if (base.isZero()) return '';
     const fee = base.mul(effectiveFeeRate);
-    return base.add(fee).toFixed(0);
-  }, [total, effectiveFeeRate]);
+    // BUY: cost includes fee (add). SELL: proceeds after fee (subtract)
+    const adjusted = side === 'BUY' ? base.add(fee) : base.sub(fee);
+    return adjusted.toFixed(0);
+  }, [total, effectiveFeeRate, side]);
 
   const portfolioQ = useQuery({
     queryKey: ['portfolio'],
@@ -501,8 +503,10 @@ export default function Market() {
                   />
                   {total && (
                     <div className="mt-1 text-[11px] text-[#90a4cb] flex justify-between">
-                      <span>Estimated with fee ({(effectiveFeeRate*100).toFixed(2)}%)</span>
-                      <span className="font-mono text-white">{feeInclusiveTotal}</span>
+                      <span>
+                        {side === 'BUY' ? 'Estimated cost incl. fee' : 'Estimated proceeds after fee'} ({(effectiveFeeRate*100).toFixed(2)}%)
+                      </span>
+                      <span className="font-mono text-white">{feeAdjustedTotal}</span>
                     </div>
                   )}
                 </div>

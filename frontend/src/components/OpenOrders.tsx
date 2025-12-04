@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import Decimal from 'decimal.js';
 import api from '../api/client';
 import type { OrderListItem } from '../interfaces';
 import toast from 'react-hot-toast';
@@ -87,9 +88,9 @@ export default function OpenOrders({ tickerId }: OpenOrdersProps) {
             <tbody className="divide-y divide-[#314368]">
                 {orders.map(order => {
                     let conditionText = '-';
-                    const targetPrice = order.target_price ? Number(order.target_price).toLocaleString() : null;
-                    const stopPrice = order.stop_price ? Number(order.stop_price).toLocaleString() : null;
-                    const gap = order.trailing_gap ? Number(order.trailing_gap).toLocaleString() : null;
+                    const targetPrice = order.target_price ? new Decimal(order.target_price).toFixed(0) : null;
+                    const stopPrice = order.stop_price ? new Decimal(order.stop_price).toFixed(0) : null;
+                    const gap = order.trailing_gap ? new Decimal(order.trailing_gap).toFixed(0) : null;
 
                     switch(order.type) {
                         case 'LIMIT':
@@ -134,7 +135,7 @@ export default function OpenOrders({ tickerId }: OpenOrdersProps) {
                             {conditionText}
                         </td>
                         <td className="px-4 py-3 text-right font-mono text-white">
-                             {Number(order.quantity).toLocaleString()}
+                             {new Decimal(order.quantity).toFixed(8)}
                         </td>
                         <td className="px-4 py-3 text-center">
                             <span className="text-xs font-bold text-yellow-500 uppercase">{order.status}</span>
