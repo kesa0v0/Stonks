@@ -19,6 +19,7 @@ dev-init-db:
 	docker-compose -f docker-compose.dev.yml run --rm api sh -c "cd backend && alembic revision --autogenerate -m 'init' && alembic upgrade head"
 	docker-compose -f docker-compose.dev.yml run --rm api python -m backend.create_test_user
 	docker-compose -f docker-compose.dev.yml run --rm api python -m backend.create_tickers
+	docker-compose -f docker-compose.dev.yml run --rm api python -m backend.seed_test_candles
 
 # 5. DB 마이그레이션 실행
 db-upgrade:

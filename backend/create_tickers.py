@@ -2,7 +2,7 @@
 import asyncio
 from sqlalchemy import select
 from backend.core.database import AsyncSessionLocal
-from backend.models import Ticker, MarketType, Currency
+from backend.models import Ticker, MarketType, Currency, TickerSource
 
 # 등록할 종목 리스트
 INITIAL_TICKERS = [
@@ -32,7 +32,8 @@ INITIAL_TICKERS = [
         "symbol": "TEST/KRW",
         "name": "Volatility Test Coin",
         "market_type": MarketType.CRYPTO,
-        "currency": Currency.KRW
+        "currency": Currency.KRW,
+        "source": TickerSource.TEST
     },
 ]
 
@@ -50,12 +51,19 @@ async def init_tickers():
                         symbol=item["symbol"],
                         name=item["name"],
                         market_type=item["market_type"],
-                        currency=item["currency"]
+                        currency=item["currency"],
+                        source=item.get("source", TickerSource.UPBIT)
                     )
                     db.add(ticker)
                     print(f"✅ Added: {item['name']} ({item['id']})")
                 else:
-                    print(f"ℹ️ Already exists: {item['name']}")
+                    # Update source if provided and different
+                    desired_source = item.get("source")
+                    if desired_source and existing.source != desired_source:
+                        existing.source = desired_source
+                        print(f"🔧 Updated source for {item['name']} -> {desired_source.value}")
+                    else:
+                        print(f"ℹ️ Already exists: {item['name']}")
             
             await db.commit()
             print("🎉 Ticker initialization complete!")
