@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import toast from 'react-hot-toast';
 import api from '../api/client';
 import DashboardLayout from '../components/DashboardLayout';
 
@@ -33,10 +34,9 @@ export default function HumanETF() {
       } else {
         res = await api.post('me/bankruptcy').json<SimpleMessage>();
       }
-      alert(res?.message || "Action Successful");
+      toast.success(res?.message || "Action Successful");
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Action Failed';
-      alert(message);
+      console.error("Action failed", err);
     }
   };
 

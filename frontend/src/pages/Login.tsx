@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 
 export default function Login() {
   const { getDiscordAuthorizeUrl, login } = useAuth();
@@ -27,7 +28,7 @@ export default function Login() {
       window.location.href = url;
     } catch (err) {
       console.error('Login failed', err);
-      alert('Login configuration missing or API error.');
+      toast.error('Login configuration missing or API error.');
     }
   };
 

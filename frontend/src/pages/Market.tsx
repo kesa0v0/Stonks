@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import api from '../api/client';
 import DashboardLayout from '../components/DashboardLayout';
 import { CandleChart } from '../components/CandleChart';
@@ -92,11 +93,10 @@ export default function Market() {
           target_price: price
         }
       });
-      alert("Order Placed Successfully!");
+      toast.success("Order Placed Successfully!");
       setAmount('');
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Order Failed';
-      alert(message);
+      console.error("Order execution failed", err);
     }
   };
 

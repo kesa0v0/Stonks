@@ -1,4 +1,5 @@
 import ky from 'ky';
+import toast from 'react-hot-toast';
 
 let accessToken: string | null = null;
 let _accessTokenExpiresAt: number | null = null; // Unix timestamp in milliseconds
@@ -116,6 +117,20 @@ const api = ky.create({
         if (accessToken) {
           request.headers.set('Authorization', `Bearer ${accessToken}`);
         }
+      }
+    ],
+    beforeError: [
+      async error => {
+        const { response } = error;
+        if (response && response.status !== 401) {
+          try {
+            const body = await response.clone().json();
+            toast.error(body.detail || body.message || response.statusText || 'An error occurred');
+          } catch {
+            toast.error(response.statusText || 'An error occurred');
+          }
+        }
+        return error;
       }
     ],
     afterResponse: [
