@@ -3,14 +3,14 @@ import Decimal from 'decimal.js';
 import api from '../api/client';
 import DashboardLayout from '../components/DashboardLayout';
 import type { Portfolio as IPortfolio, OrderListItem } from '../interfaces';
-import { usePrices } from '../hooks/usePrices';
+import { usePricesAll } from '../store/prices';
 import OpenOrders from '../components/OpenOrders';
 import HoldingsTable from '../components/HoldingsTable';
 
 export default function Portfolio() {
   const [fetchedPortfolio, setFetchedPortfolio] = useState<IPortfolio | null>(null);
   const [orders, setOrders] = useState<OrderListItem[]>([]);
-  const prices = usePrices();
+  const prices = usePricesAll();
 
   useEffect(() => {
     const fetchData = async () => {

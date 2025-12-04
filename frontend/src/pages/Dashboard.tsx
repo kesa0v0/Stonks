@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import api from '../api/client';
 import DashboardLayout from '../components/DashboardLayout';
 import type { TickerResponse, MoverResponse, Portfolio } from '../interfaces';
-import { usePrices } from '../hooks/usePrices';
+import { usePricesAll } from '../store/prices';
 import HoldingsTable from '../components/HoldingsTable';
 import OpenOrders from '../components/OpenOrders';
 
@@ -12,7 +12,7 @@ import OpenOrders from '../components/OpenOrders';
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const prices = usePrices();
+  const prices = usePricesAll();
 
   // Categories & search
   const [category, setCategory] = useState<'ALL' | 'KRX' | 'US' | 'CRYPTO' | 'HUMAN'>('ALL');

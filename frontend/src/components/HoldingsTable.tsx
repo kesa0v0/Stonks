@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import Decimal from 'decimal.js';
 import type { Asset } from '../interfaces';
+import { usePrice } from '../store/prices';
 
 interface HoldingsTableProps {
   assets: Asset[];
@@ -56,10 +57,12 @@ export default function HoldingsTable({ assets, isLoading }: HoldingsTableProps)
           </thead>
           <tbody className="divide-y divide-[#314368]">
             {assets.map((asset) => {
+              // Subscribe to just this asset's price for fine-grained re-renders
+              const rtPrice = usePrice(asset.ticker_id);
               const quantity = new Decimal(asset.quantity);
               const avgPrice = new Decimal(asset.average_price);
-              const currentPrice = new Decimal(asset.current_price);
-              const totalValue = new Decimal(asset.total_value);
+              const currentPrice = new Decimal(rtPrice ?? asset.current_price);
+              const totalValue = currentPrice.mul(quantity);
               const profitRate = new Decimal(asset.profit_rate);
               
               // Calculate PnL Value: (Current Price - Avg Price) * Quantity
