@@ -216,22 +216,36 @@ export default function Portfolio() {
                   <th className="px-6 py-4 text-[#90a4cb] text-sm font-medium text-center">Side</th>
                   <th className="px-6 py-4 text-[#90a4cb] text-sm font-medium text-right">Price</th>
                   <th className="px-6 py-4 text-[#90a4cb] text-sm font-medium text-right">Quantity</th>
+                  <th className="px-6 py-4 text-[#90a4cb] text-sm font-medium text-center">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#314368]">
-                {orders.map((order) => (
-                  <tr key={order.id} className="hover:bg-[#182234] transition-colors">
-                    <td className="px-6 py-4 text-white/70 text-sm">{new Date(order.created_at).toLocaleDateString()}</td>
-                    <td className="px-6 py-4 text-white font-bold">{order.ticker_id.split('-').pop()}</td>
-                    <td className="px-6 py-4 text-center">
-                          <span className={`inline-flex items-center justify-center rounded-full h-7 px-3 text-xs font-bold ${order.side === 'BUY' ? 'bg-profit/20 text-profit' : 'bg-loss/20 text-loss'}`}>
-                        {order.side}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-right text-white/70">{order.price ? Number(order.price).toLocaleString() : '-'}</td>
-                    <td className="px-6 py-4 text-right text-white/70">{Number(order.quantity)}</td>
-                  </tr>
-                ))}
+                {orders.map((order) => {
+                    let statusColor = 'text-white'; // Default
+                    if (order.status === 'FILLED') {
+                        statusColor = 'text-profit';
+                    } else if (order.status === 'CANCELLED' || order.status === 'FAILED') {
+                        statusColor = 'text-loss';
+                    } else if (order.status === 'PENDING') {
+                        statusColor = 'text-yellow-500';
+                    }
+                    return (
+                        <tr key={order.id} className="hover:bg-[#182234] transition-colors">
+                            <td className="px-6 py-4 text-white/70 text-sm">{new Date(order.created_at).toLocaleDateString()}</td>
+                            <td className="px-6 py-4 text-white font-bold">{order.ticker_id.split('-').pop()}</td>
+                            <td className="px-6 py-4 text-center">
+                                <span className={`inline-flex items-center justify-center rounded-full h-7 px-3 text-xs font-bold ${order.side === 'BUY' ? 'bg-profit/20 text-profit' : 'bg-loss/20 text-loss'}`}>
+                                    {order.side}
+                                </span>
+                            </td>
+                            <td className="px-6 py-4 text-right text-white/70">{order.price ? Number(order.price).toLocaleString() : '-'}</td>
+                            <td className="px-6 py-4 text-right text-white/70">{Number(order.quantity)}</td>
+                            <td className="px-6 py-4 text-center">
+                                <span className={`text-xs font-bold uppercase ${statusColor}`}>{order.status}</span>
+                            </td>
+                        </tr>
+                    );
+                })}
               </tbody>
             </table>
           )}

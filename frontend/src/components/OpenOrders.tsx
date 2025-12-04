@@ -12,7 +12,7 @@ export default function OpenOrders({ tickerId }: OpenOrdersProps) {
   const [loading, setLoading] = useState(true);
 
   const fetchOrders = async () => {
-    setLoading(true);
+    // Don't set loading(true) here to avoid UI flicker on background refresh
     try {
       const data = await api.get('me/orders/open').json<OrderListItem[]>();
       // Filter by tickerId if provided
