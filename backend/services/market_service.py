@@ -1,10 +1,11 @@
 from datetime import datetime, time
+import json
 try:
     from zoneinfo import ZoneInfo
 except ImportError:
     from backports.zoneinfo import ZoneInfo
 
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, desc, asc
 from sqlalchemy.orm import aliased
@@ -80,20 +81,10 @@ async def get_all_market_status() -> MarketStatusResponse:
         server_time=now.isoformat()
     )
 
-async def get_active_tickers(db: AsyncSession) -> List[TickerResponse]:
+async def get_active_tickers(db: AsyncSession, redis_client: async_redis.Redis) -> List[TickerResponse]:
     """
     상장된 모든 활성 종목 리스트를 조회합니다. (현재가, 변동률, 일일 거래량 포함)
     """
-    # Latest 1m candle (for Current Price)
-    curr_stmt = (
-        select(Candle)
-        .where(Candle.interval == '1m')
-        .distinct(Candle.ticker_id)
-        .order_by(Candle.ticker_id, Candle.timestamp.desc())
-        .subquery()
-    )
-    curr = aliased(Candle, curr_stmt)
-
     # Latest 1d candle (for Previous Close)
     prev_stmt = (
         select(Candle)
@@ -123,17 +114,12 @@ async def get_active_tickers(db: AsyncSession) -> List[TickerResponse]:
     daily_volume = aliased(daily_volume_stmt, name="daily_volume")
 
 
-    # Calculate Change %
-    change_expr = (curr.close - prev.close) / prev.close * 100
-
     stmt = (
         select(
-            Ticker, 
-            curr, 
-            change_expr.label("change_percent"),
+            Ticker,
+            prev.close.label("prev_close"),
             daily_volume.c.daily_volume
         )
-        .outerjoin(curr, Ticker.id == curr.ticker_id)
         .outerjoin(prev, Ticker.id == prev.ticker_id)
         .outerjoin(daily_volume, Ticker.id == daily_volume.c.ticker_id)
         .where(Ticker.is_active == True)
@@ -143,22 +129,47 @@ async def get_active_tickers(db: AsyncSession) -> List[TickerResponse]:
     rows = result.all()
 
     tickers = []
+    # Batch fetch realtime prices from Redis
+    ids: List[str] = [row[0].id for row in rows]
+    keys = [f"price:{tid}" for tid in ids]
+    try:
+        raw_values = await redis_client.mget(keys)
+    except Exception:
+        raw_values = [None] * len(keys)
+
+    # Build map id -> price (float)
+    price_map: Dict[str, Optional[float]] = {}
+    for tid, raw in zip(ids, raw_values):
+        if not raw:
+            price_map[tid] = None
+            continue
+        try:
+            data = json.loads(raw)
+            price = float(data.get("price")) if data and data.get("price") is not None else None
+            price_map[tid] = price
+        except Exception:
+            price_map[tid] = None
+
+    # Build response using Redis price and prev_close for change percent
     for row in rows:
-        ticker_obj, candle_1m, change_pct, d_volume = row
-        
-        # Build response
+        ticker_obj: Ticker = row[0]
+        prev_close = row[1]
+        d_volume = row[2]
+
         t_res = TickerResponse.model_validate(ticker_obj)
-        
-        if candle_1m:
-            t_res.current_price = str(candle_1m.close)
-        
-        # Use daily volume if available, otherwise '0'
+
+        rt_price = price_map.get(ticker_obj.id)
+        if rt_price is not None:
+            t_res.current_price = str(rt_price)
+
         t_res.volume = str(d_volume) if d_volume is not None else '0'
-            
-        if change_pct is not None:
-            t_res.change_percent = f"{change_pct:.2f}"
-        else:
-             pass
+
+        try:
+            if rt_price is not None and prev_close not in (None, 0):
+                change_pct = (rt_price - float(prev_close)) / float(prev_close) * 100.0
+                t_res.change_percent = f"{change_pct:.2f}"
+        except Exception:
+            pass
 
         tickers.append(t_res)
         

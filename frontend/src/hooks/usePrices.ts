@@ -38,3 +38,33 @@ export function usePrices() {
   useWebSocket(onMessage);
   return prices;
 }
+
+// Lightweight hook that only streams WS → store with batching, no subscriptions
+export function usePriceStream(intervalMs: number = 250) {
+  const bufferRef = useRef<Map<string, number>>(new Map());
+  const timerRef = useRef<number | null>(null);
+
+  const flush = useCallback(() => {
+    const buf = bufferRef.current;
+    if (buf.size === 0) return;
+    const batch = new Map(buf);
+    buf.clear();
+    pricesStore.updateBatch(batch);
+  }, []);
+
+  useEffect(() => {
+    timerRef.current = window.setInterval(flush, intervalMs);
+    return () => {
+      if (timerRef.current) window.clearInterval(timerRef.current);
+      flush();
+    };
+  }, [flush, intervalMs]);
+
+  const onMessage = useCallback((msg: any) => {
+    if (msg?.ticker_id && typeof msg?.price === 'number') {
+      bufferRef.current.set(String(msg.ticker_id), Number(msg.price));
+    }
+  }, []);
+
+  useWebSocket(onMessage);
+}

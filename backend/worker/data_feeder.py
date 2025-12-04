@@ -31,12 +31,18 @@ tick_counter = 0
 
 async def init_resources():
     global exchange, redis_client
-    exchange = ccxt_async.upbit({'enableRateLimit': True})
+    exchange = ccxt_async.upbit({'enableRateLimit': True, 'timeout': 10000})
     redis_client = redis.Redis(
         host=settings.REDIS_HOST, 
         port=settings.REDIS_PORT, 
         decode_responses=True
     )
+    try:
+        # Warm up markets to avoid symbol resolution issues
+        await exchange.load_markets()
+        print("✅ Upbit markets loaded")
+    except Exception as e:
+        print(f"⚠️ load_markets failed: {e}")
 
 async def fetch_tickers_job():
     """
@@ -50,11 +56,39 @@ async def fetch_tickers_job():
         # 전체 실행시간 측정 (요청+발행 포함)
         t0 = time.perf_counter()
         # [핵심] fetch_tickers (복수형) 사용 -> 요청 1번으로 모든 시세 가져옴!
-        tickers = await exchange.fetch_tickers(symbols)
+        try:
+            tickers = await exchange.fetch_tickers(symbols)
+        except Exception as e:
+            # Fallback: fetch individually to avoid total failure
+            print(f"⚠️ fetch_tickers failed, falling back per symbol: {e}")
+            tickers = {}
+            for s in symbols:
+                try:
+                    t = await exchange.fetch_ticker(s)
+                    tickers[s] = t
+                except Exception as se:
+                    print(f"⚠️ fetch_ticker({s}) error: {se}")
         
         for symbol, ticker in tickers.items():
             ticker_id = TARGET_TICKERS[symbol]
-            price = ticker['last']
+            price = ticker.get('last')
+            if price is None:
+                # Try bid/ask mid
+                bid = ticker.get('bid') or (ticker.get('bids') or [None])[0]
+                ask = ticker.get('ask') or (ticker.get('asks') or [None])[0]
+                if isinstance(bid, (list, tuple)):
+                    bid = bid[0]
+                if isinstance(ask, (list, tuple)):
+                    ask = ask[0]
+                if bid is not None and ask is not None:
+                    try:
+                        price = (float(bid) + float(ask)) / 2.0
+                    except Exception:
+                        price = None
+            if price is None:
+                # Skip if still no price
+                print(f"⚠️ No price for {symbol}, skipping")
+                continue
             
             data = {
                 "type": "ticker",
@@ -82,6 +116,18 @@ async def fetch_tickers_job():
 
     except Exception as e:
         print(f"❌ Fetch Tickers Error: {e}")
+        # Attempt to recreate exchange on hard failures
+        try:
+            if exchange:
+                await exchange.close()
+        except Exception:
+            pass
+        try:
+            await asyncio.sleep(1)
+            await init_resources()
+            print("🔁 Exchange reinitialized after error")
+        except Exception as re:
+            print(f"❌ Failed to reinitialize exchange: {re}")
 
 async def fetch_orderbooks_job():
     """

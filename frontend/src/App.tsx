@@ -12,6 +12,7 @@ import OAuthCallback from './pages/OAuthCallback';
 import RequireAuth from './components/RequireAuth';
 import Logout from './pages/Logout';
 import { setOnUnauthorized, initializeAuth } from './api/client';
+import { usePriceStream } from './hooks/usePrices';
 
 const queryClient = new QueryClient();
 
@@ -21,6 +22,7 @@ export default function App() {
       <Toaster position="top-right" />
       <BrowserRouter>
         <AuthBridge />
+        <PriceStreamBridge />
         <Routes>
           {/* Auth */}
           <Route path="/login" element={<Login />} />
@@ -55,5 +57,11 @@ function AuthBridge() {
     initializeAuth().catch(console.error);
   }, [navigate]);
 
+  return null;
+}
+
+function PriceStreamBridge() {
+  // Mount once at app-level to keep WS stream flowing into store
+  usePriceStream(250);
   return null;
 }

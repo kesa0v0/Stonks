@@ -27,6 +27,7 @@ async def lifespan(app: FastAPI):
     # Startup logic replacing deprecated on_event
     scheduler = AsyncIOScheduler()
     
+    ka_task = None
     try:
         # fastapi-limiter 초기화 (Redis)
         await init_rate_limiter()
@@ -85,6 +86,138 @@ app = FastAPI(
     lifespan=lifespan,
     openapi_tags=tags_metadata # 태그 순서 적용
 )
+"""
+Low-latency Redis → WebSocket broadcaster
+Single Redis pubsub task fans out messages to connected clients via asyncio.Queue.
+This avoids per-connection pubsub listeners that can lag under load.
+"""
+import asyncio
+import redis.asyncio as async_redis
+from typing import Dict, Set
+
+class WSBridge:
+    def __init__(self, host: str, port: int):
+        self.host = host
+        self.port = port
+        self.r: async_redis.Redis | None = None
+        self.pubsub = None
+        self.task: asyncio.Task | None = None
+        self.flush_task: asyncio.Task | None = None
+        self.clients: Set[asyncio.Queue] = set()
+        self.lock = asyncio.Lock()
+        # buffers per channel to coalesce frequent updates
+        self.buffers: dict[str, dict[str, str]] = {
+            "market_updates": {},
+            "orderbook_updates": {},
+        }
+
+    async def start(self):
+        if self.task:
+            return
+        self.r = async_redis.Redis(host=self.host, port=self.port, decode_responses=True)
+        self.pubsub = self.r.pubsub(ignore_subscribe_messages=True)
+        await self.pubsub.subscribe("market_updates", "orderbook_updates")
+
+        async def _loop():
+            try:
+                while True:
+                    ps = self.pubsub
+                    if ps is None:
+                        await asyncio.sleep(0.05)
+                        continue
+                    msg = await ps.get_message(timeout=0.05)
+                    if msg is None:
+                        await asyncio.sleep(0)
+                        continue
+                    if msg.get("type") == "message":
+                        data = msg.get("data")
+                        channel = msg.get("channel")
+                        if isinstance(data, str) and channel in self.buffers:
+                            try:
+                                obj = json.loads(data)
+                                tid = obj.get("ticker_id") or obj.get("ticker", {}).get("id")
+                                if isinstance(tid, str):
+                                    self.buffers[channel][tid] = data
+                                    continue
+                            except Exception:
+                                pass
+                        # Fallback: if not coalescable, broadcast immediately
+                        await self._broadcast_now(data)
+            except Exception as e:
+                print(f"❌ WSBridge loop error: {e}")
+            finally:
+                try:
+                    if self.pubsub:
+                        await self.pubsub.unsubscribe()
+                        await self.pubsub.close()
+                except Exception:
+                    pass
+                try:
+                    if self.r:
+                        await self.r.aclose()
+                except Exception:
+                    pass
+
+        self.task = asyncio.create_task(_loop())
+
+        async def _flush_loop():
+            try:
+                while True:
+                    await asyncio.sleep(0.1)
+                    payloads: list[str] = []
+                    # drain buffers
+                    for ch in list(self.buffers.keys()):
+                        bucket = self.buffers[ch]
+                        if not bucket:
+                            continue
+                        payloads.extend(bucket.values())
+                        self.buffers[ch] = {}
+                    if not payloads:
+                        continue
+                    for data in payloads:
+                        await self._broadcast_now(data)
+            except Exception as e:
+                print(f"❌ WSBridge flush error: {e}")
+
+        self.flush_task = asyncio.create_task(_flush_loop())
+
+    async def _broadcast_now(self, data: str):
+        # fan out to all clients (non-blocking put_nowait with ring-buffer)
+        async with self.lock:
+            dead = []
+            for q in list(self.clients):
+                try:
+                    q.put_nowait(data)
+                except asyncio.QueueFull:
+                    try:
+                        q.get_nowait()
+                        q.put_nowait(data)
+                    except Exception:
+                        dead.append(q)
+                except Exception:
+                    dead.append(q)
+            for q in dead:
+                self.clients.discard(q)
+
+    async def register(self) -> asyncio.Queue:
+        # each client gets a queue
+        q: asyncio.Queue = asyncio.Queue(maxsize=1024)
+        async with self.lock:
+            self.clients.add(q)
+        return q
+
+    async def unregister(self, q: asyncio.Queue):
+        async with self.lock:
+            self.clients.discard(q)
+        # drain queue
+        try:
+            while not q.empty():
+                q.get_nowait()
+        except Exception:
+            pass
+
+bridge = WSBridge(host=settings.REDIS_HOST, port=settings.REDIS_PORT)
+
 
 # Prometheus Metrics (Expose /metrics)
 Instrumentator().instrument(app).expose(app)
@@ -97,7 +230,7 @@ if settings.DEBUG:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.BACKEND_CORS_ORIGINS, # config.py에 정의된 로컬 주소들
-        allow_origin_regex="https?://(localhost|127\.0\.0\.1)(:[0-9]+)?", # 로컬호스트 모든 포트 허용
+        allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:[0-9]+)?", # 로컬호스트 모든 포트 허용
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -116,38 +249,22 @@ app.add_exception_handler(Exception, general_exception_handler)
 
 @app.get("/")
 def read_root():
-    """서버 상태 확인용"""
     return {
         "status": "active",
         "env": "development" if settings.DEBUG else "production",
         "database_url": settings.DATABASE_URL
     }
 
-@app.get("/health")
-def health_check():
-    return {"status": "ok"}
-
-# Redis 연결 (구독용)
-# 웹소켓은 연결이 오래 유지되므로, 요청 때마다 연결하는 get_db와 달리
-# 전역적인 Redis 연결 관리가 필요할 수 있지만, 여기선 간단히 엔드포인트 내에서 연결합니다.
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-
-    # 각 클라이언트마다 Redis Pub/Sub 연결 생성 (asyncio 버전 사용)
-    import redis.asyncio as async_redis
-    import asyncio
-
-    r = async_redis.Redis(
-        host=settings.REDIS_HOST,
-        port=settings.REDIS_PORT,
-        decode_responses=True,
-    )
-    pubsub = r.pubsub()
-    await pubsub.subscribe(constants.REDIS_CHANNEL_MARKET_UPDATES, "orderbook_updates")  # 워커가 쏘는 채널 구독
-
     print("🟢 Client Connected to WebSocket")
 
+    # Ensure bridge running
+    await bridge.start()
+    queue = await bridge.register()
+
+    ka_task = None
     try:
         async def keepalive():
             while True:
@@ -159,25 +276,27 @@ async def websocket_endpoint(websocket: WebSocket):
 
         ka_task = asyncio.create_task(keepalive())
 
-        # Redis 메시지 루프
-        async for message in pubsub.listen():
-            if message["type"] == "message":
-                # Redis에서 받은 데이터를 그대로 웹소켓으로 전송
-                await websocket.send_text(message["data"])
+        # Send messages from queue to this websocket
+        while True:
+            try:
+                data = await queue.get()
+            except Exception:
+                break
+            try:
+                await websocket.send_text(data)
+            except Exception:
+                break
     except WebSocketDisconnect:
         print("🔴 Client Disconnected")
     except Exception as e:
         print(f"❌ WebSocket Error: {e}")
     finally:
         try:
-            ka_task.cancel()
+            if ka_task:
+                ka_task.cancel()
         except Exception:
             pass
-        try:
-            await pubsub.unsubscribe()
-            await pubsub.close()
-        finally:
-            await r.close()
+        await bridge.unregister(queue)
 
 
 app.include_router(auth.router, prefix="/api/v1/auth")

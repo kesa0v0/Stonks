@@ -32,12 +32,13 @@ async def get_market_status():
 
 @router.get("/tickers", response_model=List[TickerResponse], dependencies=[Depends(get_rate_limiter("/market/tickers"))])
 async def get_tickers(
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    redis_client: async_redis.Redis = Depends(get_redis)
 ):
     """
     상장된 모든 활성 종목 리스트를 조회합니다.
     """
-    return await get_active_tickers(db)
+    return await get_active_tickers(db, redis_client)
 
 @router.get("/search", response_model=List[TickerResponse], dependencies=[Depends(get_rate_limiter("/market/search"))])
 async def search_tickers(
