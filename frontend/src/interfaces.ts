@@ -83,6 +83,7 @@ export interface HallOfFameResponse {
   top_win_rate?: RankingEntry;
   top_fees?: RankingEntry;
   top_night?: RankingEntry;
+  top_dividend?: RankingEntry;
 }
 
 export interface TickerResponse {
@@ -96,6 +97,7 @@ export interface TickerResponse {
   current_price?: string;
   change_percent?: string;
   volume?: string;
+  dividend_rate?: string;
 }
 
 export interface MoverResponse {

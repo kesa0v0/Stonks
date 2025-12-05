@@ -224,13 +224,14 @@ export default function Dashboard() {
                       <th className="p-4 text-sm font-semibold text-white tracking-wider">Name</th>
                       <th className="p-4 text-sm font-semibold text-white tracking-wider text-right">Price</th>
                       <th className="p-4 text-sm font-semibold text-white tracking-wider text-right">24h Change</th>
+                      <th className="p-4 text-sm font-semibold text-white tracking-wider text-right">Div Yield</th>
                       <th className="p-4 text-sm font-semibold text-white tracking-wider text-right">Volume</th>
                       <th className="p-4 text-sm font-semibold text-white tracking-wider text-center">Trade</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#314368]">
                     {tickersQ.isLoading ? (
-                        Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={6} />)
+                        Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={7} />)
                     ) : (
                       displayedTickers.slice(0, 50).map(t => {
                       const change = Number(t.change_percent || 0);
@@ -244,6 +245,9 @@ export default function Dashboard() {
                           </td>
                           <td className={`p-4 text-right font-mono font-medium ${isPositive ? 'text-profit' : 'text-loss'}`}>
                             {t.change_percent ? `${isPositive ? '+' : ''}${toFixedString(change, 2, REPORT_ROUNDING)}%` : '-'}
+                          </td>
+                          <td className="p-4 text-right font-mono">
+                            {t.dividend_rate ? <span className="text-green-400 font-bold">{t.dividend_rate}%</span> : <span className="text-gray-600">-</span>}
                           </td>
                           <td className="p-4 text-right text-gray-400 font-mono">
                             {t.volume ? formatWithThousands(toFixedString(t.volume, 0, 'ROUND_DOWN')) : '-'}

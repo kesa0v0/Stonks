@@ -3,6 +3,9 @@ import random
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.orm import joinedload
+from fastapi import HTTPException
+from typing import List
 
 from backend.core import constants
 from backend.core.exceptions import (
@@ -12,13 +15,128 @@ from backend.core.exceptions import (
     InvalidDividendRateError, 
     InsufficientSharesToBurnError
 )
-from backend.models import User, Ticker, Portfolio, MarketType, Currency, TickerSource, Wallet
-from backend.schemas.human import IpoCreate, BurnCreate
-from backend.services.common.wallet import add_balance
-from backend.core.constants import WALLET_REASON_HUMAN_DISTRIBUTION
-from backend.core.event_hook import publish_event
-import redis.asyncio as async_redis
-from backend.core.config import settings
+from backend.models import User, Ticker, Portfolio, MarketType, Currency, TickerSource, Wallet, DividendHistory
+from backend.schemas.human import IpoCreate, BurnCreate, Shareholder, ShareholderResponse, DividendPaymentEntry, IssuerDividendStats, UpdateDividendRate
+
+async def update_dividend_rate(db: AsyncSession, user_id: UUID, rate_in: UpdateDividendRate):
+    """
+    배당률을 변경합니다.
+    - 파산자는 최소 배당률(50%) 제한이 있습니다.
+    """
+    user_stmt = select(User).where(User.id == user_id)
+    user_res = await db.execute(user_stmt)
+    user = user_res.scalars().first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    new_rate = rate_in.dividend_rate
+    
+    # 배당률 체크
+    if user.is_bankrupt:
+        if new_rate < constants.HUMAN_DIVIDEND_RATE_MIN:
+            raise InvalidDividendRateError()
+    else:
+        if new_rate < constants.HUMAN_DIVIDEND_RATE_NORMAL_MIN:
+            raise InvalidDividendRateError()
+        
+    user.dividend_rate = new_rate
+    await db.commit()
+    
+    return {
+        "message": f"Dividend rate updated to {new_rate * 100}%",
+        "dividend_rate": new_rate
+    }
+
+async def get_issuer_dividend_stats(db: AsyncSession, user_id: UUID) -> IssuerDividendStats:
+    """
+    발행자(나)의 배당 통계를 조회합니다.
+    - 현재 배당률
+    - 누적 배당 지급액
+    """
+    user_result = await db.execute(select(User).where(User.id == user_id))
+    user = user_result.scalars().first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    cumulative_paid_stmt = (
+        select(func.sum(DividendHistory.amount))
+        .where(DividendHistory.payer_id == user_id)
+    )
+    cumulative_paid = (await db.execute(cumulative_paid_stmt)).scalar_one_or_none() or Decimal(0)
+
+    return IssuerDividendStats(
+        current_dividend_rate=str(user.dividend_rate),
+        cumulative_paid_amount=str(cumulative_paid)
+    )
+
+async def get_issuer_dividend_history(db: AsyncSession, user_id: UUID, limit: int = 10) -> List[DividendPaymentEntry]:
+    """
+    발행자(나)의 최근 배당 지급 내역을 조회합니다.
+    """
+    history_stmt = (
+        select(DividendHistory)
+        .where(DividendHistory.payer_id == user_id)
+        .order_by(DividendHistory.created_at.desc())
+        .limit(limit)
+    )
+    history_result = await db.execute(history_stmt)
+    histories = history_result.scalars().all()
+
+    entries = []
+    for h in histories:
+        entries.append(DividendPaymentEntry(
+            date=h.created_at,
+            source_pnl="N/A", # Need to retrieve from a corresponding PnL record, which isn't directly in DividendHistory
+            paid_amount=str(h.amount),
+            ticker_id=h.ticker_id
+        ))
+    return entries
+
+async def get_shareholders(db: AsyncSession, user_id: UUID) -> ShareholderResponse:
+    """
+    [주주 명부 조회]
+    나의 Human ETF를 보유한 주주들의 목록을 반환합니다.
+    """
+    ticker_id = f"HUMAN-{user_id}"
+    
+    # 1. 모든 보유자 조회 (나 포함)
+    stmt = (
+        select(Portfolio)
+        .options(joinedload(Portfolio.user))
+        .where(
+            Portfolio.ticker_id == ticker_id,
+            Portfolio.quantity > 0
+        )
+    )
+    result = await db.execute(stmt)
+    portfolios = result.scalars().all()
+    
+    total_issued = sum(p.quantity for p in portfolios)
+    my_holdings = next((p.quantity for p in portfolios if p.user_id == user_id), Decimal(0))
+    
+    # 2. 주주 리스트 구성 (나 제외)
+    shareholders = []
+    others = [p for p in portfolios if p.user_id != user_id]
+    
+    # 많이 가진 순 정렬
+    others.sort(key=lambda p: p.quantity, reverse=True)
+    
+    for i, p in enumerate(others):
+        pct = (float(p.quantity) / float(total_issued) * 100) if total_issued > 0 else 0
+        shareholders.append(Shareholder(
+            rank=i+1,
+            nickname=p.user.nickname,
+            quantity=str(p.quantity),
+            percentage=round(pct, 2)
+        ))
+        
+    return ShareholderResponse(
+        total_issued=str(total_issued),
+        my_holdings=str(my_holdings),
+        shareholders=shareholders
+    )
 
 async def process_bailout(db: AsyncSession, user_id: UUID):
     """
@@ -115,47 +233,67 @@ async def process_ipo(db: AsyncSession, user_id: UUID, ipo_in: IpoCreate):
     - 입력받은 수량만큼 발행하여 본인 지갑에 입고
     - 파산자는 배당률 50% 이상 필수
     """
-    
-    # 1. 이미 IPO 했는지 확인
-    ticker_id = f"HUMAN-{user_id}"
-    existing_ticker = await db.execute(select(Ticker).where(Ticker.id == ticker_id))
-    if existing_ticker.scalars().first():
-        raise HumanETFAlreadyListedError()
-        
-    # 2. 유저 정보 조회
+    # 1. 유저 정보 조회
     user_result = await db.execute(select(User).where(User.id == user_id))
     user = user_result.scalars().first()
     
-    # 파산자 배당률 체크
-    if user.is_bankrupt and ipo_in.dividend_rate < constants.HUMAN_DIVIDEND_RATE_MIN:
-        raise InvalidDividendRateError()
+    # 배당률 체크
+    if user.is_bankrupt:
+        if ipo_in.dividend_rate < constants.HUMAN_DIVIDEND_RATE_MIN:
+            raise InvalidDividendRateError()
+    else:
+        if ipo_in.dividend_rate < constants.HUMAN_DIVIDEND_RATE_NORMAL_MIN:
+            raise InvalidDividendRateError()
 
     # 배당률 업데이트
     user.dividend_rate = Decimal(str(ipo_in.dividend_rate))
     
-    # 3. Ticker 생성
-    ticker_symbol = f"HUMAN_{user_id}"
-    ticker_name = f"{user.nickname}'s ETF"
-        
-    new_ticker = Ticker(
-        id=ticker_id,
-        symbol=ticker_symbol,
-        name=ticker_name,
-        market_type=MarketType.HUMAN,
-        currency=Currency.KRW,
-        source=TickerSource.UPBIT, 
-        is_active=True
-    )
-    db.add(new_ticker)
+    # 2. Ticker 확인 및 생성/갱신
+    ticker_id = f"HUMAN-{user_id}"
+    existing_ticker_result = await db.execute(select(Ticker).where(Ticker.id == ticker_id))
+    ticker = existing_ticker_result.scalars().first()
     
-    # 4. 주식 발행 (본인 포트폴리오에 추가)
-    portfolio = Portfolio(
-        user_id=user_id,
-        ticker_id=ticker_id,
-        quantity=Decimal(str(ipo_in.quantity)),
-        average_price=Decimal(str(ipo_in.initial_price))
-    )
-    db.add(portfolio)
+    if ticker:
+        if ticker.is_active:
+            raise HumanETFAlreadyListedError()
+        # 재상장
+        ticker.is_active = True
+        ticker.name = f"{user.nickname}'s ETF" # 닉네임 변경 반영
+    else:
+        # 신규 상장
+        ticker = Ticker(
+            id=ticker_id,
+            symbol=f"HUMAN_{user_id}",
+            name=f"{user.nickname}'s ETF",
+            market_type=MarketType.HUMAN,
+            currency=Currency.KRW,
+            source=TickerSource.UPBIT, 
+            is_active=True
+        )
+        db.add(ticker)
+    
+    # 3. 주식 발행 (본인 포트폴리오에 추가)
+    # Check if portfolio exists (it shouldn't if burned, but handle cleanly)
+    pf_stmt = select(Portfolio).where(Portfolio.user_id == user_id, Portfolio.ticker_id == ticker_id)
+    pf_res = await db.execute(pf_stmt)
+    portfolio = pf_res.scalars().first()
+
+    issue_qty = Decimal(str(ipo_in.quantity))
+    issue_price = Decimal(str(ipo_in.initial_price))
+
+    if portfolio:
+        portfolio.quantity += issue_qty
+        # If effectively starting from 0, set average price to initial price
+        if portfolio.quantity <= issue_qty + constants.HUMAN_BURN_THRESHOLD: # previously near 0
+             portfolio.average_price = issue_price
+    else:
+        portfolio = Portfolio(
+            user_id=user_id,
+            ticker_id=ticker_id,
+            quantity=issue_qty,
+            average_price=issue_price
+        )
+        db.add(portfolio)
     
     await db.commit()
 
@@ -165,7 +303,7 @@ async def process_ipo(db: AsyncSession, user_id: UUID, ipo_in: IpoCreate):
         event = {
             "type": "ipo_listed",
             "user_id": str(user_id),
-            "symbol": ticker_symbol,
+            "symbol": f"HUMAN_{user_id}",
             "dividend_rate": float(ipo_in.dividend_rate),
         }
         await publish_event(redis_client, event, channel="human_events")
@@ -174,7 +312,7 @@ async def process_ipo(db: AsyncSession, user_id: UUID, ipo_in: IpoCreate):
         pass
     
     return {
-        "message": f"Successfully listed {ticker_symbol}. {ipo_in.quantity} shares issued.", 
+        "message": f"Successfully listed fHUMAN_{user_id}. {ipo_in.quantity} shares issued.", 
         "ticker_id": ticker_id,
         "dividend_rate": ipo_in.dividend_rate
     }

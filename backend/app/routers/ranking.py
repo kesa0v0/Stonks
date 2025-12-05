@@ -44,7 +44,7 @@ async def get_rankings(
     - market_ratio: 성격 급한 정도 (시장가비율)
     """
     # 유효성 검사 (Router에서 담당)
-    valid_types = ["pnl", "loss", "volume", "fees", "night", "win_rate", "profit_factor", "market_ratio"]
+    valid_types = ["pnl", "loss", "volume", "fees", "night", "win_rate", "profit_factor", "market_ratio", "dividend"]
     if ranking_type not in valid_types:
         raise HTTPException(status_code=400, detail=f"Unknown ranking type: {ranking_type}")
 

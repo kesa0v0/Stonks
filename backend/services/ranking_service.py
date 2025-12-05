@@ -1,11 +1,11 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 from datetime import datetime
 from decimal import Decimal
 import pytz
 from typing import List
 
-from backend.models import UserPersona, User
+from backend.models import UserPersona, User, DividendHistory
 from backend.core.enums import OrderType
 from backend.schemas.ranking import RankingEntry, HallOfFameResponse
 from backend.services.season_service import get_active_season
@@ -142,13 +142,31 @@ async def get_hall_of_fame_data(db: AsyncSession) -> HallOfFameResponse:
     top_night_row = max(rows, key=lambda r: r[0].night_trade_count)
     top_night = make_entry(top_night_row, float(top_night_row[0].night_trade_count)) if top_night_row[0].night_trade_count > 0 else None
 
+    # 7. Dividend King
+    div_stmt = (
+        select(DividendHistory.payer_id, func.sum(DividendHistory.amount).label("total_paid"), User.nickname)
+        .join(User, DividendHistory.payer_id == User.id)
+        .group_by(DividendHistory.payer_id, User.nickname)
+        .order_by(desc("total_paid"))
+        .limit(1)
+    )
+    div_result = await db.execute(div_stmt)
+    div_row = div_result.first()
+    
+    top_dividend = None
+    if div_row:
+        _, total_paid, nickname = div_row
+        if total_paid > 0:
+            top_dividend = RankingEntry(rank=1, nickname=nickname, value=float(total_paid))
+
     return HallOfFameResponse(
         top_profit=top_profit,
         top_loss=top_loss,
         top_volume=top_volume,
         top_win_rate=top_win_rate,
         top_fees=top_fees,
-        top_night=top_night
+        top_night=top_night,
+        top_dividend=top_dividend
     )
 
 async def get_rankings_data(
@@ -167,6 +185,25 @@ async def get_rankings_data(
     stmt = select(UserPersona, User).join(User, UserPersona.user_id == User.id).where(UserPersona.season_id == season_id)
     
     # DB 정렬 가능한 타입들
+    if ranking_type == "dividend":
+        # Dividend History is separate from UserPersona
+        stmt = (
+            select(User.nickname, func.sum(DividendHistory.amount).label("total_paid"))
+            .join(DividendHistory, User.id == DividendHistory.payer_id)
+            .group_by(User.id, User.nickname)
+            .order_by(desc("total_paid"))
+            .limit(limit)
+        )
+        result = await db.execute(stmt)
+        rows = result.all()
+        
+        rankings = []
+        for i, (nickname, total_paid) in enumerate(rows):
+            rankings.append(RankingEntry(rank=i+1, nickname=nickname, value=float(total_paid)))
+        return rankings
+
+    stmt = select(UserPersona, User).join(User, UserPersona.user_id == User.id).where(UserPersona.season_id == season_id)
+    
     if ranking_type == "pnl":
         stmt = stmt.order_by(desc(UserPersona.total_realized_pnl))
     elif ranking_type == "loss":

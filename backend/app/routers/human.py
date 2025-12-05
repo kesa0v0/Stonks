@@ -2,13 +2,60 @@ from fastapi import APIRouter, Depends
 from backend.core.rate_limit_config import get_rate_limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
+from typing import List
 
 from backend.core.database import get_db
 from backend.core.deps import get_current_user_id
-from backend.schemas.human import IpoCreate, BurnCreate
-from backend.services.human_service import process_bailout, process_ipo, process_burn
+from backend.schemas.human import IpoCreate, BurnCreate, ShareholderResponse, DividendPaymentEntry, IssuerDividendStats, UpdateDividendRate
+from backend.services.human_service import process_bailout, process_ipo, process_burn, get_shareholders, get_issuer_dividend_stats, get_issuer_dividend_history, update_dividend_rate
 
 router = APIRouter(prefix="/human", tags=["human_etf"])
+
+@router.patch("/dividend_rate", dependencies=[Depends(get_rate_limiter("/human/dividend_rate"))])
+async def update_my_dividend_rate(
+    rate_in: UpdateDividendRate,
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id)
+):
+    """
+    [배당률 변경]
+    자신의 Human ETF 배당률을 변경합니다.
+    - 파산 상태인 경우 최소 50% 이상이어야 합니다.
+    """
+    return await update_dividend_rate(db, user_id, rate_in)
+
+@router.get("/shareholders", response_model=ShareholderResponse, dependencies=[Depends(get_rate_limiter("/human/shareholders"))])
+async def get_my_shareholders(
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id)
+):
+    """
+    [주주 명부 조회]
+    자신의 Human ETF를 보유한 주주들의 목록과 지분율을 조회합니다.
+    """
+    return await get_shareholders(db, user_id)
+
+@router.get("/dividend/stats", response_model=IssuerDividendStats, dependencies=[Depends(get_rate_limiter("/human/dividend/stats"))])
+async def get_my_dividend_stats(
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id)
+):
+    """
+    [배당 통계 조회]
+    발행자(나)의 현재 배당률 및 누적 배당 지급액을 조회합니다.
+    """
+    return await get_issuer_dividend_stats(db, user_id)
+
+@router.get("/dividend/history", response_model=List[DividendPaymentEntry], dependencies=[Depends(get_rate_limiter("/human/dividend/history"))])
+async def get_my_dividend_history(
+    db: AsyncSession = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id)
+):
+    """
+    [배당 내역 조회]
+    발행자(나)의 최근 배당 지급 내역을 조회합니다.
+    """
+    return await get_issuer_dividend_history(db, user_id)
 
 @router.post("/bailout", dependencies=[Depends(get_rate_limiter("/human/bailout"))])
 async def request_bailout(

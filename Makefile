@@ -14,6 +14,9 @@ dev-logs:
 dev-down:
 	docker-compose -f docker-compose.dev.yml down
 
+dev-restart:
+	docker-compose -f docker-compose.dev.yml restart
+
 # 4. DB 테이블 초기화 (최초 실행 시 1회 필수)
 dev-init-db:
 	docker-compose -f docker-compose.dev.yml run --rm api sh -c "cd backend && alembic revision --autogenerate -m 'init' && alembic upgrade head"

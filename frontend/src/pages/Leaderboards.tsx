@@ -13,6 +13,7 @@ const TABS = [
   { label: 'Rekt Ranking (Loss)', type: 'loss' },
   { label: 'Short-Term Kings (Vol)', type: 'volume' },
   { label: 'Efficient Traders (PF)', type: 'profit_factor' },
+  { label: 'Dividend Kings (Paid)', type: 'dividend' },
 ];
 
 export default function Leaderboard() {
@@ -70,12 +71,12 @@ export default function Leaderboard() {
 
             {/* Tabs */}
             <div className="pb-3 px-4">
-              <div className="flex border-b border-[#314368] gap-8">
+              <div className="flex border-b border-[#314368] gap-8 overflow-x-auto">
                 {TABS.map((tab) => (
                   <button
                     key={tab.type}
                     onClick={() => setActiveTab(tab.type)}
-                    className={`flex flex-col items-center justify-center border-b-[3px] pb-[13px] pt-4 text-sm font-bold tracking-[0.015em] transition-colors
+                    className={`flex flex-col items-center justify-center border-b-[3px] pb-[13px] pt-4 text-sm font-bold tracking-[0.015em] transition-colors whitespace-nowrap
                       ${activeTab === tab.type 
                         ? 'border-b-[#0d59f2] text-white' 
                         : 'border-b-transparent text-[#90a4cb] hover:text-white hover:border-b-[#0d59f2]/50'
@@ -171,10 +172,10 @@ export default function Leaderboard() {
                 color="text-purple-400"
               />
               <BadgeCard 
-                title="Night Owl" 
-                user={hallOfFame?.top_night} 
-                desc="Most Night Trades"
-                color="text-indigo-400"
+                title="Dividend King" 
+                user={hallOfFame?.top_dividend} 
+                desc="Most Dividends Paid"
+                color="text-green-400"
               />
             </div>
           </div>
@@ -224,13 +225,14 @@ function getRankIcon(rank: number) {
 function getValueColor(type: string, value: number) {
   // 사이트 전역 규칙: +는 빨강(text-profit), -는 파랑(text-loss)
   if (type === 'loss') return 'text-loss';
+  if (type === 'dividend') return 'text-green-400'; // Green for dividends
   if (type === 'pnl') return value >= 0 ? 'text-profit' : 'text-loss';
   return 'text-white';
 }
 
 function formatValue(type: string, value: string) {
   const num = Number(value);
-  if (type === 'pnl' || type === 'loss') return `${formatWithThousands(toFixedString(num, 0, 'ROUND_DOWN'))} KRW`;
+  if (type === 'pnl' || type === 'loss' || type === 'dividend') return `${formatWithThousands(toFixedString(num, 0, 'ROUND_DOWN'))} KRW`;
   if (type === 'volume' || type === 'night') return `${formatWithThousands(toFixedString(num, 0, 'ROUND_DOWN'))} 회`;
   if (type === 'win_rate' || type === 'market_ratio') return `${toFixedString(num, 2, REPORT_ROUNDING)} %`;
   if (type === 'profit_factor') return `${toFixedString(num, 2, REPORT_ROUNDING)}`;

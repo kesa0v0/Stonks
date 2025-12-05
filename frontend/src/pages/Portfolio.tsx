@@ -9,6 +9,9 @@ import OpenOrders from '../components/OpenOrders';
 import HoldingsTable from '../components/HoldingsTable';
 import { SkeletonRow } from '../components/Skeleton';
 import { useQuery } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
+
+type SimpleMessage = { message?: string };
 
 export default function Portfolio() {
   const [fetchedPortfolio, setFetchedPortfolio] = useState<IPortfolio | null>(null);
@@ -42,6 +45,19 @@ export default function Portfolio() {
     };
     fetchData();
   }, []);
+
+  const handleBankruptcy = async () => {
+    if (!confirm("Are you really sure? This will reset your wallet and assets. This action cannot be undone.")) return;
+    try {
+        const res = await api.post('me/bankruptcy').json<SimpleMessage>();
+        toast.success(res?.message || "Bankruptcy Declared");
+        // Refresh page or data to reflect reset
+        setTimeout(() => window.location.reload(), 1000);
+    } catch (err) {
+        console.error("Bankruptcy failed", err);
+        toast.error("Action Failed");
+    }
+  };
 
   const portfolio = useMemo(() => {
     if (!fetchedPortfolio) return null;
@@ -282,6 +298,28 @@ export default function Portfolio() {
                 )}
               </tbody>
             </table>
+        </div>
+      </div>
+
+      {/* Danger Zone */}
+      <div className="mt-8 p-6 rounded-xl border border-red-500/30 bg-[#1a1010]">
+        <h2 className="text-red-500 text-lg font-bold mb-2 flex items-center gap-2">
+            <span className="material-symbols-outlined">warning</span>
+            Danger Zone
+        </h2>
+        <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex flex-col">
+                <p className="text-white font-bold">Declare Bankruptcy</p>
+                <p className="text-[#90a4cb] text-sm">
+                    Irreversible action. This will reset your wallet balance and clear your portfolio history.
+                </p>
+            </div>
+            <button 
+                onClick={handleBankruptcy}
+                className="px-6 py-2 rounded-lg bg-red-500/20 text-red-500 font-bold hover:bg-red-500/30 transition-all border border-red-500/50 whitespace-nowrap"
+            >
+                Declare Bankruptcy
+            </button>
         </div>
       </div>
     </DashboardLayout>

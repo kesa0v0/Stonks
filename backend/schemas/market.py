@@ -46,6 +46,7 @@ class TickerResponse(BaseModel):
     current_price: Optional[DecimalStr] = None
     change_percent: Optional[DecimalStr] = None
     volume: Optional[DecimalStr] = None
+    dividend_rate: Optional[DecimalStr] = None
 
     model_config = ConfigDict(from_attributes=True)
 

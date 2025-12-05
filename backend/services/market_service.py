@@ -12,7 +12,8 @@ from sqlalchemy.orm import aliased
 import redis.asyncio as async_redis
 import aiohttp
 
-from backend.models import Ticker, Candle, Order
+from backend.models import Ticker, Candle, Order, User
+from backend.models.asset import MarketType
 from backend.core.enums import OrderStatus, OrderType, OrderSide
 from backend.schemas.market import MarketState, OrderBookEntry, OrderBookResponse, MarketStatusResponse, MoverResponse, TickerResponse
 import json
@@ -131,6 +132,14 @@ async def get_active_tickers(db: AsyncSession, redis_client: async_redis.Redis) 
     result = await db.execute(stmt)
     rows = result.all()
 
+    # Fetch all user dividend rates for mapping
+    user_stmt = select(User.id, User.dividend_rate).where(User.is_active == True)
+    user_result = await db.execute(user_stmt)
+    # Map str(user_id) -> dividend_rate (multiply by 100 for percentage display if needed, but standard is rate. Schema expects DecimalStr)
+    # User.dividend_rate is e.g. 0.5000 for 50%. Let's return "50.00" or "0.50".
+    # The request says "50%, 90%". So let's format as percentage string.
+    user_dividend_map = {str(uid): float(rate) * 100 for uid, rate in user_result.all()}
+
     tickers = []
     # Batch fetch realtime prices from Redis
     ids: List[str] = [row[0].id for row in rows]
@@ -173,6 +182,16 @@ async def get_active_tickers(db: AsyncSession, redis_client: async_redis.Redis) 
                 t_res.change_percent = f"{change_pct:.2f}"
         except Exception:
             pass
+        
+        # Populate Dividend Rate for Human ETF
+        if ticker_obj.market_type == MarketType.HUMAN and ticker_obj.id.startswith("HUMAN-"):
+            try:
+                # Extract User UUID from Ticker ID "HUMAN-{uuid}"
+                user_id_str = ticker_obj.id.replace("HUMAN-", "")
+                if user_id_str in user_dividend_map:
+                    t_res.dividend_rate = f"{user_dividend_map[user_id_str]:.2f}" # "50.00"
+            except Exception:
+                pass
 
         tickers.append(t_res)
         
