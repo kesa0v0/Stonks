@@ -20,8 +20,8 @@ from backend.core.exceptions import (
     PermissionDeniedError, 
     OrderNotCancellableError
 )
-from backend.models import Order, Portfolio, Wallet, Ticker # Add Ticker
-from backend.core.enums import OrderType, OrderSide, OrderStatus, MarketType # Add MarketType
+from backend.models import Order, Portfolio, Wallet, Ticker, MarketType # Add Ticker and MarketType
+from backend.core.enums import OrderType, OrderSide, OrderStatus # Removed MarketType
 from backend.services.vote_service import get_locked_quantity
 from backend.schemas.order import OrderCreate
 from backend.core.config import settings

@@ -15,6 +15,8 @@ import ValidatedOrderForm from '../components/orders/ValidatedOrderForm';
 import type { OrderBookResponse, TickerResponse, Portfolio } from '../interfaces';
 import { usePrice } from '../store/prices';
 import { useOrderBook } from '../store/orderBook'; // Import useOrderBook
+import { useMeProfile } from '../hooks/useMeProfile'; // Import useMeProfile
+import { usePortfolio, portfolioStore } from '../store/portfolio'; // Import usePortfolio and store
 
 // Isolated header stats to avoid rerendering the whole page on price updates
 function RealTimeHeaderStats({ tickerId, selectedTicker }: { tickerId: string; selectedTicker?: TickerResponse }) {
@@ -63,6 +65,9 @@ export default function Market() {
   const { tickerId: routeTickerId } = useParams<{ tickerId: string }>();
   const tickerId = routeTickerId ?? 'CRYPTO-COIN-ETH';
   
+  const { meProfile, isLoading: isMeLoading } = useMeProfile(); // Get meProfile and loading state
+  const userId = meProfile?.id || ''; // Extract userId
+
   const tickersQ = useQuery({
     queryKey: ['tickers'],
     queryFn: () => api.get('market/tickers').json<TickerResponse[]>(),
@@ -103,19 +108,29 @@ export default function Market() {
 
   // fee-adjusted total is handled in ValidatedOrderForm
 
-  const portfolioQ = useQuery({
-    queryKey: ['portfolio'],
-    queryFn: () => api.get('me/portfolio').json<Portfolio>(),
-    refetchInterval: 5000, // Refresh every 5 seconds
+  // Initial fetch for portfolio, populates the store
+  const { isLoading: isPortfolioLoading } = useQuery<Portfolio, Error>({
+    queryKey: ['portfolio', userId],
+    queryFn: async () => {
+      const data = await api.get('me/portfolio').json<Portfolio>();
+      portfolioStore.updatePortfolio(userId, data); // Update the global store
+      return data;
+    },
+    enabled: !!userId, // Only run this query when userId is available
+    staleTime: Infinity, // Data is updated via WS/store, so no need for auto-refetch
+    // No refetchInterval here, updates are event-driven
   });
+
+  // Get portfolio from global store
+  const portfolio = usePortfolio(userId);
 
   // Real-time Price Logic
   const livePrice = usePrice(tickerId); // kept for order form auto-calc below
   const realTimePrice = (typeof livePrice === 'number') ? livePrice : (selectedTicker?.current_price ? Number(selectedTicker.current_price) : undefined);
 
   const currentHolding = useMemo(() => {
-    return portfolioQ.data?.assets.find(a => a.ticker_id === tickerId);
-  }, [portfolioQ.data, tickerId]);
+    return portfolio?.assets.find(a => a.ticker_id === tickerId);
+  }, [portfolio, tickerId]);
 
   const holdingPnL = useMemo(() => {
       if (!currentHolding || !realTimePrice) return null;

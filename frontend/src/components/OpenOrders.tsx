@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import { toFixedString, formatWithThousands, getAssetQuantityDigits } from '../utils/numfmt';
 import api from '../api/client';
 import type { OrderListItem, TickerResponse } from '../interfaces';
@@ -6,14 +6,38 @@ import { useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 
 import { SkeletonRow } from './Skeleton';
+import { useMeProfile } from '../hooks/useMeProfile'; // Import useMeProfile
+import { useOpenOrders, openOrdersStore } from '../store/openOrders'; // Import useOpenOrders and store
 
 interface OpenOrdersProps {
   tickerId?: string; // If provided, filters by this ticker
 }
 
 export default function OpenOrders({ tickerId }: OpenOrdersProps) {
-  const [orders, setOrders] = useState<OrderListItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { meProfile, isLoading: isMeLoading } = useMeProfile();
+  const userId = meProfile?.id || '';
+
+  // Get orders from the global store
+  const allOpenOrders = useOpenOrders(userId);
+
+  // Initial fetch for open orders, populates the store
+  const { isLoading: isOrdersLoading, refetch: initialFetchOrders } = useQuery<OrderListItem[], Error>({
+    queryKey: ['openOrders', userId],
+    queryFn: async () => {
+      const data = await api.get('me/orders/open').json<OrderListItem[]>();
+      openOrdersStore.updateOpenOrders(userId, data); // Update the global store
+      return data;
+    },
+    enabled: !!userId, // Only run this query when userId is available
+    staleTime: Infinity, // Data is updated via WS/store, so no need for auto-refetch
+    // No refetchInterval here, updates are event-driven
+  });
+
+  const orders = useMemo(() => {
+    // Filter and sort the orders from the store
+    const filtered = tickerId ? (allOpenOrders || []).filter(o => o.ticker_id === tickerId) : (allOpenOrders || []);
+    return [...filtered].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }, [allOpenOrders, tickerId]);
 
   // Fetch tickers to derive currency per ticker
   const tickersQ = useQuery({
@@ -26,40 +50,11 @@ export default function OpenOrders({ tickerId }: OpenOrdersProps) {
     return map;
   }, [tickersQ.data]);
 
-  const fetchOrders = async () => {
-    // Don't set loading(true) here to avoid UI flicker on background refresh
-    try {
-      const data = await api.get('me/orders/open').json<OrderListItem[]>();
-      // Filter by tickerId if provided
-      const filtered = tickerId ? data.filter(o => o.ticker_id === tickerId) : data;
-      // Sort by created_at desc
-      filtered.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      setOrders(filtered);
-    } catch (err) {
-      console.error("Failed to fetch open orders", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchOrders();
-    // Polling for background refresh
-    const interval = setInterval(fetchOrders, 5000);
-    // Immediate refresh on order placement events
-    const onUpdated = () => { fetchOrders(); };
-    window.addEventListener('orders:updated', onUpdated as EventListener);
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('orders:updated', onUpdated as EventListener);
-    };
-  }, [tickerId]);
-
   const handleCancel = async (orderId: string) => {
     if (!confirm('Are you sure you want to cancel this order?')) return;
     try {
       await api.post(`orders/${orderId}/cancel`);
-      const target = orders.find(o => o.id === orderId);
+      const target = orders.find(o => o.id === orderId); // Use local 'orders' for toast msg
       const cur = target ? currencyByTicker.get(target.ticker_id) : undefined;
       if (target) {
         const qtyStr = toFixedString(target.quantity, getAssetQuantityDigits(target.ticker_id), 'ROUND_DOWN');
@@ -69,14 +64,16 @@ export default function OpenOrders({ tickerId }: OpenOrdersProps) {
       } else {
         toast.success('Order cancelled successfully');
       }
-      fetchOrders(); // Refresh list
+      // No explicit fetchOrders() here. The WS event from backend will trigger store update.
     } catch (err) {
       // Error handled by global error handler (toast)
       console.error(err);
     }
   };
 
-  if (loading && orders.length === 0) {
+  const isLoading = isMeLoading || isOrdersLoading || !userId; // Overall loading state
+
+  if (isLoading && (orders.length === 0 || allOpenOrders === undefined)) { // Show skeleton while loading and store is empty
       return (
         <div className="w-full overflow-hidden rounded-xl border border-[#314368] bg-[#101623]">
             <div className="p-4 border-b border-[#314368] flex justify-between items-center">
@@ -107,7 +104,7 @@ export default function OpenOrders({ tickerId }: OpenOrdersProps) {
       );
   }
 
-  if (orders.length === 0) {
+  if (orders.length === 0 && !isLoading) { // Show "No open orders" only if not loading and empty
       return (
         <div className="text-[#90a4cb] text-sm text-center p-8 border border-[#314368] rounded-xl bg-[#101623] border-dashed">
             No open orders {tickerId ? 'for this ticker' : ''}.
@@ -120,7 +117,7 @@ export default function OpenOrders({ tickerId }: OpenOrdersProps) {
       <div className="p-4 border-b border-[#314368] flex justify-between items-center">
         <h3 className="text-white font-bold">Open Orders {tickerId ? `(${tickerId.split('-').pop()})` : ''}</h3>
         <button 
-            onClick={fetchOrders} 
+            onClick={() => initialFetchOrders()} // Call the refetch from useQuery
             className="text-[#0d59f2] text-xs font-bold hover:underline flex items-center gap-1"
         >
             <span className="material-symbols-outlined text-sm">refresh</span> Refresh

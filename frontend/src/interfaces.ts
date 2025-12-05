@@ -100,6 +100,11 @@ export interface TickerResponse {
   dividend_rate?: string;
 }
 
+export interface MeProfile {
+  id: string;
+  nickname: string;
+}
+
 export interface MoverResponse {
   ticker: TickerResponse;
   price: string;
