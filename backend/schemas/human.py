@@ -35,3 +35,9 @@ class IssuerDividendStats(BaseModel):
 
 class UpdateDividendRate(BaseModel):
     dividend_rate: Decimal = Field(..., ge=0, le=1, description="배당률 (0.0 ~ 1.0)")
+
+class HumanCorporateValueResponse(BaseModel):
+    current_price: Optional[DecimalStr] = None
+    market_cap: Optional[DecimalStr] = None
+    per: Optional[DecimalStr] = None
+    # Add anything else relevant for the corporate value dashboard

@@ -5,11 +5,25 @@ from uuid import UUID
 from typing import List
 
 from backend.core.database import get_db
-from backend.core.deps import get_current_user_id
-from backend.schemas.human import IpoCreate, BurnCreate, ShareholderResponse, DividendPaymentEntry, IssuerDividendStats, UpdateDividendRate
-from backend.services.human_service import process_bailout, process_ipo, process_burn, get_shareholders, get_issuer_dividend_stats, get_issuer_dividend_history, update_dividend_rate
+from backend.core.deps import get_current_user_id, get_redis # Import get_redis
+from backend.schemas.human import IpoCreate, BurnCreate, ShareholderResponse, DividendPaymentEntry, IssuerDividendStats, UpdateDividendRate, HumanCorporateValueResponse
+from backend.services.human_service import process_bailout, process_ipo, process_burn, get_shareholders, get_issuer_dividend_stats, get_issuer_dividend_history, update_dividend_rate, get_human_corporate_value
+import redis.asyncio as async_redis # Import async_redis
+
 
 router = APIRouter(prefix="/human", tags=["human_etf"])
+
+@router.get("/corporate_value", response_model=HumanCorporateValueResponse, dependencies=[Depends(get_rate_limiter("/human/corporate_value"))])
+async def get_my_corporate_value(
+    db: AsyncSession = Depends(get_db),
+    redis_client: async_redis.Redis = Depends(get_redis), # Use get_redis
+    user_id: UUID = Depends(get_current_user_id)
+):
+    """
+    [기업 가치 조회]
+    발행자 본인의 Human ETF의 시장 가치 및 관련 지표를 조회합니다.
+    """
+    return await get_human_corporate_value(db, redis_client, user_id)
 
 @router.patch("/dividend_rate", dependencies=[Depends(get_rate_limiter("/human/dividend_rate"))])
 async def update_my_dividend_rate(

@@ -15,8 +15,64 @@ from backend.core.exceptions import (
     InvalidDividendRateError, 
     InsufficientSharesToBurnError
 )
-from backend.models import User, Ticker, Portfolio, MarketType, Currency, TickerSource, Wallet, DividendHistory
-from backend.schemas.human import IpoCreate, BurnCreate, Shareholder, ShareholderResponse, DividendPaymentEntry, IssuerDividendStats, UpdateDividendRate
+from backend.models import User, Ticker, Portfolio, MarketType, Currency, TickerSource, Wallet, DividendHistory, UserPersona # Added UserPersona
+from backend.schemas.human import IpoCreate, BurnCreate, Shareholder, ShareholderResponse, DividendPaymentEntry, IssuerDividendStats, UpdateDividendRate, HumanCorporateValueResponse # Added HumanCorporateValueResponse
+from backend.services.common.wallet import add_balance
+from backend.core.constants import WALLET_REASON_HUMAN_DISTRIBUTION
+from backend.core.event_hook import publish_event
+import redis.asyncio as async_redis
+from backend.core.config import settings
+from sqlalchemy.orm import joinedload
+from datetime import datetime
+from backend.services.market_service import get_current_price_info # Added
+from backend.services.season_service import get_active_season # Added
+
+async def get_human_corporate_value(db: AsyncSession, redis_client: async_redis.Redis, user_id: UUID) -> HumanCorporateValueResponse:
+    """
+    [기업 가치 조회]
+    발행자 본인의 Human ETF의 시장 가치 및 관련 지표를 조회합니다.
+    """
+    ticker_id = f"HUMAN-{user_id}"
+    
+    # 1. 현재 가격
+    current_price = await get_current_price_info(redis_client, ticker_id)
+    if current_price is None:
+        # Ticker might not be active/price not updated
+        return HumanCorporateValueResponse() 
+
+    # 2. 총 발행 주식 수
+    total_issued_stmt = select(func.sum(Portfolio.quantity)).where(Portfolio.ticker_id == ticker_id)
+    total_issued_shares = (await db.execute(total_issued_stmt)).scalar_one_or_none() or Decimal(0)
+    
+    # 3. 시가총액 (Market Cap)
+    market_cap = Decimal(str(current_price)) * total_issued_shares if total_issued_shares > 0 else Decimal(0)
+
+    # 4. 최근 1일 평균 수익 (for PER) - 현재 시즌 PnL을 사용
+    season = await get_active_season(db)
+    user_persona_stmt = select(UserPersona.total_realized_pnl).where(
+        UserPersona.user_id == user_id,
+        UserPersona.season_id == season.id
+    )
+    total_realized_pnl_season = (await db.execute(user_persona_stmt)).scalar_one_or_none() or Decimal(0)
+
+    per = None
+    # PER = (주가) / (주당 순이익)
+    # 여기서는 (현재 시가총액) / (총 순이익)으로 간주 (즉, 주당 순이익 대신 총 순이익 사용)
+    # 더 정확하게는 (주가 / 주당 순이익)이 맞지만, Human ETF에서는 발행 주식 수가 가변적이고,
+    # '주당 순이익'을 정의하기 모호하므로, 시총/총 순이익으로 간주.
+    # 만약 total_realized_pnl_season이 0이면 PER 계산 불가
+    if total_realized_pnl_season > 0:
+        per = market_cap / total_realized_pnl_season
+        # if per < 0: # PnL이 음수인데 MarketCap이 양수인 경우 -> 이 경우는 PER이 음수. 표시해도 됨.
+        #     per = None # 의미 없는 값이므로 None 처리
+    elif total_realized_pnl_season < 0 and market_cap > 0: # 수익이 음수일 때 PER
+        per = Decimal('-1.0') # 음의 PER. -1.0으로 통일하거나 다른 방식으로 표시.
+    
+    return HumanCorporateValueResponse(
+        current_price=str(current_price),
+        market_cap=str(market_cap),
+        per=str(per) if per is not None else None
+    )
 
 async def update_dividend_rate(db: AsyncSession, user_id: UUID, rate_in: UpdateDividendRate):
     """
