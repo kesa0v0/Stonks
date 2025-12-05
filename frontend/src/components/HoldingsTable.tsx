@@ -6,6 +6,8 @@ import { usePrice } from '../store/prices';
 import { useQuery } from '@tanstack/react-query';
 import api from '../api/client';
 
+import { SkeletonRow } from './Skeleton';
+
 interface HoldingsTableProps {
   assets: Asset[];
   isLoading?: boolean;
@@ -24,12 +26,29 @@ export default function HoldingsTable({ assets, isLoading }: HoldingsTableProps)
 
   if (isLoading) {
     return (
-      <div className="flex flex-col gap-4 rounded-xl border border-[#314368] bg-[#101623] p-6">
-        <div className="h-6 w-48 bg-[#182234] rounded animate-pulse mb-4" />
-        <div className="space-y-3">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-12 w-full bg-[#182234] rounded animate-pulse" />
-          ))}
+      <div className="flex flex-col gap-4 rounded-xl border border-[#314368] bg-[#101623] overflow-hidden">
+        <div className="p-6 pb-2">
+          <h2 className="text-white text-xl font-bold">Current Positions</h2>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+             <thead className="bg-[#182234]">
+              <tr>
+                <th className="px-4 py-3 text-[#90a4cb] text-sm font-medium">Asset</th>
+                <th className="px-4 py-3 text-[#90a4cb] text-sm font-medium text-right">Quantity</th>
+                <th className="px-4 py-3 text-[#90a4cb] text-sm font-medium text-right">Avg. Price</th>
+                <th className="px-4 py-3 text-[#90a4cb] text-sm font-medium text-right">Current Price</th>
+                <th className="px-4 py-3 text-[#90a4cb] text-sm font-medium text-right">Total Value</th>
+                <th className="px-4 py-3 text-[#90a4cb] text-sm font-medium text-right">PnL</th>
+                <th className="px-4 py-3 text-[#90a4cb] text-sm font-medium text-center">Trade</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#314368]">
+               {Array.from({ length: 3 }).map((_, i) => (
+                 <SkeletonRow key={i} cols={7} />
+               ))}
+            </tbody>
+          </table>
         </div>
       </div>
     );

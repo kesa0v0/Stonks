@@ -4,6 +4,7 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import api from '../api/client';
 import { getCurrencyDigits, formatCurrencyDisplay } from '../utils/numfmt';
 import { usePrice } from '../store/prices';
+import Skeleton from './Skeleton';
 
 interface CandleData {
   ticker_id: string;
@@ -354,8 +355,11 @@ export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle', last
             bottomColor: 'rgba(13, 89, 242, 0)',
             lineColor: '#0d59f2',
             lineWidth: 2,
-        priceFormat: { type: 'price', precision: digits, minMove: Math.pow(10, -digits) },
-        priceFormatter: (p: number) => formatCurrencyDisplay(p, currencyCode, 'ROUND_DOWN'),
+        priceFormat: { 
+            type: 'custom', 
+            minMove: Math.pow(10, -digits),
+            formatter: (p: number) => formatCurrencyDisplay(p, currencyCode, 'ROUND_DOWN')
+        },
         });
     } else {
       series = chart.addSeries(CandlestickSeries, {
@@ -364,8 +368,11 @@ export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle', last
               borderVisible: false,
               wickUpColor: '#ef4444',
               wickDownColor: '#0ea5e9',
-          priceFormat: { type: 'price', precision: digits, minMove: Math.pow(10, -digits) },
-          priceFormatter: (p: number) => formatCurrencyDisplay(p, currencyCode, 'ROUND_DOWN'),
+          priceFormat: { 
+            type: 'custom', 
+            minMove: Math.pow(10, -digits),
+            formatter: (p: number) => formatCurrencyDisplay(p, currencyCode, 'ROUND_DOWN')
+          },
         });
     }
 
@@ -373,8 +380,11 @@ export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle', last
     const volSeries = chart.addSeries(HistogramSeries, {
       priceScaleId: 'left',
       color: '#314368',
-      priceFormat: { type: 'volume', precision: 0, minMove: 1 },
-      priceFormatter: (v: number) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(v),
+      priceFormat: { 
+          type: 'custom', 
+          minMove: 1,
+          formatter: (v: number) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(v)
+      },
     });
 
     chartRef.current = chart;
@@ -421,7 +431,7 @@ export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle', last
       {/* Status Overlay */}
       {status !== 'ready' && (
         <div className="absolute inset-0 flex items-center justify-center bg-[#101623]/80 z-10 pointer-events-none">
-            {status === 'loading' && <span className="text-[#90a4cb] animate-pulse">Loading Chart...</span>}
+            {status === 'loading' && <Skeleton className="w-full h-full" />}
             {status === 'empty' && <span className="text-[#90a4cb]">No Data Available</span>}
             {status === 'error' && <span className="text-red-500">Failed to Load Chart</span>}
         </div>

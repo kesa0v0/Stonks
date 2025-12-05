@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import api from '../api/client';
-import { toFixedString, REPORT_ROUNDING, formatWithThousands, formatCurrencyDisplay } from '../utils/numfmt';
+import { toFixedString, REPORT_ROUNDING, formatWithThousands } from '../utils/numfmt';
 import DashboardLayout from '../components/DashboardLayout';
+import { SkeletonRow } from '../components/Skeleton';
 import type { RankingEntry, HallOfFameResponse } from '../interfaces';
 
 // API client prefix is configured via VITE_API_BASE_URL
@@ -99,7 +100,7 @@ export default function Leaderboard() {
                   </thead>
                   <tbody>
                     {loading ? (
-                      <tr><td colSpan={3} className="text-center py-8 text-[#90a4cb]">Loading data...</td></tr>
+                      Array.from({ length: 10 }).map((_, i) => <SkeletonRow key={i} cols={3} />)
                     ) : rankings.length === 0 ? (
                       <tr><td colSpan={3} className="text-center py-8 text-[#90a4cb]">No Data Available</td></tr>
                     ) : (

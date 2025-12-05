@@ -7,6 +7,7 @@ import api from '../api/client';
 import { toFixedString, REPORT_ROUNDING, formatCurrencyDisplay, getAssetQuantityDigits } from '../utils/numfmt';
 import { useUsdKrwRate } from '../hooks/useFx';
 import DashboardLayout from '../components/DashboardLayout';
+import { SkeletonRow } from '../components/Skeleton';
 import { CandleChart } from '../components/CandleChart';
 import OpenOrders from '../components/OpenOrders';
 import OrderInputs from '../components/orders/OrderInputs';
@@ -267,30 +268,36 @@ export default function Market() {
                     </tr>
                   </thead>
                   <tbody>
-                    {/* Asks (Sell Orders) - Blue (Loss) */}
-                    {orderBook?.asks.slice(0, 8).reverse().map((ask, i) => (
-                      <tr key={`ask-${i}`} className="hover:bg-[#182234] transition-colors relative">
-                        <td className="text-loss py-1">{formatCurrencyDisplay(ask.price, currency, 'ROUND_DOWN')}</td>
-                        <td className="text-right text-white/70">{toFixedString(ask.quantity, 4, 'ROUND_DOWN')}</td>
-                        <td className="text-right text-white/40">{formatCurrencyDisplay(Number(ask.price) * Number(ask.quantity), currency, 'ROUND_DOWN')}</td>
-                      </tr>
-                    ))}
-                    
-                    {/* Current Price Divider */}
-                    <tr className="border-y border-[#314368] bg-[#222f49]/50">
-                      <td colSpan={3} className="py-2 text-center text-lg font-bold text-white">
-                        {realTimePrice ? formatCurrencyDisplay(realTimePrice, currency, 'ROUND_DOWN') : '-'} <span className="text-xs text-[#90a4cb] font-normal">{currency}</span>
-                      </td>
-                    </tr>
+                    {!orderBook ? (
+                        Array.from({ length: 16 }).map((_, i) => <SkeletonRow key={i} cols={3} />)
+                    ) : (
+                        <>
+                        {/* Asks (Sell Orders) - Blue (Loss) */}
+                        {orderBook?.asks.slice(0, 8).reverse().map((ask, i) => (
+                        <tr key={`ask-${i}`} className="hover:bg-[#182234] transition-colors relative">
+                            <td className="text-loss py-1">{formatCurrencyDisplay(ask.price, currency, 'ROUND_DOWN')}</td>
+                            <td className="text-right text-white/70">{toFixedString(ask.quantity, 4, 'ROUND_DOWN')}</td>
+                            <td className="text-right text-white/40">{formatCurrencyDisplay(Number(ask.price) * Number(ask.quantity), currency, 'ROUND_DOWN')}</td>
+                        </tr>
+                        ))}
+                        
+                        {/* Current Price Divider */}
+                        <tr className="border-y border-[#314368] bg-[#222f49]/50">
+                        <td colSpan={3} className="py-2 text-center text-lg font-bold text-white">
+                            {realTimePrice ? formatCurrencyDisplay(realTimePrice, currency, 'ROUND_DOWN') : '-'} <span className="text-xs text-[#90a4cb] font-normal">{currency}</span>
+                        </td>
+                        </tr>
 
-                    {/* Bids (Buy Orders) - Red (Profit) */}
-                    {orderBook?.bids.slice(0, 8).map((bid, i) => (
-                      <tr key={`bid-${i}`} className="hover:bg-[#2a1818] transition-colors relative">
-                        <td className="text-profit py-1">{formatCurrencyDisplay(bid.price, currency, 'ROUND_DOWN')}</td>
-                        <td className="text-right text-white/70">{toFixedString(bid.quantity, 4, 'ROUND_DOWN')}</td>
-                        <td className="text-right text-white/40">{formatCurrencyDisplay(Number(bid.price) * Number(bid.quantity), currency, 'ROUND_DOWN')}</td>
-                      </tr>
-                    ))}
+                        {/* Bids (Buy Orders) - Red (Profit) */}
+                        {orderBook?.bids.slice(0, 8).map((bid, i) => (
+                        <tr key={`bid-${i}`} className="hover:bg-[#2a1818] transition-colors relative">
+                            <td className="text-profit py-1">{formatCurrencyDisplay(bid.price, currency, 'ROUND_DOWN')}</td>
+                            <td className="text-right text-white/70">{toFixedString(bid.quantity, 4, 'ROUND_DOWN')}</td>
+                            <td className="text-right text-white/40">{formatCurrencyDisplay(Number(bid.price) * Number(bid.quantity), currency, 'ROUND_DOWN')}</td>
+                        </tr>
+                        ))}
+                        </>
+                    )}
                   </tbody>
                 </table>
               </div>

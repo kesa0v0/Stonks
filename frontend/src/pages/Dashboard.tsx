@@ -8,6 +8,7 @@ import type { TickerResponse, MoverResponse, Portfolio } from '../interfaces';
 import { usePricesAll, usePricesVersion } from '../store/prices';
 import HoldingsTable from '../components/HoldingsTable';
 import OpenOrders from '../components/OpenOrders';
+import { SkeletonCard, SkeletonRow } from '../components/Skeleton';
 
 //
 
@@ -152,15 +153,27 @@ export default function Dashboard() {
           {/* Gainers / Losers / Trending */}
           <section className="p-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card title="Top Gainers" icon="trending_up" iconClass="text-profit">
-                <ListMovers data={displayedGainers} />
-              </Card>
-              <Card title="Top Losers" icon="trending_down" iconClass="text-loss">
-                <ListMovers data={displayedLosers} />
-              </Card>
-              <Card title="Trending Now" icon="bolt" iconClass="text-profit">
-                <ListMovers data={displayedTrending} />
-              </Card>
+              {gainersQ.isLoading ? (
+                <SkeletonCard />
+              ) : (
+                <Card title="Top Gainers" icon="trending_up" iconClass="text-profit">
+                  <ListMovers data={displayedGainers} />
+                </Card>
+              )}
+              {losersQ.isLoading ? (
+                <SkeletonCard />
+              ) : (
+                <Card title="Top Losers" icon="trending_down" iconClass="text-loss">
+                  <ListMovers data={displayedLosers} />
+                </Card>
+              )}
+              {trendingQ.isLoading ? (
+                <SkeletonCard />
+              ) : (
+                <Card title="Trending Now" icon="bolt" iconClass="text-profit">
+                  <ListMovers data={displayedTrending} />
+                </Card>
+              )}
             </div>
           </section>
 
@@ -216,7 +229,10 @@ export default function Dashboard() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#314368]">
-                    {displayedTickers.slice(0, 50).map(t => {
+                    {tickersQ.isLoading ? (
+                        Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={6} />)
+                    ) : (
+                      displayedTickers.slice(0, 50).map(t => {
                       const change = Number(t.change_percent || 0);
                       const isPositive = change >= 0;
                       return (
@@ -237,7 +253,7 @@ export default function Dashboard() {
                           </td>
                         </tr>
                       );
-                    })}
+                    }))}
                   </tbody>
                 </table>
               </div>

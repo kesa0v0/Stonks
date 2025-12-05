@@ -5,6 +5,8 @@ import type { OrderListItem, TickerResponse } from '../interfaces';
 import { useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 
+import { SkeletonRow } from './Skeleton';
+
 interface OpenOrdersProps {
   tickerId?: string; // If provided, filters by this ticker
 }
@@ -75,7 +77,34 @@ export default function OpenOrders({ tickerId }: OpenOrdersProps) {
   };
 
   if (loading && orders.length === 0) {
-      return <div className="text-[#90a4cb] text-sm animate-pulse p-4">Loading open orders...</div>;
+      return (
+        <div className="w-full overflow-hidden rounded-xl border border-[#314368] bg-[#101623]">
+            <div className="p-4 border-b border-[#314368] flex justify-between items-center">
+                <h3 className="text-white font-bold">Open Orders {tickerId ? `(${tickerId.split('-').pop()})` : ''}</h3>
+            </div>
+            <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                    <thead className="bg-[#182234] text-[#90a4cb] font-medium">
+                        <tr>
+                            <th className="px-4 py-3">Time</th>
+                            {!tickerId && <th className="px-4 py-3">Ticker</th>}
+                            <th className="px-4 py-3 text-center">Side</th>
+                            <th className="px-4 py-3 text-center">Type</th>
+                            <th className="px-4 py-3 text-right">Condition</th>
+                            <th className="px-4 py-3 text-right">Amount</th>
+                            <th className="px-4 py-3 text-center">Status</th>
+                            <th className="px-4 py-3 text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#314368]">
+                        {Array.from({ length: 3 }).map((_, i) => (
+                            <SkeletonRow key={i} cols={tickerId ? 7 : 8} />
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+      );
   }
 
   if (orders.length === 0) {

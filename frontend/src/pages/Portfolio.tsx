@@ -7,6 +7,7 @@ import type { Portfolio as IPortfolio, OrderListItem, TickerResponse } from '../
 import { usePricesAll, usePricesVersion } from '../store/prices';
 import OpenOrders from '../components/OpenOrders';
 import HoldingsTable from '../components/HoldingsTable';
+import { SkeletonRow } from '../components/Skeleton';
 import { useQuery } from '@tanstack/react-query';
 
 export default function Portfolio() {
@@ -231,13 +232,6 @@ export default function Portfolio() {
       <div className="flex flex-col gap-4">
         <h2 className="text-white text-xl font-bold">Recent Trade History</h2>
         <div className="rounded-lg border border-[#314368] bg-[#101623] overflow-hidden">
-          {isLoading ? (
-            <div className="p-6 space-y-3">
-              <SkeletonLine wide />
-              <SkeletonLine wide />
-              <SkeletonLine wide />
-            </div>
-          ) : (
             <table className="w-full text-left">
               <thead className="bg-[#182234]">
                 <tr>
@@ -251,40 +245,43 @@ export default function Portfolio() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#314368]">
-                {orders.map((order) => {
-                    let statusColor = 'text-white'; // Default
-                    if (order.status === 'FILLED') {
-                        statusColor = 'text-profit';
-                    } else if (order.status === 'CANCELLED' || order.status === 'FAILED') {
-                        statusColor = 'text-loss';
-                    } else if (order.status === 'PENDING') {
-                        statusColor = 'text-yellow-500';
-                    }
-                    return (
-                        <tr key={order.id} className="hover:bg-[#182234] transition-colors">
-                            <td className="px-6 py-4 text-white/70 text-sm">{new Date(order.created_at).toLocaleDateString()}</td>
-                            <td className="px-6 py-4 text-white font-bold">{order.ticker_id.split('-').pop()}</td>
-                            <td className="px-6 py-4 text-center">
-                                <span className={`inline-flex items-center justify-center rounded-full h-7 px-3 text-xs font-bold ${order.side === 'BUY' ? 'bg-profit/20 text-profit' : 'bg-loss/20 text-loss'}`}>
-                                    {order.side}
-                                </span>
-                            </td>
-                            <td className="px-6 py-4 text-right text-white/70">{order.price ? `${formatWithThousands(toFixedString(order.price, 0, 'ROUND_DOWN'))} ${currencyByTicker.get(order.ticker_id) ?? ''}`.trim() : '-'}</td>
-                            <td className="px-6 py-4 text-right text-white/70">{toFixedString(order.quantity, getAssetQuantityDigits(order.ticker_id), 'ROUND_DOWN')}</td>
-                            <td className="px-6 py-4 text-right text-white/70">
-                              {order.price 
-                                ? `${formatWithThousands(toFixedString(Number(order.price) * Number(order.quantity), 0, 'ROUND_DOWN'))} ${currencyByTicker.get(order.ticker_id) ?? ''}`.trim()
-                                : '-'}
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                                <span className={`text-xs font-bold uppercase ${statusColor}`}>{order.status}</span>
-                            </td>
-                        </tr>
-                    );
-                })}
+                {isLoading ? (
+                     Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={7} />)
+                ) : (
+                    orders.map((order) => {
+                        let statusColor = 'text-white'; // Default
+                        if (order.status === 'FILLED') {
+                            statusColor = 'text-profit';
+                        } else if (order.status === 'CANCELLED' || order.status === 'FAILED') {
+                            statusColor = 'text-loss';
+                        } else if (order.status === 'PENDING') {
+                            statusColor = 'text-yellow-500';
+                        }
+                        return (
+                            <tr key={order.id} className="hover:bg-[#182234] transition-colors">
+                                <td className="px-6 py-4 text-white/70 text-sm">{new Date(order.created_at).toLocaleDateString()}</td>
+                                <td className="px-6 py-4 text-white font-bold">{order.ticker_id.split('-').pop()}</td>
+                                <td className="px-6 py-4 text-center">
+                                    <span className={`inline-flex items-center justify-center rounded-full h-7 px-3 text-xs font-bold ${order.side === 'BUY' ? 'bg-profit/20 text-profit' : 'bg-loss/20 text-loss'}`}>
+                                        {order.side}
+                                    </span>
+                                </td>
+                                <td className="px-6 py-4 text-right text-white/70">{order.price ? `${formatWithThousands(toFixedString(order.price, 0, 'ROUND_DOWN'))} ${currencyByTicker.get(order.ticker_id) ?? ''}`.trim() : '-'}</td>
+                                <td className="px-6 py-4 text-right text-white/70">{toFixedString(order.quantity, getAssetQuantityDigits(order.ticker_id), 'ROUND_DOWN')}</td>
+                                <td className="px-6 py-4 text-right text-white/70">
+                                {order.price 
+                                    ? `${formatWithThousands(toFixedString(Number(order.price) * Number(order.quantity), 0, 'ROUND_DOWN'))} ${currencyByTicker.get(order.ticker_id) ?? ''}`.trim()
+                                    : '-'}
+                                </td>
+                                <td className="px-6 py-4 text-center">
+                                    <span className={`text-xs font-bold uppercase ${statusColor}`}>{order.status}</span>
+                                </td>
+                            </tr>
+                        );
+                    })
+                )}
               </tbody>
             </table>
-          )}
         </div>
       </div>
     </DashboardLayout>

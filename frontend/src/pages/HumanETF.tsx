@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import api from '../api/client';
 import DashboardLayout from '../components/DashboardLayout';
+import Skeleton from '../components/Skeleton';
 
 type MeProfile = { nickname: string; is_active: boolean; is_bankrupt?: boolean };
 type SimpleMessage = { message?: string };
@@ -50,10 +51,10 @@ export default function HumanETF() {
         <div className="flex p-6 border border-[#314368] bg-[#101623] rounded-xl items-center gap-6">
           {isLoading ? (
             <div className="flex items-center gap-6 w-full animate-pulse">
-              <div className="w-24 h-24 rounded-full bg-[#182234]" />
+              <Skeleton className="w-24 h-24 rounded-full" />
               <div className="flex-1">
-                <div className="h-6 w-48 bg-[#182234] rounded mb-2" />
-                <div className="h-4 w-32 bg-[#182234] rounded" />
+                <Skeleton className="h-6 w-48 mb-2" />
+                <Skeleton className="h-4 w-32" />
               </div>
             </div>
           ) : (
