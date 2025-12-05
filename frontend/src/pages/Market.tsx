@@ -8,6 +8,7 @@ import DashboardLayout from '../components/DashboardLayout';
 import { CandleChart } from '../components/CandleChart';
 import OpenOrders from '../components/OpenOrders';
 import OrderInputs from '../components/orders/OrderInputs';
+import ValidatedOrderForm from '../components/orders/ValidatedOrderForm';
 import type { OrderBookResponse, TickerResponse, Portfolio } from '../interfaces';
 import { usePrice } from '../store/prices';
 
@@ -43,10 +44,7 @@ function RealTimeHeaderStats({ tickerId, selectedTicker }: { tickerId: string; s
 }
 // import { useWebSocket } from '../hooks/useWebSocket';
 
-const toNumber = (v: string) => {
-  const n = parseFloat(v);
-  return Number.isFinite(n) ? n : 0;
-};
+// helper removed (unused)
 
 // Helpers using Decimal for precise money/quantity calculations
 const d = (v: Decimal.Value | undefined | null) => {
@@ -243,50 +241,7 @@ export default function Market() {
     }
   };
 
-  // 주문 제출 핸들러
-  const handleOrder = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    const qty = toNumber(amount);
-    if (qty <= 0) {
-        toast.error("Please enter a valid amount.");
-        return;
-    }
-
-    const payload: any = {
-        ticker_id: tickerId,
-        side: side,
-        type: orderType, 
-        quantity: toNumber(amount),
-    };
-
-    if (orderType === 'LIMIT' || orderType === 'STOP_LIMIT') {
-        payload.target_price = typeof price === 'number' ? price : toNumber(price);
-    }
-
-    if (orderType === 'STOP_LOSS' || orderType === 'TAKE_PROFIT' || orderType === 'STOP_LIMIT') {
-        payload.stop_price = typeof stopPrice === 'number' ? stopPrice : toNumber(stopPrice as string);
-    }
-
-    if (orderType === 'TRAILING_STOP') {
-        payload.trailing_gap = typeof trailingGap === 'number' ? trailingGap : toNumber(trailingGap as string);
-    }
-
-    try {
-      await api.post('orders', { json: payload });
-      toast.success("Order Placed Successfully!");
-      // Reset relevant fields
-      setAmount('');
-      setTotal('');
-      // Notify OpenOrders to refresh immediately
-      try {
-        window.dispatchEvent(new Event('orders:updated'));
-      } catch { /* ignore */ }
-    } catch (err) {
-      console.error("Order execution failed", err);
-      toast.error("Order Failed");
-    }
-  };
+  // 주문 제출은 ValidatedOrderForm 내부에서 처리
 
   // Tabs Configuration
   const tabs = [
@@ -330,10 +285,10 @@ export default function Market() {
                 <div className="flex gap-4">
                   {/* Range Toggle */}
                   <div className="flex gap-2 bg-[#182234] p-1 rounded-lg">
-                    {['1D', '1W', '3M', '1Y', '5Y'].map((r) => (
+                    {(['1D', '1W', '3M', '1Y', '5Y'] as const).map((r) => (
                       <button 
                         key={r}
-                        onClick={() => setTimeRange(r as any)}
+                        onClick={() => setTimeRange(r)}
                         className={`px-3 py-1 rounded text-xs font-bold transition-colors ${timeRange === r ? 'bg-[#222f49] text-white shadow' : 'text-[#90a4cb] hover:text-white'}`}
                       >
                         {r}
@@ -439,7 +394,7 @@ export default function Market() {
                 {tabs.map((tab) => (
                     <button 
                         key={tab.id}
-                        onClick={() => setOrderType(tab.id as any)}
+                        onClick={() => setOrderType(tab.id as 'MARKET' | 'LIMIT' | 'STOP_LOSS' | 'TAKE_PROFIT' | 'STOP_LIMIT' | 'TRAILING_STOP')}
                         className={`py-2 rounded-md text-xs font-bold transition-all 
                           ${orderType === tab.id 
                             ? 'bg-[#222f49] text-[#0d59f2] border border-[#0d59f2]' 
@@ -451,7 +406,7 @@ export default function Market() {
                 ))}
               </div>
 
-              <form onSubmit={handleOrder} className="flex flex-col gap-3">
+              <div className="flex flex-col gap-3">
                 
                 {/* Order-specific Inputs */}
                 <OrderInputs
@@ -478,59 +433,52 @@ export default function Market() {
                     </div>
                 )}
 
-                {/* Amount Input */}
-                <div>
-                  <label className="text-xs font-bold text-[#90a4cb] uppercase">Amount ({symbol})</label>
-                  {currentHolding && (
-                    <div className="flex justify-between text-xs mb-1">
-                        <span className="text-[#90a4cb]">
-                            Holding: <span className="font-mono text-white">{Number(currentHolding.quantity).toLocaleString(undefined, { maximumFractionDigits: 4 })}</span>
-                        </span>
-                        {holdingPnL !== null && (
-                            <span className={`font-mono font-bold ${holdingPnL >= 0 ? 'text-profit' : 'text-loss'}`}>
-                                {holdingPnL >= 0 ? '+' : ''}{holdingPnL.toFixed(2)}%
-                            </span>
-                        )}
-                    </div>
-                  )}
-                  <input 
-                    type="number" 
-                    step="0.0001"
-                    className="w-full mt-1 bg-[#182234] border border-[#314368] rounded-lg px-3 py-2 text-white font-mono focus:border-[#0d59f2] focus:ring-1 focus:ring-[#0d59f2] outline-none transition-all"
-                    placeholder="0.00"
-                    value={amount}
-                    onChange={(e) => handleAmountChange(e.target.value)}
-                  />
-                </div>
-
-                {/* Total Input */}
-                <div>
-                  <label className="text-xs font-bold text-[#90a4cb] uppercase">Total ({currency})</label>
-                  <input 
-                    type="number" 
-                    className="w-full mt-1 bg-[#182234] border border-[#314368] rounded-lg px-3 py-2 text-white font-mono focus:border-[#0d59f2] focus:ring-1 focus:ring-[#0d59f2] outline-none transition-all"
-                    placeholder="0"
-                    value={total}
-                    onChange={(e) => handleTotalChange(e.target.value)}
-                  />
-                  {total && (
-                    <div className="mt-1 text-[11px] text-[#90a4cb] flex justify-between">
-                      <span>
-                        {side === 'BUY' ? 'Estimated cost incl. fee' : 'Estimated proceeds after fee'} ({(effectiveFeeRate*100).toFixed(2)}%)
+                {/* Validated amount/total form */}
+                {currentHolding && (
+                  <div className="flex justify-between text-xs mb-1">
+                      <span className="text-[#90a4cb]">
+                          Holding: <span className="font-mono text-white">{Number(currentHolding.quantity).toLocaleString(undefined, { maximumFractionDigits: 4 })}</span>
                       </span>
-                      <span className="font-mono text-white">{feeAdjustedTotal}</span>
-                    </div>
-                  )}
-                </div>
-                
-                <button 
-                  type="submit" 
-                  className={`w-full py-3 rounded-lg font-bold text-white mt-2 transition-all hover:brightness-110 active:scale-95
-                    ${side === 'BUY' ? 'bg-profit' : 'bg-loss'}`}
-                >
-                  {orderType.replace('_', ' ')} {side}
-                </button>
-              </form>
+                      {holdingPnL !== null && (
+                          <span className={`font-mono font-bold ${holdingPnL >= 0 ? 'text-profit' : 'text-loss'}`}>
+                              {holdingPnL >= 0 ? '+' : ''}{holdingPnL.toFixed(2)}%
+                          </span>
+                      )}
+                  </div>
+                )}
+
+                <ValidatedOrderForm
+                  currency={currency}
+                  side={side}
+                  effectivePrice={(orderType === 'MARKET' || orderType === 'STOP_LOSS' || orderType === 'TAKE_PROFIT' || orderType === 'TRAILING_STOP') ? realTimePrice : (typeof price === 'number' ? price : undefined)}
+                  effectiveFeeRate={effectiveFeeRate}
+                  onSubmit={async (quantity) => {
+                    const payload: Record<string, unknown> = {
+                      ticker_id: tickerId,
+                      side,
+                      type: orderType,
+                      quantity,
+                    };
+                    if (orderType === 'LIMIT' || orderType === 'STOP_LIMIT') {
+                      payload.target_price = typeof price === 'number' ? price : 0;
+                    }
+                    if (orderType === 'STOP_LOSS' || orderType === 'TAKE_PROFIT' || orderType === 'STOP_LIMIT') {
+                      payload.stop_price = typeof stopPrice === 'number' ? stopPrice : 0;
+                    }
+                    if (orderType === 'TRAILING_STOP') {
+                      payload.trailing_gap = typeof trailingGap === 'number' ? trailingGap : 0;
+                    }
+                    try {
+                      await api.post('orders', { json: payload });
+                      toast.success('Order Placed Successfully!');
+                      try { window.dispatchEvent(new Event('orders:updated')); } catch { /* ignore */ }
+                    } catch (err) {
+                      console.error('Order execution failed', err);
+                      toast.error('Order Failed');
+                    }
+                  }}
+                />
+              </div>
             </div>
 
           </div>
