@@ -24,6 +24,14 @@ export const getCurrencyDigits = (code?: string) => {
   return CURRENCY_DIGITS[code.toUpperCase()] ?? 2;
 };
 
+// FX helper: USD -> KRW rate from env, fallback 1300
+export function getUsdKrwRate(): number {
+  const raw = (import.meta as any)?.env?.VITE_USD_KRW;
+  const n = Number(raw);
+  if (isFinite(n) && n > 0) return n;
+  return 1300; // sensible default
+}
+
 // Asset quantity digits (per-asset minimum increment). Default to 4 for UI readability.
 const ASSET_QUANTITY_DIGITS: Record<string, number> = {
   BTC: 8,

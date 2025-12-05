@@ -9,6 +9,8 @@ from backend.core.cache import get_redis
 from backend.core.database import get_db
 from backend.core.deps import get_current_user_by_api_key, get_current_user_any
 from backend.schemas.market import TickerResponse, CurrentPriceResponse, MarketStatusResponse, OrderBookResponse, MoverResponse
+from backend.schemas.market_fx import FxRateResponse
+from backend.services.market_service import get_fx_rate
 from backend.schemas.candle import CandleResponse
 from backend.services.market_service import (
     get_all_market_status,
@@ -141,3 +143,16 @@ async def get_trending_endpoint(
     현재 거래가 가장 활발한(거래대금 급증) 종목을 조회합니다.
     """
     return await get_trending_tickers(db, limit)
+
+@router.get("/fx", response_model=FxRateResponse, dependencies=[Depends(get_rate_limiter("/market/status"))])
+async def get_fx_endpoint(
+    base: str = Query("USD", min_length=3, max_length=3),
+    quote: str = Query("KRW", min_length=3, max_length=3),
+    redis_client: async_redis.Redis = Depends(get_redis)
+):
+    """
+    외부 무료 환율 소스(exchangerate.host 등)를 사용해 최신 환율을 조회합니다.
+    일정 시간(예: 10분) 캐시하여 호출량을 줄입니다.
+    """
+    rate = await get_fx_rate(redis_client, base.upper(), quote.upper())
+    return FxRateResponse(base=base.upper(), quote=quote.upper(), rate=rate)

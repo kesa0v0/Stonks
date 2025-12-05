@@ -158,7 +158,7 @@ export default function Portfolio() {
         ) : (
               <StatCard 
                 title="Total Asset Value" 
-                value={`KRW ${formatCurrencyDisplay(Number(portfolio.total_asset_value), 'KRW', 'ROUND_DOWN')}`} 
+                value={`${formatCurrencyDisplay(Number(portfolio.total_asset_value), 'KRW', 'ROUND_DOWN')} KRW`} 
                 trend={portfolio.total_asset_change_percent ? `${Number(portfolio.total_asset_change_percent) >= 0 ? '+' : ''}${toFixedString(Number(portfolio.total_asset_change_percent), 2, REPORT_ROUNDING)}% (Today)` : undefined}
                 trendPositive={Number(portfolio.total_asset_change_percent || 0) >= 0}
               />
@@ -166,7 +166,7 @@ export default function Portfolio() {
         {isLoading ? (
           <SkeletonCard />
         ) : (
-          <StatCard title="Available Cash" value={`KRW ${formatCurrencyDisplay(Number(portfolio.cash_balance), 'KRW', 'ROUND_DOWN')}`} />
+          <StatCard title="Available Cash" value={`${formatCurrencyDisplay(Number(portfolio.cash_balance), 'KRW', 'ROUND_DOWN')} KRW`} />
         )}
         {isLoading ? (
           <SkeletonCard />
@@ -194,7 +194,7 @@ export default function Portfolio() {
                 </svg>
                 <div className="absolute flex flex-col items-center justify-center">
                   <p className="text-[#90a4cb] text-sm">Total Assets</p>
-                  <p className="text-white text-xl font-bold">KRW {formatCurrencyDisplay(totalGrossAssets, 'KRW', 'ROUND_DOWN')}</p>
+                  <p className="text-white text-xl font-bold">{formatCurrencyDisplay(totalGrossAssets, 'KRW', 'ROUND_DOWN')} KRW</p>
                 </div>
               </>
             )}

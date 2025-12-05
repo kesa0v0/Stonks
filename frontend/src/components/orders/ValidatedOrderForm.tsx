@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import Decimal from 'decimal.js';
 import { getCurrencyDigits, toFixedString, formatCurrencyDisplay, getAssetQuantityDigits } from '../../utils/numfmt';
+import { useUsdKrwRate } from '../../hooks/useFx';
 
 type Side = 'BUY' | 'SELL';
 
@@ -53,6 +54,7 @@ function ValidatedOrderForm({
     resolver: zodResolver(Schema),
     defaultValues: { quantity: '' },
   });
+  const usdKrw = useUsdKrwRate();
 
   const qtyStr = useWatch({ control, name: 'quantity' }) || '';
   const priceDec = (typeof effectivePrice === 'number' && isFinite(effectivePrice) && effectivePrice > 0)
@@ -67,12 +69,12 @@ function ValidatedOrderForm({
   const total = qtyDec.gt(0) && priceDec.gt(0) ? toFixedString(priceDec.mul(qtyDec), currencyDigits, 'ROUND_DOWN') : '';
   const qtyDigits = useMemo(() => getAssetQuantityDigits(amountUnitLabel), [amountUnitLabel]);
 
-  const feeAdjustedTotal = useMemo(() => {
+  const feeAdjustedTotalDec = useMemo(() => {
     const base = d(total);
-    if (base.isZero()) return '';
+    if (base.isZero()) return new Decimal(0);
     const fee = base.mul(effectiveFeeRate);
     const adjusted = side === 'BUY' ? base.add(fee) : base.sub(fee);
-    return toFixedString(adjusted, currencyDigits, 'ROUND_DOWN');
+    return adjusted;
   }, [total, effectiveFeeRate, side]);
 
   // display formatting is centralized in numfmt util
@@ -128,13 +130,25 @@ function ValidatedOrderForm({
           <div className="mt-2 bg-[#182234]/60 border border-[#314368] rounded-lg px-3 py-2">
             <div className="flex justify-between text-[11px] text-[#90a4cb]">
               <span>
-                {side === 'BUY' ? 'Estimated cost incl. fee' : 'Estimated proceeds after fee'} ({(effectiveFeeRate*100).toFixed(2)}%)
+                {side === 'BUY' ? '예상 결제 금액(수수료 포함)' : '예상 수령 금액(수수료 반영)'} ({(effectiveFeeRate*100).toFixed(2)}%)
               </span>
-              <span>{currency}</span>
+              <span>KRW 기준</span>
             </div>
             <div className="mt-1 text-right font-mono text-xl font-bold text-white">
-              {feeAdjustedTotal ? formatCurrencyDisplay(feeAdjustedTotal, currency, 'ROUND_DOWN') : ''}
+              {(() => {
+                if (feeAdjustedTotalDec.lte(0)) return '';
+                if (currency === 'USD') {
+                  const krw = feeAdjustedTotalDec.mul(usdKrw);
+                  return `${formatCurrencyDisplay(krw.toNumber(), 'KRW', 'ROUND_DOWN')} KRW`;
+                }
+                return `${formatCurrencyDisplay(feeAdjustedTotalDec.toNumber(), 'KRW', 'ROUND_DOWN')} KRW`;
+              })()}
             </div>
+            {currency === 'USD' && feeAdjustedTotalDec.gt(0) && (
+              <div className="text-right text-[11px] text-[#90a4cb] mt-1">
+                (단가 {formatCurrencyDisplay(priceDec.toNumber(), 'USD', 'ROUND_DOWN')} USD)
+              </div>
+            )}
           </div>
         )}
       </div>

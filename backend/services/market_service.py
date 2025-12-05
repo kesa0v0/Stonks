@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, desc, asc
 from sqlalchemy.orm import aliased
 import redis.asyncio as async_redis
+import aiohttp
 
 from backend.models import Ticker, Candle, Order
 from backend.core.enums import OrderStatus, OrderType, OrderSide
@@ -495,3 +496,43 @@ async def get_trending_tickers(db: AsyncSession, limit: int) -> List[MoverRespon
             value=str(d_value) if d_value is not None else '0'
         ))
     return trends
+
+# --- FX rate ---
+FX_CACHE_PREFIX = "fx:rate:"
+FX_TTL_SECONDS = 600
+
+async def get_fx_rate(redis_client: async_redis.Redis, base: str, quote: str) -> float:
+    """Fetch FX rate from free source with Redis cache fallback.
+    Uses exchangerate.host latest endpoint.
+    """
+    key = f"{FX_CACHE_PREFIX}{base}:{quote}"
+    # Try cache
+    try:
+        cached = await redis_client.get(key)
+        if cached:
+            return float(cached)
+    except Exception:
+        pass
+
+    url = f"https://api.exchangerate.host/latest?base={base}&symbols={quote}"
+    rate: Optional[float] = None
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session:
+            async with session.get(url) as resp:
+                data = await resp.json()
+                if isinstance(data, dict) and "rates" in data and quote in data["rates"]:
+                    r = data["rates"][quote]
+                    if isinstance(r, (int, float)):
+                        rate = float(r)
+    except Exception:
+        rate = None
+
+    if rate is None or not (rate > 0):
+        rate = 1300.0
+
+    try:
+        await redis_client.set(key, str(rate), ex=FX_TTL_SECONDS)
+    except Exception:
+        pass
+
+    return rate

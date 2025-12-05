@@ -32,6 +32,7 @@ API_RATE_LIMITS = {
     "/market/orderbook/{ticker_id}": {"times": 150, "seconds": 5},
     "/market/price/{ticker_id}": {"times": 150, "seconds": 5},
     "/market/price-any/{ticker_id}": {"times": 150, "seconds": 5},
+    "/market/fx": {"times": 60, "seconds": 60},
 
     # 랭킹
     "/rankings/seasons": {"times": 50, "seconds": 10},

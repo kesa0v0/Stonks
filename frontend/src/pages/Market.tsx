@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import api from '../api/client';
 import { toFixedString, REPORT_ROUNDING, formatCurrencyDisplay, getAssetQuantityDigits } from '../utils/numfmt';
+import { useUsdKrwRate } from '../hooks/useFx';
 import DashboardLayout from '../components/DashboardLayout';
 import { CandleChart } from '../components/CandleChart';
 import OpenOrders from '../components/OpenOrders';
@@ -60,6 +61,7 @@ const d = (v: Decimal.Value | undefined | null) => {
 // mulToString/divToString are handled inside ValidatedOrderForm now
 
 export default function Market() {
+    const usdKrw = useUsdKrwRate();
   const { tickerId: routeTickerId } = useParams<{ tickerId: string }>();
   const tickerId = routeTickerId ?? 'CRYPTO-COIN-ETH';
   
@@ -345,15 +347,18 @@ export default function Market() {
 
                 {/* Market Price Display (for Market-like orders) */}
                 {(orderType === 'MARKET' || orderType === 'STOP_LOSS' || orderType === 'TAKE_PROFIT' || orderType === 'TRAILING_STOP') && (
-                     <div>
-                        <label className="text-xs font-bold text-[#90a4cb] uppercase flex justify-between">
-                            <span>Price ({currency})</span>
-                            <span className="text-[#0d59f2] text-[10px]">Market Price</span>
-                        </label>
-                        <div className="w-full mt-1 bg-[#182234]/50 border border-[#314368] rounded-lg px-3 py-2 text-white/70 font-mono cursor-default">
-                            {realTimePrice ? realTimePrice.toLocaleString() : '-'}
-                        </div>
+                  <div>
+                    <label className="text-xs font-bold text-[#90a4cb] uppercase flex justify-between">
+                      <span>Unit Price</span>
+                      <span className="text-[#0d59f2] text-[10px]">Market Price</span>
+                    </label>
+                    <div className="w-full mt-1 bg-[#182234]/50 border border-[#314368] rounded-lg px-3 py-2 text-white/80 font-mono cursor-default flex justify-between">
+                      <span>{realTimePrice ? formatCurrencyDisplay(realTimePrice, currency, 'ROUND_DOWN') : '-' } {currency}</span>
+                      {currency === 'USD' && realTimePrice ? (
+                        <span className="text-white/60 text-xs">≈ {formatCurrencyDisplay(realTimePrice * usdKrw, 'KRW', 'ROUND_DOWN')} KRW</span>
+                      ) : null}
                     </div>
+                  </div>
                 )}
 
                 {/* Validated amount/total form */}
@@ -405,8 +410,14 @@ export default function Market() {
                         const fee = notional.mul(effectiveFeeRate);
                         const total = notional.add(fee);
                         const unitStr = formatCurrencyDisplay(unit, currency, 'ROUND_DOWN');
-                        const totalStr = formatCurrencyDisplay(total.toNumber(), currency, 'ROUND_DOWN');
-                        toast.success(`${side} ${qtyStr} ${symbol} @ ${unitStr} • Est. total ${totalStr}`);
+                        if (currency === 'USD') {
+                          const krwTotal = total.mul(usdKrw);
+                          const totalStrKRW = formatCurrencyDisplay(krwTotal.toNumber(), 'KRW', 'ROUND_DOWN');
+                          toast.success(`${side} ${qtyStr} ${symbol} @ ${unitStr} • 예상 결제 ${totalStrKRW} KRW`);
+                        } else {
+                          const totalStr = formatCurrencyDisplay(total.toNumber(), currency, 'ROUND_DOWN');
+                          toast.success(`${side} ${qtyStr} ${symbol} @ ${unitStr} • Est. total ${totalStr} ${currency}`);
+                        }
                       } else {
                         toast.success(`${side} ${qtyStr} ${symbol} • Order placed`);
                       }

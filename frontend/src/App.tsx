@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'react-hot-toast';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Dashboard from './pages/Dashboard';
 import Leaderboards from './pages/Leaderboards';
 import Portfolio from './pages/Portfolio';
@@ -22,8 +22,9 @@ export default function App() {
       <Toaster position="top-right" />
       <BrowserRouter>
         <AuthBridge />
-        <PriceStreamBridge />
-        <Routes>
+        <AuthGate>
+          <PriceStreamBridge />
+          <Routes>
           {/* Auth */}
           <Route path="/login" element={<Login />} />
           <Route path="/auth/discord/callback" element={<OAuthCallback />} />
@@ -40,7 +41,8 @@ export default function App() {
           {/* Default & Fallback */}
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
+          </Routes>
+        </AuthGate>
       </BrowserRouter>
     </QueryClientProvider>
   );
@@ -52,12 +54,34 @@ function AuthBridge() {
   useEffect(() => {
     // Register a redirect handler for 401s from api client
     setOnUnauthorized(() => navigate('/login', { replace: true }));
-    
-    // Proactively refresh token on mount
-    initializeAuth().catch(console.error);
   }, [navigate]);
 
   return null;
+}
+
+function AuthGate({ children }: { children: React.ReactNode }) {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    initializeAuth()
+      .catch(() => {/* ignore: unauthenticated will be handled by routes */})
+      .finally(() => { if (mounted) setReady(true); });
+    return () => { mounted = false; };
+  }, []);
+
+  if (!ready) {
+    return (
+      <div className="w-full h-screen flex items-center justify-center bg-[#101623]">
+        <div className="flex flex-col items-center gap-3 text-[#90a4cb]">
+          <div className="size-8 border-2 border-[#314368] border-t-transparent rounded-full animate-spin" />
+          <span className="text-xs">Initializing session…</span>
+        </div>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
 }
 
 function PriceStreamBridge() {
