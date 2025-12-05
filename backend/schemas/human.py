@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from decimal import Decimal
-from typing import List
+from typing import List, Optional
 from backend.schemas.common import DecimalStr
 from datetime import datetime
 

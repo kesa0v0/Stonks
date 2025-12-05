@@ -316,7 +316,7 @@ export default function HumanETF() {
             <span className="font-medium text-lg font-bold">Dividend Rate Setting</span>
             <div className="flex items-center gap-2">
                 <span className="font-mono font-bold text-[#00FF41] text-xl">
-                    {profile ? sliderValue.toFixed(0) : '-'}%
+                    {dividendStats ? (parseFloat(dividendStats.current_dividend_rate) * 100).toFixed(0) : '-'}%
                 </span>
                 {profile?.is_bankrupt && <span className="text-xs text-red-500 font-bold border border-red-500 px-2 py-0.5 rounded">Bankrupt Min: 50%</span>}
             </div>
@@ -335,6 +335,9 @@ export default function HumanETF() {
              <div className="flex justify-between text-xs text-[#90a4cb]">
                 <span>{profile?.is_bankrupt ? "50%" : "10%"}</span>
                 <span>100%</span>
+             </div>
+             <div className="text-center text-white font-bold text-sm">
+                Target: {sliderValue}%
              </div>
           </div>
 

@@ -289,7 +289,7 @@ async def process_ipo(db: AsyncSession, user_id: UUID, ipo_in: IpoCreate):
     - 입력받은 수량만큼 발행하여 본인 지갑에 입고
     - 파산자는 배당률 50% 이상 필수
     """
-    # 1. 유저 정보 조회
+    # 2. 유저 정보 조회
     user_result = await db.execute(select(User).where(User.id == user_id))
     user = user_result.scalars().first()
     
@@ -300,6 +300,23 @@ async def process_ipo(db: AsyncSession, user_id: UUID, ipo_in: IpoCreate):
     else:
         if ipo_in.dividend_rate < constants.HUMAN_DIVIDEND_RATE_NORMAL_MIN:
             raise InvalidDividendRateError()
+
+    # 상장 수수료 차감 (재상장은 무료라고 가정하거나, 정책에 따라 다름. 여기선 신규/재상장 모두 부과)
+    # 만약 재상장은 무료로 하려면 if not ticker_exists 조건 안에서만 수행.
+    # 현재 정책: "일반 유저는 상장비 1,000만 원 필요" -> 항상 부과 (혹은 파산자는 면제? 아니, 파산자는 IPO 못함. Bailout 해야함. 아, 재상장은 파산 풀리고 하는거니까 돈 내야지)
+    
+    wallet_stmt = select(Wallet).where(Wallet.user_id == user_id).with_for_update()
+    wallet_res = await db.execute(wallet_stmt)
+    wallet = wallet_res.scalars().first()
+    
+    if not wallet:
+        raise HTTPException(status_code=400, detail="Wallet not found")
+        
+    fee_amount = Decimal(constants.HUMAN_IPO_FEE)
+    if wallet.balance < fee_amount:
+        raise HTTPException(status_code=400, detail=f"Insufficient funds for IPO fee ({fee_amount:,.0f} KRW required)")
+        
+    add_balance(wallet, -fee_amount, "IPO_FEE")
 
     # 배당률 업데이트
     user.dividend_rate = Decimal(str(ipo_in.dividend_rate))
