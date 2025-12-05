@@ -6,7 +6,7 @@ import Skeleton from '../components/Skeleton';
 import { CandleChart } from '../components/CandleChart';
 import { toFixedString, REPORT_ROUNDING, formatWithThousands } from '../utils/numfmt';
 
-type MeProfile = { id: string; nickname: string; is_active: boolean; is_bankrupt?: boolean }; // Added ID
+type MeProfile = { id: string; nickname: string; is_active: boolean; is_bankrupt?: boolean; is_listed?: boolean }; // Added is_listed
 type SimpleMessage = { message?: string };
 
 type Shareholder = {
@@ -47,22 +47,19 @@ export default function HumanETF() {
   useEffect(() => {
     const checkStatus = async () => {
       try {
-        const [meData, corpData] = await Promise.all([
-            api.get('auth/login/me').json<MeProfile>(),
-            api.get('human/corporate_value').json<HumanCorporateValueResponse>()
-        ]);
+        // Fetch profile first to check is_listed status
+        const meData = await api.get('auth/login/me').json<MeProfile>();
         setProfile(meData);
-        // If corporate_value has a current_price (meaning ticker exists and is active), user is listed.
-        // Actually, backend returns empty HumanCorporateValueResponse if ticker inactive/missing.
-        // Let's check if current_price is set.
-        if (corpData && corpData.current_price) {
+        
+        if (meData.is_listed) {
             setIsListed(true);
+            // Then fetch corporate value if listed
+            // api.get('human/corporate_value').json()... (handled in ListedDashboard)
         } else {
             setIsListed(false);
         }
       } catch (err) {
         console.error(err);
-        // Fallback: assume not listed if error occurs (e.g. 404)
         setIsListed(false); 
       }
     };
@@ -87,7 +84,7 @@ export default function HumanETF() {
   return (
     <DashboardLayout>
         {isListed ? (
-            <ListedDashboard profile={profile} />
+            <ListedDashboard profile={profile} setProfile={setProfile} />
         ) : (
             <NotListedView profile={profile} onSuccess={handleIpoSuccess} />
         )}
@@ -101,33 +98,30 @@ function NotListedView({ profile, onSuccess }: { profile: MeProfile | null, onSu
     const [isLoading, setIsLoading] = useState(false);
 
     const handleIpo = async () => {
-        if (!confirm(`Are you sure you want to IPO? 
-
-Listing Fee: 10,000,000 KRW will be deducted.`)) return;
+        if (!confirm(`Are you sure you want to IPO? \n\nListing Fee: 10,000,000 KRW will be deducted.\nInitial Dividend Rate: ${dividendRate}%`)) return;
         
         setIsLoading(true);
         try {
             await api.post('human/ipo', {
                 json: {
                     quantity: parseFloat(quantity),
-                    dividend_rate: dividendRate / 100,
-                    initial_price: 100 // Default initial price
+                    dividend_rate: dividendRate / 100
                 }
             });
             toast.success("IPO Successful! You are now listed.");
             onSuccess();
         } catch (err: any) {
             console.error("IPO Failed", err);
-            // Try to extract error message from API response if possible
+            // The global error handler in api/client might be showing a toast as well.
+            // But here we want to show a specific message if possible.
+            // Let's assume if we handle it here, we might duplicate.
+            // However, the issue is likely the double handling within this catch block or upstream.
+            // Let's simplify this catch block.
             if (err.response) {
-                try {
-                    const errorData = await err.response.json();
-                    toast.error(`IPO Failed: ${errorData.detail || 'Unknown error'}`);
-                } catch {
-                    toast.error("IPO Failed");
-                }
+                 const errorData = await err.response.json().catch(() => ({}));
+                 toast.error(`IPO Failed: ${errorData.detail || 'Unknown error'}`);
             } else {
-                toast.error("IPO Failed");
+                 toast.error("IPO Failed");
             }
         } finally {
             setIsLoading(false);
@@ -162,7 +156,7 @@ Listing Fee: 10,000,000 KRW will be deducted.`)) return;
                     </div>
 
                     <div>
-                        <label className="text-[#90a4cb] text-sm block mb-1">Dividend Rate: <span className="text-white font-bold">{dividendRate}%</span></label>
+                        <label className="text-[#90a4cb] text-sm block mb-1">Initial Dividend Rate: <span className="text-white font-bold">{dividendRate}%</span></label>
                         <input 
                             type="range" 
                             min="10" max="100" step="1"
@@ -170,7 +164,7 @@ Listing Fee: 10,000,000 KRW will be deducted.`)) return;
                             onChange={e => setDividendRate(parseInt(e.target.value))}
                             className="w-full h-2 bg-[#222f49] rounded-lg appearance-none cursor-pointer accent-[#0d59f2]"
                         />
-                        <p className="text-xs text-[#90a4cb] mt-1">Percentage of your future PnL distributed to shareholders.</p>
+                        <p className="text-xs text-[#90a4cb] mt-1">Percentage of your future PnL distributed to shareholders (Min 10%).</p>
                     </div>
 
                     <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
@@ -193,7 +187,7 @@ Listing Fee: 10,000,000 KRW will be deducted.`)) return;
     );
 }
 
-function ListedDashboard({ profile }: { profile: MeProfile | null }) {
+function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, setProfile: React.Dispatch<React.SetStateAction<MeProfile | null>> }) {
   const [shareholdersData, setShareholdersData] = useState<ShareholderResponse | null>(null);
   const [dividendStats, setDividendStats] = useState<IssuerDividendStats | null>(null);
   const [dividendHistory, setDividendHistory] = useState<DividendPaymentEntry[] | null>(null);
@@ -348,7 +342,7 @@ function ListedDashboard({ profile }: { profile: MeProfile | null }) {
                     <div className="h-64 w-full bg-[#101623] rounded-lg overflow-hidden border border-[#314368]/30 relative">
                         <CandleChart 
                             tickerId={myHumanTickerId} 
-                            range="1D"
+                            range="1D" 
                             chartType="area" // Area chart for simpler representation
                             currencyCode="KRW" // Assuming Human ETFs are KRW denominated
                         />
@@ -375,19 +369,19 @@ function ListedDashboard({ profile }: { profile: MeProfile | null }) {
                         <div className="flex flex-col gap-1">
                             <p className="text-[#90a4cb] text-sm">Current Price</p>
                             <p className="text-white text-2xl font-bold">
-                                {corporateValueData?.current_price ? formatWithThousands(toFixedString(parseFloat(corporateValueData.current_price), 0, REPORT_ROUNDING)) : '-'}
+                                {corporateValueData?.current_price ? formatWithThousands(toFixedString(parseFloat(corporateValueData.current_price), 0, REPORT_ROUNDING)) : '-'} KRW
                             </p>
                         </div>
                         <div className="flex flex-col gap-1">
                             <p className="text-[#90a4cb] text-sm">Market Cap</p>
                             <p className="text-white text-2xl font-bold">
-                                {corporateValueData?.market_cap ? formatWithThousands(toFixedString(parseFloat(corporateValueData.market_cap), 0, REPORT_ROUNDING)) : '-'}
+                                {corporateValueData?.market_cap ? formatWithThousands(toFixedString(parseFloat(corporateValueData.market_cap), 0, REPORT_ROUNDING)) : '-'} KRW
                             </p>
                         </div>
                         <div className="flex flex-col gap-1">
                             <p className="text-[#90a4cb] text-sm">P/E Ratio (Season)</p>
                             <p className="text-white text-2xl font-bold">
-                                {corporateValueData?.per ? toFixedString(parseFloat(corporateValueData.per), 2, REPORT_ROUNDING) : '-'}
+                                {corporateValueData?.per ? toFixedString(parseFloat(corporateValueData.per), 2, REPORT_ROUNDING) : '-'}x
                             </p>
                         </div>
                     </>

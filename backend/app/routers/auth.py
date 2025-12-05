@@ -3,10 +3,11 @@ from fastapi import APIRouter, Depends
 from backend.core.rate_limit_config import get_rate_limiter
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select # Added select
 import redis.asyncio as async_redis
 
 from backend.core.database import get_db
-from backend.models import User
+from backend.models import User, Ticker # Added Ticker
 from backend.schemas.token import Token, RefreshTokenRequest, LogoutRequest, DiscordExchangeRequest
 from backend.schemas.user import UserResponse
 from backend.core.cache import get_redis
@@ -19,12 +20,24 @@ router = APIRouter(tags=["authentication"])
 
 @router.get("/login/me", response_model=UserResponse, dependencies=[Depends(get_rate_limiter("/login/me"))])
 async def read_current_user_me(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db) # Need db to query Ticker
 ):
     """
     Get current authenticated user's information.
     """
-    return current_user
+    # Check if user has an active Human ETF ticker
+    ticker_id = f"HUMAN-{current_user.id}"
+    stmt = select(Ticker).where(Ticker.id == ticker_id, Ticker.is_active == True)
+    result = await db.execute(stmt)
+    ticker = result.scalars().first()
+    
+    # Populate is_listed dynamically
+    # We create a copy or dictionary to return, as User model doesn't have is_listed field
+    user_data = UserResponse.model_validate(current_user)
+    user_data.is_listed = bool(ticker)
+    
+    return user_data
 
 @router.post("/login/access-token", response_model=Token, dependencies=[Depends(get_rate_limiter("/login/access-token"))])
 async def login_access_token(

@@ -21,6 +21,7 @@ class UserResponse(BaseModel):
     badges: List[Dict[str, Any]]
     is_bankrupt: Optional[bool] = False
     dividend_rate: Optional[DecimalStr] = "0.5"
+    is_listed: Optional[bool] = False
     
     model_config = ConfigDict(from_attributes=True)
 

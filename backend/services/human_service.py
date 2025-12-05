@@ -88,13 +88,16 @@ async def update_dividend_rate(db: AsyncSession, user_id: UUID, rate_in: UpdateD
         
     new_rate = rate_in.dividend_rate
     
-    # 배당률 체크
+    # 배당률 체크 (비파산자는 10% 이상 허용, 파산자는 50% 이상) — 경계값 포함
+    min_bankrupt = Decimal(str(constants.HUMAN_DIVIDEND_RATE_MIN))
+    min_normal = Decimal(str(constants.HUMAN_DIVIDEND_RATE_NORMAL_MIN))
+
     if user.is_bankrupt:
-        if new_rate < constants.HUMAN_DIVIDEND_RATE_MIN:
-            raise InvalidDividendRateError()
+        if new_rate < min_bankrupt:
+            raise InvalidDividendRateError("Bankrupt users must set dividend rate to at least 50%.")
     else:
-        if new_rate < constants.HUMAN_DIVIDEND_RATE_NORMAL_MIN:
-            raise InvalidDividendRateError()
+        if new_rate < min_normal:
+            raise InvalidDividendRateError("Dividend rate must be at least 10% for non-bankrupt users.")
         
     user.dividend_rate = new_rate
     await db.commit()
@@ -294,12 +297,17 @@ async def process_ipo(db: AsyncSession, user_id: UUID, ipo_in: IpoCreate):
     user = user_result.scalars().first()
     
     # 배당률 체크
-    if user.is_bankrupt:
-        if ipo_in.dividend_rate < constants.HUMAN_DIVIDEND_RATE_MIN:
-            raise InvalidDividendRateError()
+    is_bankrupt = user.is_bankrupt if user.is_bankrupt is not None else False
+    
+    min_bankrupt = Decimal(str(constants.HUMAN_DIVIDEND_RATE_MIN))
+    min_normal = Decimal(str(constants.HUMAN_DIVIDEND_RATE_NORMAL_MIN))
+
+    if is_bankrupt:
+        if ipo_in.dividend_rate < min_bankrupt:
+            raise InvalidDividendRateError("Bankrupt users must set dividend rate to at least 50%.")
     else:
-        if ipo_in.dividend_rate < constants.HUMAN_DIVIDEND_RATE_NORMAL_MIN:
-            raise InvalidDividendRateError()
+        if ipo_in.dividend_rate < min_normal:
+            raise InvalidDividendRateError("Dividend rate must be at least 10% for non-bankrupt users.")
 
     # 상장 수수료 차감 (재상장은 무료라고 가정하거나, 정책에 따라 다름. 여기선 신규/재상장 모두 부과)
     # 만약 재상장은 무료로 하려면 if not ticker_exists 조건 안에서만 수행.

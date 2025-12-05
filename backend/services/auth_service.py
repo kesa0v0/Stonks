@@ -14,7 +14,7 @@ import httpx
 from backend.core import security, constants
 from backend.core.config import settings
 from backend.core.exceptions import InvalidCredentialsError, UserInactiveError, UserNotFoundError
-from backend.models import User
+from backend.models import User, Ticker, MarketType # Added Ticker, MarketType
 from backend.schemas.token import RefreshTokenRequest, LogoutRequest, Token
 
 from backend.repository.user import user_repo
