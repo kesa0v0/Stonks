@@ -6,6 +6,7 @@ from .api_key import ApiKey
 from .candle import Candle
 from .ranking import UserPersona
 from .dividend import DividendHistory
+from .vote import VoteProposal, Vote, VoteProposalStatus, VoteProposalType
 from .season import Season
 from .wallet_transaction_history import WalletTransactionHistory
 from .order_status_history import OrderStatusHistory
@@ -25,6 +26,7 @@ __all__ = [
     "Candle",
     "UserPersona",
     "DividendHistory",
+    "VoteProposal", "Vote", "VoteProposalStatus", "VoteProposalType",
     "Season",
     "WalletTransactionHistory",
     "OrderStatusHistory",

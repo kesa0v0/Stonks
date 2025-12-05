@@ -22,6 +22,7 @@ from backend.core.exceptions import (
 )
 from backend.models import Order, Portfolio, Wallet
 from backend.core.enums import OrderType, OrderSide, OrderStatus
+from backend.services.vote_service import get_locked_quantity
 from backend.schemas.order import OrderCreate
 from backend.core.config import settings
 
@@ -57,7 +58,12 @@ async def place_order(
         )
     )
     portfolio_item = portfolio_result.scalars().first()
-    available_qty = portfolio_item.quantity if portfolio_item else Decimal(0) # Ensure Decimal
+
+    locked_qty = await get_locked_quantity(db, user_uuid, order.ticker_id)
+    base_qty = portfolio_item.quantity if portfolio_item else Decimal(0)
+    available_qty = base_qty - locked_qty
+    if available_qty < Decimal(0):
+        available_qty = Decimal(0)
     
     wallet_result = await db.execute(select(Wallet).where(Wallet.user_id == user_uuid))
     wallet = wallet_result.scalars().first()

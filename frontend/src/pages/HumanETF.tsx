@@ -40,6 +40,21 @@ type HumanCorporateValueResponse = {
     per?: string;
 };
 
+type VoteProposalStatus = 'PENDING' | 'PASSED' | 'REJECTED' | 'CANCELLED';
+type VoteProposal = {
+    id: string;
+    ticker_id: string;
+    title: string;
+    description?: string;
+    vote_type: string;
+    target_value?: string;
+    start_at: string;
+    end_at: string;
+    status: VoteProposalStatus;
+    tally: { yes: string; no: string };
+    my_vote?: { proposal_id: string; user_id: string; choice: boolean; quantity: string } | null;
+};
+
 export default function HumanETF() {
   const [profile, setProfile] = useState<MeProfile | null>(null);
   const [isListed, setIsListed] = useState<boolean | null>(null); // null = loading
@@ -110,19 +125,21 @@ function NotListedView({ profile, onSuccess }: { profile: MeProfile | null, onSu
             });
             toast.success("IPO Successful! You are now listed.");
             onSuccess();
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("IPO Failed", err);
             // The global error handler in api/client might be showing a toast as well.
             // But here we want to show a specific message if possible.
             // Let's assume if we handle it here, we might duplicate.
             // However, the issue is likely the double handling within this catch block or upstream.
             // Let's simplify this catch block.
-            if (err.response) {
-                 const errorData = await err.response.json().catch(() => ({}));
-                 toast.error(`IPO Failed: ${errorData.detail || 'Unknown error'}`);
-            } else {
-                 toast.error("IPO Failed");
-            }
+              type ErrWithResponse = { response?: Response };
+              const resp = (err as ErrWithResponse).response;
+              if (resp) {
+                  const errorData = await resp.json().catch(() => ({} as Record<string, string>));
+                  toast.error(`IPO Failed: ${errorData.detail || 'Unknown error'}`);
+              } else {
+                  toast.error("IPO Failed");
+              }
         } finally {
             setIsLoading(false);
         }
@@ -193,11 +210,19 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
   const [dividendHistory, setDividendHistory] = useState<DividendPaymentEntry[] | null>(null);
   const [corporateValueData, setCorporateValueData] = useState<HumanCorporateValueResponse | null>(null);
   const [sliderValue, setSliderValue] = useState<number>(10); // Local state for slider
+    const [proposals, setProposals] = useState<VoteProposal[] | null>(null);
+    const [lockedStake, setLockedStake] = useState<number>(0);
+    const [nowTs, setNowTs] = useState<number>(() => Date.now());
   
   // My Human ETF ticker ID, derived from user ID
   const myHumanTickerId = profile ? `HUMAN-${profile.id}` : undefined;
 
   useEffect(() => {
+        const timer = setInterval(() => setNowTs(Date.now()), 30000);
+        return () => clearInterval(timer);
+    }, []);
+
+    useEffect(() => {
     const fetchShareholders = async () => {
         try {
             const data = await api.get('human/shareholders').json<ShareholderResponse>();
@@ -233,11 +258,33 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
             console.error("Failed to fetch corporate value", err);
         }
     };
+
+    const fetchProposals = async () => {
+        if (!myHumanTickerId) return;
+        try {
+            const listRes = await api.get('votes/proposals', { searchParams: { ticker_id: myHumanTickerId } }).json<{ items: Omit<VoteProposal, 'tally' | 'my_vote'>[] }>();
+            // Fetch details to include tally + my_vote
+            const detailed = await Promise.all(
+                listRes.items.map(async (p) => {
+                    const detail = await api.get(`votes/proposals/${p.id}`).json<VoteProposal>();
+                    return detail;
+                })
+            );
+            setProposals(detailed);
+            const locked = detailed
+                .filter(p => p.status === 'PENDING' && p.my_vote)
+                .reduce((sum, p) => sum + parseFloat(p.my_vote!.quantity), 0);
+            setLockedStake(locked);
+        } catch (err) {
+            console.error('Failed to fetch proposals', err);
+        }
+    };
     
     fetchShareholders();
     fetchDividendStats();
     fetchDividendHistory();
     fetchCorporateValue();
+    fetchProposals();
   }, [myHumanTickerId]);
 
   const handleAction = async (action: 'burn' | 'bailout' | 'bankruptcy') => {
@@ -596,6 +643,117 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
                 Save Rate
              </button>
           </div>
+        </div>
+
+        {/* Shareholder Voting */}
+        <div className="flex flex-col gap-4 p-6 border border-[#314368] bg-[#101623] rounded-xl">
+            <div className="flex justify-between items-center">
+                <div>
+                    <h2 className="text-white text-lg font-bold">Shareholder Voting</h2>
+                    <p className="text-xs text-[#90a4cb]">Stake shares to vote; staked shares are locked until proposal ends.</p>
+                </div>
+                <div className="text-right text-xs text-[#90a4cb]">
+                    <div>My holdings: <span className="text-white font-mono">{formatWithThousands(toFixedString(myQty, 0, REPORT_ROUNDING))}</span></div>
+                    <div>Locked (voting): <span className="text-white font-mono">{formatWithThousands(toFixedString(lockedStake, 0, REPORT_ROUNDING))}</span></div>
+                    <div>Free to stake: <span className="text-white font-mono">{formatWithThousands(toFixedString(Math.max(myQty - lockedStake, 0), 0, REPORT_ROUNDING))}</span></div>
+                </div>
+            </div>
+
+            {!proposals ? (
+                <Skeleton className="h-24 w-full" />
+            ) : proposals.length === 0 ? (
+                <div className="text-[#90a4cb] text-sm">No proposals yet.</div>
+            ) : (
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                        <thead className="bg-[#182234] text-[#90a4cb]">
+                            <tr>
+                                <th className="p-3">Title</th>
+                                <th className="p-3">Status</th>
+                                <th className="p-3">Ends</th>
+                                <th className="p-3 text-right">Yes / No</th>
+                                <th className="p-3 text-right">My Vote</th>
+                                <th className="p-3 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#314368]">
+                            {proposals.map((p) => {
+                                const myVoteQty = p.my_vote ? parseFloat(p.my_vote.quantity) : 0;
+                                const yes = parseFloat(p.tally.yes || '0');
+                                const no = parseFloat(p.tally.no || '0');
+                                const isOpen = p.status === 'PENDING' && new Date(p.end_at).getTime() >= nowTs;
+
+                                const handleVoteClick = async (choice: boolean) => {
+                                    const defaultQty = Math.max(myQty - lockedStake + myVoteQty, 0);
+                                    const input = prompt(`Enter shares to stake (${choice ? 'YES' : 'NO'}). Available: ${defaultQty.toFixed(0)}`, defaultQty.toFixed(0));
+                                    if (!input) return;
+                                    const qty = Number(input);
+                                    if (!Number.isFinite(qty) || qty <= 0) {
+                                        toast.error('Invalid quantity');
+                                        return;
+                                    }
+                                    try {
+                                        await api.post(`votes/proposals/${p.id}/vote`, { json: { choice, quantity: qty } });
+                                        toast.success('Vote submitted');
+                                        // refresh proposals and holdings
+                                        const listRes = await api.get('votes/proposals', { searchParams: { ticker_id: myHumanTickerId } }).json<{ items: Omit<VoteProposal, 'tally' | 'my_vote'>[] }>();
+                                        const detailed = await Promise.all(listRes.items.map(async (ip) => api.get(`votes/proposals/${ip.id}`).json<VoteProposal>()));
+                                        setProposals(detailed);
+                                        const locked = detailed.filter(dp => dp.status === 'PENDING' && dp.my_vote).reduce((sum, dp) => sum + parseFloat(dp.my_vote!.quantity), 0);
+                                        setLockedStake(locked);
+                                        const updatedShareholders = await api.get('human/shareholders').json<ShareholderResponse>();
+                                        setShareholdersData(updatedShareholders);
+                                    } catch (err) {
+                                        console.error('Vote failed', err);
+                                        toast.error('Vote failed');
+                                    }
+                                };
+
+                                const handleUnvote = async () => {
+                                    try {
+                                        await api.post(`votes/proposals/${p.id}/unvote`);
+                                        toast.success('Vote removed');
+                                        const listRes = await api.get('votes/proposals', { searchParams: { ticker_id: myHumanTickerId } }).json<{ items: Omit<VoteProposal, 'tally' | 'my_vote'>[] }>();
+                                        const detailed = await Promise.all(listRes.items.map(async (ip) => api.get(`votes/proposals/${ip.id}`).json<VoteProposal>()));
+                                        setProposals(detailed);
+                                        const locked = detailed.filter(dp => dp.status === 'PENDING' && dp.my_vote).reduce((sum, dp) => sum + parseFloat(dp.my_vote!.quantity), 0);
+                                        setLockedStake(locked);
+                                        const updatedShareholders = await api.get('human/shareholders').json<ShareholderResponse>();
+                                        setShareholdersData(updatedShareholders);
+                                    } catch (err) {
+                                        console.error('Unvote failed', err);
+                                        toast.error('Unvote failed');
+                                    }
+                                };
+
+                                return (
+                                    <tr key={p.id} className="hover:bg-[#182234]">
+                                        <td className="p-3 text-white">
+                                            <div className="font-semibold">{p.title}</div>
+                                            {p.description && <div className="text-xs text-[#90a4cb]">{p.description}</div>}
+                                        </td>
+                                        <td className="p-3 text-xs text-[#90a4cb]">{p.status}</td>
+                                        <td className="p-3 text-xs text-[#90a4cb]">{new Date(p.end_at).toLocaleString()}</td>
+                                        <td className="p-3 text-right text-white font-mono">{formatWithThousands(yes.toFixed(0))} / {formatWithThousands(no.toFixed(0))}</td>
+                                        <td className="p-3 text-right text-white font-mono">{myVoteQty > 0 ? `${myVoteQty.toFixed(0)} (${p.my_vote?.choice ? 'YES' : 'NO'})` : '-'}</td>
+                                        <td className="p-3 text-right">
+                                            {isOpen ? (
+                                                <div className="flex gap-2 justify-end">
+                                                    <button onClick={() => handleVoteClick(true)} className="px-3 py-1 text-xs rounded bg-[#0d59f2] text-white hover:bg-[#0b4bcc]">Vote Yes</button>
+                                                    <button onClick={() => handleVoteClick(false)} className="px-3 py-1 text-xs rounded bg-[#ef4444] text-white hover:bg-[#dc2626]">Vote No</button>
+                                                    {myVoteQty > 0 && <button onClick={handleUnvote} className="px-3 py-1 text-xs rounded border border-[#314368] text-[#90a4cb] hover:bg-[#182234]">Unvote</button>}
+                                                </div>
+                                            ) : (
+                                                <span className="text-xs text-[#90a4cb]">Closed</span>
+                                            )}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            )}
         </div>
 
         {/* Action Grid */}
