@@ -15,20 +15,18 @@ const d = (v: Decimal.Value | undefined | null) => {
   }
 };
 
-const mulToString = (a: Decimal.Value, b: Decimal.Value, fractionDigits = 0) => {
-  return d(a).mul(d(b)).toFixed(fractionDigits);
-};
-
-const divToString = (a: Decimal.Value, b: Decimal.Value, fractionDigits = 8) => {
-  const denom = d(b);
-  if (denom.isZero()) return '0';
-  return d(a).div(denom).toFixed(fractionDigits);
-};
-
 const Schema = z.object({
   quantity: z
-    .number({ invalid_type_error: 'Amount must be a number' })
-    .positive({ message: 'Amount must be greater than 0' }),
+    .string()
+    .transform((v) => (v ?? '').trim())
+    .refine((v) => {
+      try {
+        const q = new Decimal(v || '0');
+        return q.gt(0);
+      } catch {
+        return false;
+      }
+    }, { message: 'Amount must be greater than 0' }),
 });
 
 type Form = z.infer<typeof Schema>;
@@ -52,12 +50,19 @@ export default function ValidatedOrderForm({
 }) {
   const { register, handleSubmit, setValue, control, formState: { errors, isSubmitting } } = useForm<Form>({
     resolver: zodResolver(Schema),
-    defaultValues: { quantity: 0 },
+    defaultValues: { quantity: '' },
   });
 
-  const qty = useWatch({ control, name: 'quantity' }) || 0;
-  const price = typeof effectivePrice === 'number' ? effectivePrice : 0;
-  const total = qty > 0 && price > 0 ? mulToString(price, qty, 0) : '';
+  const qtyStr = useWatch({ control, name: 'quantity' }) || '';
+  const priceDec = (typeof effectivePrice === 'number' && isFinite(effectivePrice) && effectivePrice > 0)
+    ? new Decimal(effectivePrice)
+    : new Decimal(0);
+
+  const qtyDec = useMemo(() => {
+    try { return new Decimal((qtyStr as string) || '0'); } catch { return new Decimal(0); }
+  }, [qtyStr]);
+
+  const total = qtyDec.gt(0) && priceDec.gt(0) ? priceDec.mul(qtyDec).toFixed(0) : '';
 
   const feeAdjustedTotal = useMemo(() => {
     const base = d(total);
@@ -67,13 +72,22 @@ export default function ValidatedOrderForm({
     return adjusted.toFixed(0);
   }, [total, effectiveFeeRate, side]);
 
-  const submit = (data: Form) => {
-    onSubmit(data.quantity);
-    setValue('quantity', 0);
+  const formatWithThousands = (s: string) => {
+    if (!s) return s;
+    const [intPart, fracPart] = s.split('.');
+    const withSep = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return fracPart ? `${withSep}.${fracPart}` : withSep;
+  };
+
+  const onSubmitInternal = async (data: Form) => {
+    let q = new Decimal('0');
+    try { q = new Decimal(data.quantity); } catch {}
+    onSubmit(q.toNumber());
+    setValue('quantity', '');
   };
 
   return (
-    <form onSubmit={handleSubmit(submit)} className="flex flex-col gap-3">
+    <form onSubmit={handleSubmit(onSubmitInternal)} className="flex flex-col gap-3">
       {/* Amount */}
       <div>
         <label className="text-xs font-bold text-[#90a4cb] uppercase">Amount{amountUnitLabel ? ` (${amountUnitLabel})` : ''}</label>
@@ -82,7 +96,7 @@ export default function ValidatedOrderForm({
           step="0.0001"
           className={`w-full mt-1 bg-[#182234] rounded-lg px-3 py-2 text-white font-mono focus:border-[#0d59f2] focus:ring-1 focus:ring-[#0d59f2] outline-none transition-all border ${errors.quantity ? 'border-red-500' : 'border-[#314368]'}`}
           placeholder="0.00"
-          {...register('quantity', { valueAsNumber: true })}
+          {...register('quantity')}
         />
         {errors.quantity && (
           <p className="mt-1 text-xs text-red-400">{String(errors.quantity.message)}</p>
@@ -98,12 +112,17 @@ export default function ValidatedOrderForm({
           placeholder="0"
           value={total}
           onChange={(e) => {
-            const val = parseFloat(e.target.value);
-            if (isNaN(val) || price <= 0) {
-              setValue('quantity', 0);
-            } else {
-              const q = parseFloat(divToString(val, price, 8));
-              setValue('quantity', q);
+            const raw = e.target.value;
+            try {
+              const t = new Decimal(raw);
+              if (priceDec.lte(0)) {
+                setValue('quantity', '');
+              } else {
+                const q = t.div(priceDec).toFixed(8);
+                setValue('quantity', q);
+              }
+            } catch {
+              setValue('quantity', '');
             }
           }}
         />
@@ -116,7 +135,7 @@ export default function ValidatedOrderForm({
               <span>{currency}</span>
             </div>
             <div className="mt-1 text-right font-mono text-xl font-bold text-white">
-              {feeAdjustedTotal ? Number(feeAdjustedTotal).toLocaleString() : ''}
+              {feeAdjustedTotal ? formatWithThousands(feeAdjustedTotal) : ''}
             </div>
           </div>
         )}
@@ -124,8 +143,8 @@ export default function ValidatedOrderForm({
 
       <button
         type="submit"
-        disabled={isSubmitting || !price}
-        className={`w-full py-3 rounded-lg font-bold text-white mt-2 transition-all hover:brightness-110 active:scale-95 ${side === 'BUY' ? 'bg-profit' : 'bg-loss'} ${!price ? 'opacity-60 cursor-not-allowed' : ''}`}
+        disabled={isSubmitting || priceDec.lte(0)}
+        className={`w-full py-3 rounded-lg font-bold text-white mt-2 transition-all hover:brightness-110 active:scale-95 ${side === 'BUY' ? 'bg-profit' : 'bg-loss'} ${priceDec.lte(0) ? 'opacity-60 cursor-not-allowed' : ''}`}
       >
         {submitLabel ?? 'Submit'}
       </button>
