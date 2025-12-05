@@ -9,11 +9,11 @@ import type { RankingEntry, HallOfFameResponse } from '../interfaces';
 
 // 탭 정의 (UI 표시 이름 -> API 파라미터 매핑)
 const TABS = [
-  { label: 'Top Gainers (PnL)', type: 'pnl' },
-  { label: 'Rekt Ranking (Loss)', type: 'loss' },
-  { label: 'Short-Term Kings (Vol)', type: 'volume' },
-  { label: 'Efficient Traders (PF)', type: 'profit_factor' },
-  { label: 'Dividend Kings (Paid)', type: 'dividend' },
+  { label: 'Top PnL', type: 'pnl' },
+  { label: 'Top Loss', type: 'loss' },
+  { label: 'Top Volume', type: 'volume' },
+  { label: 'Profit Factor', type: 'profit_factor' },
+  { label: 'Dividends', type: 'dividend' },
 ];
 
 export default function Leaderboard() {
