@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Decimal from 'decimal.js';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -14,6 +14,7 @@ import OrderInputs from '../components/orders/OrderInputs';
 import ValidatedOrderForm from '../components/orders/ValidatedOrderForm';
 import type { OrderBookResponse, TickerResponse, Portfolio } from '../interfaces';
 import { usePrice } from '../store/prices';
+import { useDebounce } from '../utils/debounce';
 
 // Isolated header stats to avoid rerendering the whole page on price updates
 function RealTimeHeaderStats({ tickerId, selectedTicker }: { tickerId: string; selectedTicker?: TickerResponse }) {
@@ -74,11 +75,23 @@ export default function Market() {
 
   const [orderBook, setOrderBook] = useState<OrderBookResponse | null>(null);
 
+  // Debounced function to fetch order book
+  const fetchOrderBookData = useCallback(async () => {
+    try {
+      const data = await api.get(`market/orderbook/${tickerId}`).json<OrderBookResponse>();
+      setOrderBook(data);
+    } catch (err) {
+      console.error("Failed to fetch orderbook", err);
+    }
+  }, [tickerId, setOrderBook]);
+
+  // Debounce the fetch order book data call
+  const debouncedFetchOrderBook = useDebounce(fetchOrderBookData, 200); // 200ms debounce
+
   // WebSocket Listener for Real-time Updates
-  useWebSocket((msg) => {
+  const onWsMessage = useCallback((msg: any) => {
     if (!msg) return;
     try {
-      // Handle both parsed object and string (safeguard)
       const data = typeof msg === 'string' ? JSON.parse(msg) : msg;
 
       // Check if the event relates to current ticker
@@ -89,23 +102,19 @@ export default function Market() {
 
       if (!isRelevant) return;
 
-      // 1. OrderBook Update (Direct or Signal)
-      // If it has bids/asks, it might be a direct update.
-      // If it's a trade event, we should definitely refresh.
+      // Trigger re-fetch of order book on relevant events
       if (
         (data.bids && data.asks) || // Direct orderbook data
         ['order_created', 'trade_executed', 'order_accepted', 'order_updated', 'order_cancelled'].includes(data.type) // Trade events
       ) {
-         // For now, simplest robust strategy: Re-fetch latest state from API
-         // This handles both "new order placed" and "trade executed" scenarios
-         api.get(`market/orderbook/${tickerId}`).json<OrderBookResponse>()
-            .then(setOrderBook)
-            .catch(e => console.error("WS Refresh Error", e));
+         debouncedFetchOrderBook();
       }
     } catch (e) {
       console.error("WS Message Error", e);
     }
-  });
+  }, [tickerId, debouncedFetchOrderBook]); // Dependencies for useCallback
+
+  useWebSocket(onWsMessage);
   
   // Form States
   const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT' | 'STOP_LOSS' | 'TAKE_PROFIT' | 'STOP_LIMIT' | 'TRAILING_STOP'>('MARKET');
