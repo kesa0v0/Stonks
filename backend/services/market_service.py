@@ -27,6 +27,9 @@ def get_market_status_by_type(market_type: str, now: datetime) -> MarketState:
     if market_type == "CRYPTO":
         return MarketState.OPEN # 24/7
     
+    if market_type == "HUMAN":
+        return MarketState.OPEN # 24/7 for Human ETFs
+
     if market_type == "KRX":
         # KST 기준
         kst = ZoneInfo("Asia/Seoul")
