@@ -119,8 +119,8 @@ function HoldingRow({ asset, currency }: { asset: Asset; currency?: string }) {
     <tr className="hover:bg-[#182234] transition-colors">
       <td className="px-4 py-3">
         <div className="flex flex-col">
-          <span className="text-white font-bold">{asset.symbol}</span>
-          <span className="text-[#90a4cb] text-xs">{asset.name}</span>
+          <span className="text-white font-bold">{asset.name}</span>
+          <span className="text-[#90a4cb] text-xs">{asset.symbol}</span>
         </div>
       </td>
       <td className="px-4 py-3 text-right text-white font-mono">
