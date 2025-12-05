@@ -11,6 +11,7 @@ from .wallet_transaction_history import WalletTransactionHistory
 from .order_status_history import OrderStatusHistory
 from .portfolio_history import PortfolioHistory
 from .watchlist import Watchlist
+from .guestbook import GuestbookEntry
 from backend.core.database import Base
 
 
@@ -29,4 +30,5 @@ __all__ = [
     "OrderStatusHistory",
     "PortfolioHistory",
     "Watchlist",
+    "GuestbookEntry",
 ]
