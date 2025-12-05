@@ -14,7 +14,7 @@ import OrderInputs from '../components/orders/OrderInputs';
 import ValidatedOrderForm from '../components/orders/ValidatedOrderForm';
 import type { OrderBookResponse, TickerResponse, Portfolio } from '../interfaces';
 import { usePrice } from '../store/prices';
-import { useDebounce } from '../utils/debounce';
+import { useOrderBook } from '../store/orderBook'; // Import useOrderBook
 
 // Isolated header stats to avoid rerendering the whole page on price updates
 function RealTimeHeaderStats({ tickerId, selectedTicker }: { tickerId: string; selectedTicker?: TickerResponse }) {
@@ -46,8 +46,6 @@ function RealTimeHeaderStats({ tickerId, selectedTicker }: { tickerId: string; s
     </>
   );
 }
-import { useWebSocket } from '../hooks/useWebSocket';
-
 // Helpers using Decimal for precise money/quantity calculations
 const d = (v: Decimal.Value | undefined | null) => {
   try {
@@ -73,48 +71,8 @@ export default function Market() {
   const symbol = selectedTicker?.symbol ?? (tickerId.split('-').pop() || tickerId);
   const currency = selectedTicker?.currency ?? 'KRW';
 
-  const [orderBook, setOrderBook] = useState<OrderBookResponse | null>(null);
-
-  // Debounced function to fetch order book
-  const fetchOrderBookData = useCallback(async () => {
-    try {
-      const data = await api.get(`market/orderbook/${tickerId}`).json<OrderBookResponse>();
-      setOrderBook(data);
-    } catch (err) {
-      console.error("Failed to fetch orderbook", err);
-    }
-  }, [tickerId, setOrderBook]);
-
-  // Debounce the fetch order book data call
-  const debouncedFetchOrderBook = useDebounce(fetchOrderBookData, 200); // 200ms debounce
-
-  // WebSocket Listener for Real-time Updates
-  const onWsMessage = useCallback((msg: any) => {
-    if (!msg) return;
-    try {
-      const data = typeof msg === 'string' ? JSON.parse(msg) : msg;
-
-      // Check if the event relates to current ticker
-      const isRelevant = 
-        (data.ticker_id === tickerId) || 
-        (data.code === tickerId) ||
-        (data.ticker?.id === tickerId);
-
-      if (!isRelevant) return;
-
-      // Trigger re-fetch of order book on relevant events
-      if (
-        (data.bids && data.asks) || // Direct orderbook data
-        ['order_created', 'trade_executed', 'order_accepted', 'order_updated', 'order_cancelled'].includes(data.type) // Trade events
-      ) {
-         debouncedFetchOrderBook();
-      }
-    } catch (e) {
-      console.error("WS Message Error", e);
-    }
-  }, [tickerId, debouncedFetchOrderBook]); // Dependencies for useCallback
-
-  useWebSocket(onWsMessage);
+  // Get order book from global store
+  const orderBook = useOrderBook(tickerId);
   
   // Form States
   const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT' | 'STOP_LOSS' | 'TAKE_PROFIT' | 'STOP_LIMIT' | 'TRAILING_STOP'>('MARKET');
@@ -173,19 +131,6 @@ export default function Market() {
     try {
       window.localStorage.setItem('lastMarketTickerId', tickerId);
     } catch { /* ignore persistence errors */ }
-  }, [tickerId]);
-
-  // 초기 데이터 로드 (호가창)
-  useEffect(() => {
-    const fetchOrderBook = async () => {
-      try {
-        const data = await api.get(`market/orderbook/${tickerId}`).json<OrderBookResponse>();
-        setOrderBook(data);
-      } catch (err) {
-        console.error("Failed to fetch orderbook", err);
-      }
-    };
-    fetchOrderBook();
   }, [tickerId]);
 
   // Market Mode: Sync Price & Auto-calculate

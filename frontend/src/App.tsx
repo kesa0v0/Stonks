@@ -12,7 +12,7 @@ import OAuthCallback from './pages/OAuthCallback';
 import RequireAuth from './components/RequireAuth';
 import Logout from './pages/Logout';
 import { setOnUnauthorized, initializeAuth } from './api/client';
-import { usePriceStream } from './hooks/usePrices';
+import { useMarketDataStream } from './hooks/useMarketDataStream';
 
 const queryClient = new QueryClient();
 
@@ -86,6 +86,6 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
 function PriceStreamBridge() {
   // Mount once at app-level to keep WS stream flowing into store
-  usePriceStream(250);
+  useMarketDataStream();
   return null;
 }

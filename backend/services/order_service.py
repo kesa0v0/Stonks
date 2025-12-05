@@ -20,12 +20,13 @@ from backend.core.exceptions import (
     PermissionDeniedError, 
     OrderNotCancellableError
 )
-from backend.models import Order, Portfolio, Wallet
-from backend.core.enums import OrderType, OrderSide, OrderStatus
+from backend.models import Order, Portfolio, Wallet, Ticker # Add Ticker
+from backend.core.enums import OrderType, OrderSide, OrderStatus, MarketType # Add MarketType
 from backend.services.vote_service import get_locked_quantity
 from backend.schemas.order import OrderCreate
 from backend.core.config import settings
 from backend.core.event_hook import publish_event
+from backend.services.market_service import publish_current_orderbook_snapshot # Import the new helper
 
 ORDER_COUNTER = Counter('stonks_orders_created_total', 'Total orders created', ['side', 'type'])
 
@@ -263,6 +264,11 @@ async def place_order(
             "status": str(OrderStatus.PENDING)
         }
         await publish_event(redis, event, channel="trade_events")
+
+        # Human ETF인 경우 호가창 스냅샷 발행
+        ticker_obj = await db.execute(select(Ticker).where(Ticker.id == order.ticker_id)).scalar_one_or_none()
+        if ticker_obj and ticker_obj.market_type == MarketType.HUMAN:
+            await publish_current_orderbook_snapshot(db, redis, order.ticker_id)
         
         msg_map = {
             OrderType.LIMIT: f"Limit order placed at {order.target_price}",
@@ -361,6 +367,11 @@ async def cancel_order_logic(
         "status": str(OrderStatus.CANCELLED)
     }
     await publish_event(redis, event, channel="trade_events")
+
+    # Human ETF인 경우 호가창 스냅샷 발행
+    ticker_obj = await db.execute(select(Ticker).where(Ticker.id == order_obj.ticker_id)).scalar_one_or_none()
+    if ticker_obj and ticker_obj.market_type == MarketType.HUMAN:
+        await publish_current_orderbook_snapshot(db, redis, order_obj.ticker_id)
 
     return {
         "order_id": str(order_id),

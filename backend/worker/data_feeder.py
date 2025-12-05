@@ -232,7 +232,7 @@ async def main():
     scheduler.add_job(
         market_feeder_job,
         'interval',
-        seconds=1,
+        seconds=2, # Increased from 1 to 2 seconds
         id='market_feeder_job',
         max_instances=1,
         coalesce=True,

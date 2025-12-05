@@ -357,6 +357,51 @@ async def get_current_price_info(redis_client: async_redis.Redis, ticker_id: str
         return None
     return float(price_decimal)
 
+async def publish_current_orderbook_snapshot(db: AsyncSession, redis_client: async_redis.Redis, ticker_id: str):
+    """
+    현재 DB에 있는 지정가 미체결 주문을 집계하여 호가창 스냅샷을 구성하고 Redis에 발행합니다.
+    주로 Human ETF의 호가창 업데이트에 사용됩니다.
+    """
+    # 내부 지정가 주문 집계로 호가 구성 (get_orderbook_data의 Fallback 로직 재활용)
+    stmt = (
+        select(
+            Order.side,
+            Order.target_price.label("price"), 
+            func.sum(Order.unfilled_quantity).label("quantity")
+        )
+        .where(
+            Order.ticker_id == ticker_id,
+            Order.status == OrderStatus.PENDING,
+            Order.type == OrderType.LIMIT
+        )
+        .group_by(Order.side, Order.target_price)
+    )
+    
+    result = await db.execute(stmt)
+    rows = result.all()
+    
+    bids = []
+    asks = []
+    
+    for side, price, quantity in rows:
+        p_val = float(price) if price is not None else 0.0
+        q_val = float(quantity) if quantity is not None else 0.0
+        
+        entry = OrderBookEntry(price=str(p_val), quantity=str(q_val)) # Use DecimalStr
+        if side == OrderSide.BUY:
+            bids.append(entry)
+        else:
+            asks.append(entry)
+            
+    # 정렬: 매수(Bids)는 비싼 순(내림차순), 매도(Asks)는 싼 순(오름차순)
+    bids.sort(key=lambda x: float(x.price), reverse=True)
+    asks.sort(key=lambda x: float(x.price))
+    
+    orderbook_snapshot = OrderBookResponse(ticker_id=ticker_id, bids=bids, asks=asks)
+
+    # Redis 발행
+    await redis_client.publish("orderbook_updates", orderbook_snapshot.model_dump_json())
+
 async def get_top_movers(db: AsyncSession, type: str, limit: int) -> List[MoverResponse]:
     """
     등락률 상위(Gainers) 또는 하위(Losers) 종목 조회 (일일 거래량 포함)

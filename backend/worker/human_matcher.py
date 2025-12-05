@@ -9,6 +9,8 @@ from backend.core.enums import OrderStatus, OrderSide, OrderType
 from backend.models import Order, Ticker, MarketType, Candle # Import Candle model
 from backend.services.trade_service import execute_p2p_trade
 from sqlalchemy.dialects.postgresql import insert # Import insert for upsert logic
+from backend.schemas.market import OrderBookResponse, OrderBookEntry # Import orderbook schemas
+from backend.services.market_service import publish_current_orderbook_snapshot # Import shared utility
 
 # Logging setup
 logging.basicConfig(
@@ -170,6 +172,9 @@ async def match_human_orders():
                                 from datetime import datetime, timezone # Import for now()
                                 await update_candle_data(db, ticker_id, Decimal(str(match_price)), Decimal(str(match_qty)), datetime.now(timezone.utc))
                                 
+                                # 매칭 후 호가창 업데이트 발행
+                                await publish_current_orderbook_snapshot(db, redis_client, ticker_id)
+
                                 has_match = True # 매칭 성공했으니 다시 조회하여 추가 체결 시도
                             else:
                                 has_match = False # 실패 시 루프 탈출 (무한 루프 방지)
