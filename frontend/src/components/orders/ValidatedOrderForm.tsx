@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import Decimal from 'decimal.js';
@@ -39,19 +39,23 @@ export default function ValidatedOrderForm({
   effectivePrice,
   effectiveFeeRate,
   onSubmit,
+  amountUnitLabel,
+  submitLabel,
 }: {
   currency: string;
   side: Side;
   effectivePrice: number | undefined;
   effectiveFeeRate: number;
   onSubmit: (quantity: number) => void;
+  amountUnitLabel?: string;
+  submitLabel?: string;
 }) {
-  const { register, handleSubmit, setValue, watch, formState: { errors, isSubmitting } } = useForm<Form>({
+  const { register, handleSubmit, setValue, control, formState: { errors, isSubmitting } } = useForm<Form>({
     resolver: zodResolver(Schema),
     defaultValues: { quantity: 0 },
   });
 
-  const qty = watch('quantity') || 0;
+  const qty = useWatch({ control, name: 'quantity' }) || 0;
   const price = typeof effectivePrice === 'number' ? effectivePrice : 0;
   const total = qty > 0 && price > 0 ? mulToString(price, qty, 0) : '';
 
@@ -72,7 +76,7 @@ export default function ValidatedOrderForm({
     <form onSubmit={handleSubmit(submit)} className="flex flex-col gap-3">
       {/* Amount */}
       <div>
-        <label className="text-xs font-bold text-[#90a4cb] uppercase">Amount</label>
+        <label className="text-xs font-bold text-[#90a4cb] uppercase">Amount{amountUnitLabel ? ` (${amountUnitLabel})` : ''}</label>
         <input
           type="number"
           step="0.0001"
@@ -104,21 +108,26 @@ export default function ValidatedOrderForm({
           }}
         />
         {total && (
-          <div className="mt-1 text-[11px] text-[#90a4cb] flex justify-between">
-            <span>
-              {side === 'BUY' ? 'Estimated cost incl. fee' : 'Estimated proceeds after fee'} ({(effectiveFeeRate*100).toFixed(2)}%)
-            </span>
-            <span className="font-mono text-white">{feeAdjustedTotal}</span>
+          <div className="mt-2 bg-[#182234]/60 border border-[#314368] rounded-lg px-3 py-2">
+            <div className="flex justify-between text-[11px] text-[#90a4cb]">
+              <span>
+                {side === 'BUY' ? 'Estimated cost incl. fee' : 'Estimated proceeds after fee'} ({(effectiveFeeRate*100).toFixed(2)}%)
+              </span>
+              <span>{currency}</span>
+            </div>
+            <div className="mt-1 text-right font-mono text-xl font-bold text-white">
+              {feeAdjustedTotal ? Number(feeAdjustedTotal).toLocaleString() : ''}
+            </div>
           </div>
         )}
       </div>
 
       <button
         type="submit"
-        disabled={isSubmitting}
-        className={`w-full py-3 rounded-lg font-bold text-white mt-2 transition-all hover:brightness-110 active:scale-95 ${side === 'BUY' ? 'bg-profit' : 'bg-loss'}`}
+        disabled={isSubmitting || !price}
+        className={`w-full py-3 rounded-lg font-bold text-white mt-2 transition-all hover:brightness-110 active:scale-95 ${side === 'BUY' ? 'bg-profit' : 'bg-loss'} ${!price ? 'opacity-60 cursor-not-allowed' : ''}`}
       >
-        Submit
+        {submitLabel ?? 'Submit'}
       </button>
     </form>
   );

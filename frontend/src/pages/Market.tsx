@@ -56,15 +56,7 @@ const d = (v: Decimal.Value | undefined | null) => {
   }
 };
 
-const mulToString = (a: Decimal.Value, b: Decimal.Value, fractionDigits = 0) => {
-  return d(a).mul(d(b)).toFixed(fractionDigits);
-};
-
-const divToString = (a: Decimal.Value, b: Decimal.Value, fractionDigits = 8) => {
-  const denom = d(b);
-  if (denom.isZero()) return '0';
-  return d(a).div(denom).toFixed(fractionDigits);
-};
+// mulToString/divToString are handled inside ValidatedOrderForm now
 
 export default function Market() {
   const { tickerId: routeTickerId } = useParams<{ tickerId: string }>();
@@ -85,10 +77,9 @@ export default function Market() {
   const [price, setPrice] = useState<number | ''>(''); // Unit Price / Target Price
   const [stopPrice, setStopPrice] = useState<number | ''>(''); // Trigger Price
   const [trailingGap, setTrailingGap] = useState<number | ''>(''); // Trailing Gap
-  const [amount, setAmount] = useState<string>(''); // Quantity
-  const [total, setTotal] = useState<string>(''); // Total Price
+  // amount/total are handled by ValidatedOrderForm
   const [side, setSide] = useState<'BUY' | 'SELL'>('BUY');
-  const [lastEdited, setLastEdited] = useState<'AMOUNT' | 'TOTAL'>('AMOUNT'); // Track last edited field for sync
+  // lastEdited no longer needed after moving amount/total handling
   const [timeRange, setTimeRange] = useState<'1D' | '1W' | '3M' | '1Y' | '5Y'>('1D');
   const [chartType, setChartType] = useState<'candle' | 'area'>('candle');
 
@@ -108,14 +99,7 @@ export default function Market() {
   const takerFee = Number(feeQ.data?.taker_fee ?? 0.001);
   const effectiveFeeRate = (orderType === 'LIMIT' || orderType === 'STOP_LIMIT') ? makerFee : takerFee;
 
-  const feeAdjustedTotal = useMemo(() => {
-    const base = d(total);
-    if (base.isZero()) return '';
-    const fee = base.mul(effectiveFeeRate);
-    // BUY: cost includes fee (add). SELL: proceeds after fee (subtract)
-    const adjusted = side === 'BUY' ? base.add(fee) : base.sub(fee);
-    return adjusted.toFixed(0);
-  }, [total, effectiveFeeRate, side]);
+  // fee-adjusted total is handled in ValidatedOrderForm
 
   const portfolioQ = useQuery({
     queryKey: ['portfolio'],
@@ -161,85 +145,22 @@ export default function Market() {
   }, [tickerId]);
 
   // Market Mode: Sync Price & Auto-calculate
-  useEffect(() => {
-    if (orderType === 'MARKET' && realTimePrice) {
-      setPrice(realTimePrice);
-      
-      if (lastEdited === 'AMOUNT') {
-          if (amount) {
-            const val = parseFloat(amount);
-            if (!isNaN(val)) {
-                setTotal(mulToString(val, realTimePrice, 0));
-            }
-          }
-      } else {
-          if (total) {
-            const val = parseFloat(total);
-            if (!isNaN(val) && realTimePrice !== 0) {
-                setAmount(divToString(val, realTimePrice, 8));
-            }
-          }
-      }
-    }
-  }, [orderType, realTimePrice, lastEdited, amount, total]);
+  // For MARKET-like orders, we display realTimePrice separately; no need to sync price state
 
   // Initialize Price for Limit Mode
-  useEffect(() => {
-      if (orderType === 'LIMIT' && realTimePrice && price === '') {
-          setPrice(realTimePrice);
-      }
-  }, [orderType, realTimePrice, price]);
+  // For LIMIT-like orders, keep price user-controlled; optionally show placeholder with realTimePrice
 
 
   // Input Handlers
   const handlePriceChange = (val: string) => {
     const newPrice = parseFloat(val);
     setPrice(isNaN(newPrice) ? '' : newPrice);
-    
-    // Limit mode: update total if amount exists
-    if (!isNaN(newPrice) && amount && (orderType === 'LIMIT' || orderType === 'STOP_LIMIT')) {
-      const amt = parseFloat(amount);
-      if (!isNaN(amt)) {
-        setTotal(mulToString(newPrice, amt, 0));
-      }
-    }
+    // Total is derived inside ValidatedOrderForm; nothing else to do here
   };
 
-  const handleAmountChange = (val: string) => {
-    setAmount(val);
-    setLastEdited('AMOUNT');
-    const amt = parseFloat(val);
-    // Use current realTimePrice for market-like orders, or the input price for limit-like orders
-    const effectivePrice = (orderType === 'MARKET' || orderType === 'STOP_LOSS' || orderType === 'TAKE_PROFIT' || orderType === 'TRAILING_STOP') 
-                            ? realTimePrice 
-                            : (typeof price === 'number' ? price : parseFloat(price));
-    
-    const p = (effectivePrice && !isNaN(effectivePrice)) ? effectivePrice : 0;
-    
-    if (!isNaN(amt) && p !== 0) {
-      setTotal(mulToString(p, amt, 0));
-    } else if (val === '') {
-        setTotal('');
-    }
-  };
+  // amount/total handling moved to ValidatedOrderForm
 
-  const handleTotalChange = (val: string) => {
-    setTotal(val);
-    setLastEdited('TOTAL');
-    const tot = parseFloat(val);
-     // Use current realTimePrice for market-like orders, or the input price for limit-like orders
-    const effectivePrice = (orderType === 'MARKET' || orderType === 'STOP_LOSS' || orderType === 'TAKE_PROFIT' || orderType === 'TRAILING_STOP') 
-                            ? realTimePrice 
-                            : (typeof price === 'number' ? price : parseFloat(price));
-    
-    const p = (effectivePrice && !isNaN(effectivePrice)) ? effectivePrice : 0;
-    
-    if (!isNaN(tot) && p !== 0) {
-      setAmount(divToString(tot, p, 8)); 
-    } else if (val === '') {
-        setAmount('');
-    }
-  };
+  // amount/total handling moved to ValidatedOrderForm
 
   // 주문 제출은 ValidatedOrderForm 내부에서 처리
 
@@ -452,6 +373,8 @@ export default function Market() {
                   side={side}
                   effectivePrice={(orderType === 'MARKET' || orderType === 'STOP_LOSS' || orderType === 'TAKE_PROFIT' || orderType === 'TRAILING_STOP') ? realTimePrice : (typeof price === 'number' ? price : undefined)}
                   effectiveFeeRate={effectiveFeeRate}
+                  amountUnitLabel={symbol}
+                  submitLabel={`${orderType.replace('_', ' ')} ${side}`}
                   onSubmit={async (quantity) => {
                     const payload: Record<string, unknown> = {
                       ticker_id: tickerId,
