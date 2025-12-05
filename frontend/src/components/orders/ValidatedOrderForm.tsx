@@ -3,6 +3,7 @@ import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import Decimal from 'decimal.js';
+import { getCurrencyDigits, toFixedString, formatCurrencyDisplay } from '../../utils/numfmt';
 
 type Side = 'BUY' | 'SELL';
 
@@ -62,22 +63,18 @@ export default function ValidatedOrderForm({
     try { return new Decimal((qtyStr as string) || '0'); } catch { return new Decimal(0); }
   }, [qtyStr]);
 
-  const total = qtyDec.gt(0) && priceDec.gt(0) ? priceDec.mul(qtyDec).toFixed(0) : '';
+  const currencyDigits = getCurrencyDigits(currency);
+  const total = qtyDec.gt(0) && priceDec.gt(0) ? toFixedString(priceDec.mul(qtyDec), currencyDigits, 'ROUND_DOWN') : '';
 
   const feeAdjustedTotal = useMemo(() => {
     const base = d(total);
     if (base.isZero()) return '';
     const fee = base.mul(effectiveFeeRate);
     const adjusted = side === 'BUY' ? base.add(fee) : base.sub(fee);
-    return adjusted.toFixed(0);
+    return toFixedString(adjusted, currencyDigits, 'ROUND_DOWN');
   }, [total, effectiveFeeRate, side]);
 
-  const formatWithThousands = (s: string) => {
-    if (!s) return s;
-    const [intPart, fracPart] = s.split('.');
-    const withSep = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-    return fracPart ? `${withSep}.${fracPart}` : withSep;
-  };
+  // display formatting is centralized in numfmt util
 
   const onSubmitInternal = async (data: Form) => {
     let q = new Decimal('0');
@@ -135,7 +132,7 @@ export default function ValidatedOrderForm({
               <span>{currency}</span>
             </div>
             <div className="mt-1 text-right font-mono text-xl font-bold text-white">
-              {feeAdjustedTotal ? formatWithThousands(feeAdjustedTotal) : ''}
+              {feeAdjustedTotal ? formatCurrencyDisplay(feeAdjustedTotal, currency, 'ROUND_DOWN') : ''}
             </div>
           </div>
         )}
