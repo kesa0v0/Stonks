@@ -39,8 +39,9 @@ async def cancel_order(
     order_id: UUID,
     db: AsyncSession = Depends(get_db),
     user_uuid: UUID = Depends(get_current_user_id),
+    redis: async_redis.Redis = Depends(get_redis)
 ):
     """
     PENDING 상태의 지정가 주문을 취소합니다. 주문 소유자만 취소 가능.
     """
-    return await cancel_order_logic(db, user_uuid, order_id)
+    return await cancel_order_logic(db, redis, user_uuid, order_id)

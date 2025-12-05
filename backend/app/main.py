@@ -110,6 +110,7 @@ class WSBridge:
         self.buffers: dict[str, dict[str, str]] = {
             "market_updates": {},
             "orderbook_updates": {},
+            "trade_events": {},
         }
 
     async def start(self):
@@ -117,7 +118,7 @@ class WSBridge:
             return
         self.r = async_redis.Redis(host=self.host, port=self.port, decode_responses=True)
         self.pubsub = self.r.pubsub(ignore_subscribe_messages=True)
-        await self.pubsub.subscribe("market_updates", "orderbook_updates")
+        await self.pubsub.subscribe("market_updates", "orderbook_updates", "trade_events")
 
         async def _loop():
             try:

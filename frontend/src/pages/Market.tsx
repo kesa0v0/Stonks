@@ -45,9 +45,7 @@ function RealTimeHeaderStats({ tickerId, selectedTicker }: { tickerId: string; s
     </>
   );
 }
-// import { useWebSocket } from '../hooks/useWebSocket';
-
-// helper removed (unused)
+import { useWebSocket } from '../hooks/useWebSocket';
 
 // Helpers using Decimal for precise money/quantity calculations
 const d = (v: Decimal.Value | undefined | null) => {
@@ -75,6 +73,39 @@ export default function Market() {
   const currency = selectedTicker?.currency ?? 'KRW';
 
   const [orderBook, setOrderBook] = useState<OrderBookResponse | null>(null);
+
+  // WebSocket Listener for Real-time Updates
+  useWebSocket((msg) => {
+    if (!msg) return;
+    try {
+      // Handle both parsed object and string (safeguard)
+      const data = typeof msg === 'string' ? JSON.parse(msg) : msg;
+
+      // Check if the event relates to current ticker
+      const isRelevant = 
+        (data.ticker_id === tickerId) || 
+        (data.code === tickerId) ||
+        (data.ticker?.id === tickerId);
+
+      if (!isRelevant) return;
+
+      // 1. OrderBook Update (Direct or Signal)
+      // If it has bids/asks, it might be a direct update.
+      // If it's a trade event, we should definitely refresh.
+      if (
+        (data.bids && data.asks) || // Direct orderbook data
+        ['order_created', 'trade_executed', 'order_accepted', 'order_updated', 'order_cancelled'].includes(data.type) // Trade events
+      ) {
+         // For now, simplest robust strategy: Re-fetch latest state from API
+         // This handles both "new order placed" and "trade executed" scenarios
+         api.get(`market/orderbook/${tickerId}`).json<OrderBookResponse>()
+            .then(setOrderBook)
+            .catch(e => console.error("WS Refresh Error", e));
+      }
+    } catch (e) {
+      console.error("WS Message Error", e);
+    }
+  });
   
   // Form States
   const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT' | 'STOP_LOSS' | 'TAKE_PROFIT' | 'STOP_LIMIT' | 'TRAILING_STOP'>('MARKET');

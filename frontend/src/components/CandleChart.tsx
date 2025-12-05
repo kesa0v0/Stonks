@@ -1,4 +1,4 @@
-import { createChart, ColorType, CandlestickSeries, AreaSeries, HistogramSeries } from 'lightweight-charts';
+import { createChart, ColorType, CandlestickSeries, AreaSeries } from 'lightweight-charts';
 import type { IChartApi, ISeriesApi, UTCTimestamp, LogicalRange } from 'lightweight-charts';
 import { useEffect, useRef, useCallback, useState } from 'react';
 import api from '../api/client';
@@ -33,7 +33,6 @@ export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle', last
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick" | "Area"> | null>(null);
-  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   
   // Map range to interval
   // 1D and 1W use 1m interval for detail. 3M+ use 1d.
@@ -106,12 +105,6 @@ export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle', last
     }).sort((a, b) => (a.time as number) - (b.time as number));
   }, [chartType]);
   
-  const transformVolume = useCallback((data: CandleData[]) => {
-    return data
-      .map(c => ({ time: (new Date(c.timestamp).getTime() / 1000) as UTCTimestamp, value: c.volume }))
-      .sort((a, b) => (a.time as number) - (b.time as number));
-  }, []);
-
   // Load Initial Data
   const loadInitialData = useCallback(async () => {
     if (!seriesRef.current) return;
@@ -175,9 +168,6 @@ export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle', last
         
         seriesRef.current.setData(unique);
         allDataRef.current = unique;
-        if (volumeSeriesRef.current) {
-          volumeSeriesRef.current.setData(transformVolume(data));
-        }
         earliestTimestamp.current = data[0].timestamp;
 
         if (chartRef.current) {
@@ -376,20 +366,8 @@ export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle', last
         });
     }
 
-    // Add volume histogram on left scale with thousands formatting
-    const volSeries = chart.addSeries(HistogramSeries, {
-      priceScaleId: 'left',
-      color: '#314368',
-      priceFormat: { 
-          type: 'custom', 
-          minMove: 1,
-          formatter: (v: number) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(v)
-      },
-    });
-
     chartRef.current = chart;
     seriesRef.current = series;
-    volumeSeriesRef.current = volSeries;
 
     loadInitialData();
 

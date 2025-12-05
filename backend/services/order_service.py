@@ -25,6 +25,7 @@ from backend.core.enums import OrderType, OrderSide, OrderStatus
 from backend.services.vote_service import get_locked_quantity
 from backend.schemas.order import OrderCreate
 from backend.core.config import settings
+from backend.core.event_hook import publish_event
 
 ORDER_COUNTER = Counter('stonks_orders_created_total', 'Total orders created', ['side', 'type'])
 
@@ -43,6 +44,17 @@ async def place_order(
     
     # 1. 임시 주문 ID 생성 (추적용)
     order_id = str(uuid.uuid4())
+    
+    # [입력값 검증] DB Numeric(20, 8) 초과 방지 (최대 1조 미만)
+    MAX_VAL = Decimal("1000000000000")
+    if order.quantity >= MAX_VAL:
+        raise InvalidLimitOrderPriceError(f"주문 수량은 {MAX_VAL:,.0f}를 초과할 수 없습니다.")
+    if order.target_price and order.target_price >= MAX_VAL:
+        raise InvalidLimitOrderPriceError(f"지정가는 {MAX_VAL:,.0f}를 초과할 수 없습니다.")
+    if order.stop_price and order.stop_price >= MAX_VAL:
+        raise InvalidLimitOrderPriceError(f"감시가(Stop Price)는 {MAX_VAL:,.0f}를 초과할 수 없습니다.")
+    if order.trailing_gap and order.trailing_gap >= MAX_VAL:
+        raise InvalidLimitOrderPriceError(f"트레일링 간격은 {MAX_VAL:,.0f}를 초과할 수 없습니다.")
     
     # [검증] 유효성 체크 (공매도 방지 및 잔고 확인)
     
@@ -139,7 +151,10 @@ async def place_order(
 
             # 공매도 증거금에는 수수료 포함 안 함 (매도 시 돈이 들어오므로)
             if balance < required_margin:
-                 raise InsufficientBalanceError(float(required_margin), float(balance), message=f"공매도 증거금이 부족합니다. (필요: {required_margin}, 보유: {balance})")
+                 msg = f"공매도 증거금이 부족합니다. (필요: {required_margin}, 보유: {balance})"
+                 if base_qty > Decimal(0):
+                     msg += f" (주의: 보유 주식 {base_qty}주가 모두 미체결 주문에 걸려있어 공매도로 처리되었습니다)"
+                 raise InsufficientBalanceError(float(required_margin), float(balance), message=msg)
 
     # 2) 매수(BUY) 주문 시 검증
     elif order.side == OrderSide.BUY:
@@ -236,6 +251,19 @@ async def place_order(
         db.add(new_order)
         await db.commit() # 비동기 커밋
         
+        # [Event Hook] 지정가 주문 생성 알림 (Frontend OrderBook 반영용)
+        event = {
+            "type": "order_created", 
+            "user_id": str(user_uuid),
+            "order_id": str(order_id),
+            "ticker_id": order.ticker_id,
+            "side": str(order.side),
+            "quantity": float(order.quantity),
+            "price": float(target_price) if target_price else (float(stop_price) if stop_price else 0),
+            "status": str(OrderStatus.PENDING)
+        }
+        await publish_event(redis, event, channel="trade_events")
+        
         msg_map = {
             OrderType.LIMIT: f"Limit order placed at {order.target_price}",
             OrderType.STOP_LOSS: f"Stop-Loss order placed at {order.stop_price}",
@@ -293,6 +321,7 @@ async def place_order(
 
 async def cancel_order_logic(
     db: AsyncSession,
+    redis: async_redis.Redis,
     user_uuid: UUID,
     order_id: UUID
 ):
@@ -319,6 +348,19 @@ async def cancel_order_logic(
     order_obj.fail_reason = "Cancelled by user"
     order_obj.cancelled_at = datetime.now(timezone.utc)
     await db.commit()
+
+    # [Event Hook] 주문 취소 알림 (Frontend OrderBook 반영용)
+    event = {
+        "type": "order_cancelled",
+        "user_id": str(user_uuid),
+        "order_id": str(order_id),
+        "ticker_id": order_obj.ticker_id,
+        "side": str(order_obj.side),
+        "quantity": float(order_obj.quantity),
+        "price": float(order_obj.target_price) if order_obj.target_price else (float(order_obj.stop_price) if order_obj.stop_price else 0),
+        "status": str(OrderStatus.CANCELLED)
+    }
+    await publish_event(redis, event, channel="trade_events")
 
     return {
         "order_id": str(order_id),

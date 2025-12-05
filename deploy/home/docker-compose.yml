@@ -46,6 +46,18 @@ services:
     networks:
       - proxy
 
+  # 10. 휴먼 ETF 매처
+  worker_human_matcher:
+    image: ghcr.io/kesa0v0/stonks-backend:latest
+    container_name: stonks-worker-human-matcher
+    restart: always
+    command: python -m backend.worker.human_matcher
+    env_file: .env
+    labels:
+      - "com.centurylinklabs.watchtower.scope=auto-update"
+    networks:
+      - proxy
+
   # 5. 캔들 수집 워커
   worker_candle:
     image: ghcr.io/kesa0v0/stonks-backend:latest

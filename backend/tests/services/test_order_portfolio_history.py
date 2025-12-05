@@ -30,7 +30,7 @@ async def test_order_status_history_on_insert_and_cancel(db_session, test_user, 
     assert any(h.new_status == OrderStatus.PENDING for h in rows)
 
     # Cancel the order -> status should become CANCELLED and history recorded
-    await cancel_order_logic(db_session, user_id, order_id)
+    await cancel_order_logic(db_session, mock_external_services["redis"], user_id, order_id)
     rows2 = (await db_session.execute(select(OrderStatusHistory).where(OrderStatusHistory.order_id == order_id))).scalars().all()
     assert any(h.new_status == OrderStatus.CANCELLED for h in rows2)
 
