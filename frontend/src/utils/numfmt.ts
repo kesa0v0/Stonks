@@ -24,6 +24,29 @@ export const getCurrencyDigits = (code?: string) => {
   return CURRENCY_DIGITS[code.toUpperCase()] ?? 2;
 };
 
+// Asset quantity digits (per-asset minimum increment). Default to 4 for UI readability.
+const ASSET_QUANTITY_DIGITS: Record<string, number> = {
+  BTC: 8,
+  ETH: 8,
+};
+
+export const getAssetQuantityDigits = (symbolOrTickerId?: string) => {
+  if (!symbolOrTickerId) return 4;
+  // Try to extract asset symbol from common identifier patterns
+  const upper = symbolOrTickerId.toUpperCase();
+  // e.g., 'CRYPTO-COIN-ETH' -> 'ETH', 'ETH/KRW' -> 'ETH'
+  const parts = upper.split(/[\-\/]/);
+  const guess = parts[parts.length - 1];
+  return ASSET_QUANTITY_DIGITS[guess] ?? 4;
+};
+
+// Global number formatting preferences
+let NUMBER_LOCALE = 'en-US';
+let USE_INTL = false;
+
+export const setNumberLocale = (locale: string) => { NUMBER_LOCALE = locale; };
+export const setUseIntlFormatting = (useIntl: boolean) => { USE_INTL = useIntl; };
+
 export const toFixedString = (
   value: Decimal.Value,
   fractionDigits: number,
@@ -39,9 +62,15 @@ export const toFixedString = (
 
 export const formatWithThousands = (s: string) => {
   if (!s) return s;
+  if (!USE_INTL) {
+    const [intPart, fracPart] = s.split('.');
+    const withSep = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return fracPart ? `${withSep}.${fracPart}` : withSep;
+  }
+  // Intl path: format integer part via Intl, preserve decimal string
   const [intPart, fracPart] = s.split('.');
-  const withSep = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return fracPart ? `${withSep}.${fracPart}` : withSep;
+  const intFormatted = new Intl.NumberFormat(NUMBER_LOCALE, { maximumFractionDigits: 0 }).format(Number(intPart || '0'));
+  return fracPart ? `${intFormatted}.${fracPart}` : intFormatted;
 };
 
 export const formatCurrencyDisplay = (

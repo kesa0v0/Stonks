@@ -4,7 +4,7 @@ import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import api from '../api/client';
-import { toFixedString, REPORT_ROUNDING, formatCurrencyDisplay } from '../utils/numfmt';
+import { toFixedString, REPORT_ROUNDING, formatCurrencyDisplay, getAssetQuantityDigits } from '../utils/numfmt';
 import DashboardLayout from '../components/DashboardLayout';
 import { CandleChart } from '../components/CandleChart';
 import OpenOrders from '../components/OpenOrders';
@@ -242,7 +242,8 @@ export default function Market() {
                  <CandleChart 
                    tickerId={tickerId} 
                    range={timeRange} 
-                   chartType={chartType} 
+                   chartType={chartType}
+                   currencyCode={currency}
                  />
               </div>
             </div>
@@ -394,7 +395,21 @@ export default function Market() {
                     }
                     try {
                       await api.post('orders', { json: payload });
-                      toast.success('Order Placed Successfully!');
+                      // Build informative success toast with amounts
+                      const qtyStr = toFixedString(quantity,  getAssetQuantityDigits(symbol), 'ROUND_DOWN');
+                      const unit = (orderType === 'LIMIT' || orderType === 'STOP_LIMIT') 
+                        ? (typeof price === 'number' ? price : undefined) 
+                        : realTimePrice;
+                      if (unit) {
+                        const notional = new Decimal(unit).mul(quantity);
+                        const fee = notional.mul(effectiveFeeRate);
+                        const total = notional.add(fee);
+                        const unitStr = formatCurrencyDisplay(unit, currency, 'ROUND_DOWN');
+                        const totalStr = formatCurrencyDisplay(total.toNumber(), currency, 'ROUND_DOWN');
+                        toast.success(`${side} ${qtyStr} ${symbol} @ ${unitStr} • Est. total ${totalStr}`);
+                      } else {
+                        toast.success(`${side} ${qtyStr} ${symbol} • Order placed`);
+                      }
                       try { window.dispatchEvent(new Event('orders:updated')); } catch { /* ignore */ }
                     } catch (err) {
                       console.error('Order execution failed', err);

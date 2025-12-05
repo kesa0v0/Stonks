@@ -1,18 +1,30 @@
 import { useState, useEffect, useMemo } from 'react';
 import Decimal from 'decimal.js';
-import { toFixedString, REPORT_ROUNDING, formatWithThousands } from '../utils/numfmt';
+import { toFixedString, REPORT_ROUNDING, formatWithThousands, getAssetQuantityDigits, formatCurrencyDisplay } from '../utils/numfmt';
 import api from '../api/client';
 import DashboardLayout from '../components/DashboardLayout';
-import type { Portfolio as IPortfolio, OrderListItem } from '../interfaces';
+import type { Portfolio as IPortfolio, OrderListItem, TickerResponse } from '../interfaces';
 import { usePricesAll, usePricesVersion } from '../store/prices';
 import OpenOrders from '../components/OpenOrders';
 import HoldingsTable from '../components/HoldingsTable';
+import { useQuery } from '@tanstack/react-query';
 
 export default function Portfolio() {
   const [fetchedPortfolio, setFetchedPortfolio] = useState<IPortfolio | null>(null);
   const [orders, setOrders] = useState<OrderListItem[]>([]);
   const prices = usePricesAll();
   const pricesVersion = usePricesVersion();
+
+  // Tickers for currency mapping
+  const tickersQ = useQuery({
+    queryKey: ['tickers'],
+    queryFn: () => api.get('market/tickers').json<TickerResponse[]>(),
+  });
+  const currencyByTicker = useMemo(() => {
+    const map = new Map<string, string>();
+    (tickersQ.data || []).forEach(t => map.set(t.id, t.currency));
+    return map;
+  }, [tickersQ.data]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -146,7 +158,7 @@ export default function Portfolio() {
         ) : (
               <StatCard 
                 title="Total Asset Value" 
-                value={`$${formatWithThousands(toFixedString(Number(portfolio.total_asset_value), 0, 'ROUND_DOWN'))}`} 
+                value={`KRW ${formatCurrencyDisplay(Number(portfolio.total_asset_value), 'KRW', 'ROUND_DOWN')}`} 
                 trend={portfolio.total_asset_change_percent ? `${Number(portfolio.total_asset_change_percent) >= 0 ? '+' : ''}${toFixedString(Number(portfolio.total_asset_change_percent), 2, REPORT_ROUNDING)}% (Today)` : undefined}
                 trendPositive={Number(portfolio.total_asset_change_percent || 0) >= 0}
               />
@@ -154,7 +166,7 @@ export default function Portfolio() {
         {isLoading ? (
           <SkeletonCard />
         ) : (
-          <StatCard title="Available Cash" value={`$${formatWithThousands(toFixedString(Number(portfolio.cash_balance), 0, 'ROUND_DOWN'))}`} />
+          <StatCard title="Available Cash" value={`KRW ${formatCurrencyDisplay(Number(portfolio.cash_balance), 'KRW', 'ROUND_DOWN')}`} />
         )}
         {isLoading ? (
           <SkeletonCard />
@@ -182,7 +194,7 @@ export default function Portfolio() {
                 </svg>
                 <div className="absolute flex flex-col items-center justify-center">
                   <p className="text-[#90a4cb] text-sm">Total Assets</p>
-                  <p className="text-white text-xl font-bold">${formatWithThousands(toFixedString(totalGrossAssets, 0, 'ROUND_DOWN'))}</p>
+                  <p className="text-white text-xl font-bold">KRW {formatCurrencyDisplay(totalGrossAssets, 'KRW', 'ROUND_DOWN')}</p>
                 </div>
               </>
             )}
@@ -234,6 +246,7 @@ export default function Portfolio() {
                   <th className="px-6 py-4 text-[#90a4cb] text-sm font-medium text-center">Side</th>
                   <th className="px-6 py-4 text-[#90a4cb] text-sm font-medium text-right">Price</th>
                   <th className="px-6 py-4 text-[#90a4cb] text-sm font-medium text-right">Quantity</th>
+                  <th className="px-6 py-4 text-[#90a4cb] text-sm font-medium text-right">Total</th>
                   <th className="px-6 py-4 text-[#90a4cb] text-sm font-medium text-center">Status</th>
                 </tr>
               </thead>
@@ -256,8 +269,13 @@ export default function Portfolio() {
                                     {order.side}
                                 </span>
                             </td>
-                            <td className="px-6 py-4 text-right text-white/70">{order.price ? formatWithThousands(toFixedString(order.price, 0, 'ROUND_DOWN')) : '-'}</td>
-                            <td className="px-6 py-4 text-right text-white/70">{toFixedString(order.quantity, 4, 'ROUND_DOWN')}</td>
+                            <td className="px-6 py-4 text-right text-white/70">{order.price ? `${formatWithThousands(toFixedString(order.price, 0, 'ROUND_DOWN'))} ${currencyByTicker.get(order.ticker_id) ?? ''}`.trim() : '-'}</td>
+                            <td className="px-6 py-4 text-right text-white/70">{toFixedString(order.quantity, getAssetQuantityDigits(order.ticker_id), 'ROUND_DOWN')}</td>
+                            <td className="px-6 py-4 text-right text-white/70">
+                              {order.price 
+                                ? `${formatWithThousands(toFixedString(Number(order.price) * Number(order.quantity), 0, 'ROUND_DOWN'))} ${currencyByTicker.get(order.ticker_id) ?? ''}`.trim()
+                                : '-'}
+                            </td>
                             <td className="px-6 py-4 text-center">
                                 <span className={`text-xs font-bold uppercase ${statusColor}`}>{order.status}</span>
                             </td>

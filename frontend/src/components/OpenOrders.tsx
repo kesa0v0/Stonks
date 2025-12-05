@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
-import Decimal from 'decimal.js';
+import { useState, useEffect, useMemo } from 'react';
+import { toFixedString, formatWithThousands, getAssetQuantityDigits } from '../utils/numfmt';
 import api from '../api/client';
-import type { OrderListItem } from '../interfaces';
+import type { OrderListItem, TickerResponse } from '../interfaces';
+import { useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 
 interface OpenOrdersProps {
@@ -11,6 +12,17 @@ interface OpenOrdersProps {
 export default function OpenOrders({ tickerId }: OpenOrdersProps) {
   const [orders, setOrders] = useState<OrderListItem[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Fetch tickers to derive currency per ticker
+  const tickersQ = useQuery({
+    queryKey: ['tickers'],
+    queryFn: () => api.get('market/tickers').json<TickerResponse[]>(),
+  });
+  const currencyByTicker = useMemo(() => {
+    const map = new Map<string, string>();
+    (tickersQ.data || []).forEach(t => map.set(t.id, t.currency));
+    return map;
+  }, [tickersQ.data]);
 
   const fetchOrders = async () => {
     // Don't set loading(true) here to avoid UI flicker on background refresh
@@ -45,7 +57,16 @@ export default function OpenOrders({ tickerId }: OpenOrdersProps) {
     if (!confirm('Are you sure you want to cancel this order?')) return;
     try {
       await api.post(`orders/${orderId}/cancel`);
-      toast.success('Order cancelled successfully');
+      const target = orders.find(o => o.id === orderId);
+      const cur = target ? currencyByTicker.get(target.ticker_id) : undefined;
+      if (target) {
+        const qtyStr = toFixedString(target.quantity, getAssetQuantityDigits(target.ticker_id), 'ROUND_DOWN');
+        const priceStr = target.price ? formatWithThousands(toFixedString(target.price, 0, 'ROUND_DOWN')) : undefined;
+        const msg = priceStr ? `Cancelled ${qtyStr} @ ${priceStr}${cur ? ' ' + cur : ''}` : `Cancelled ${qtyStr}`;
+        toast.success(msg);
+      } else {
+        toast.success('Order cancelled successfully');
+      }
       fetchOrders(); // Refresh list
     } catch (err) {
       // Error handled by global error handler (toast)
@@ -93,30 +114,31 @@ export default function OpenOrders({ tickerId }: OpenOrdersProps) {
             </thead>
             <tbody className="divide-y divide-[#314368]">
                 {orders.map(order => {
+                  const cur = currencyByTicker.get(order.ticker_id);
                     let conditionText = '-';
-                    const targetPrice = order.target_price ? new Decimal(order.target_price).toFixed(0) : null;
-                    const stopPrice = order.stop_price ? new Decimal(order.stop_price).toFixed(0) : null;
-                    const gap = order.trailing_gap ? new Decimal(order.trailing_gap).toFixed(0) : null;
+                  const targetPrice = order.target_price ? formatWithThousands(toFixedString(order.target_price, 0, 'ROUND_DOWN')) : null;
+                  const stopPrice = order.stop_price ? formatWithThousands(toFixedString(order.stop_price, 0, 'ROUND_DOWN')) : null;
+                  const gap = order.trailing_gap ? formatWithThousands(toFixedString(order.trailing_gap, 0, 'ROUND_DOWN')) : null;
 
                     switch(order.type) {
                         case 'LIMIT':
-                            conditionText = `${targetPrice} (Target)`;
+                      conditionText = `${targetPrice}${cur ? ' ' + cur : ''} (Target)`;
                             break;
                         case 'STOP_LOSS':
                         case 'TAKE_PROFIT':
-                            conditionText = `${stopPrice} (Trigger)`;
+                      conditionText = `${stopPrice}${cur ? ' ' + cur : ''} (Trigger)`;
                             break;
                         case 'STOP_LIMIT':
-                            conditionText = `Trig: ${stopPrice} → Lim: ${targetPrice}`;
+                      conditionText = `Trig: ${stopPrice}${cur ? ' ' + cur : ''} → Lim: ${targetPrice}${cur ? ' ' + cur : ''}`;
                             break;
                         case 'TRAILING_STOP':
-                            conditionText = `Trig: ${stopPrice} (Gap: ${gap})`;
+                      conditionText = `Trig: ${stopPrice}${cur ? ' ' + cur : ''} (Gap: ${gap}${cur ? ' ' + cur : ''})`;
                             break;
                         case 'MARKET':
                             conditionText = 'Market Price';
                             break;
                         default:
-                            conditionText = targetPrice || stopPrice || '-';
+                      conditionText = (targetPrice || stopPrice || '-') + (cur ? ' ' + cur : '');
                     }
 
                     return (
@@ -140,8 +162,8 @@ export default function OpenOrders({ tickerId }: OpenOrdersProps) {
                         <td className="px-4 py-3 text-right font-mono text-white text-xs">
                             {conditionText}
                         </td>
-                        <td className="px-4 py-3 text-right font-mono text-white">
-                             {new Decimal(order.quantity).toFixed(8)}
+                            <td className="px-4 py-3 text-right font-mono text-white">
+                              {toFixedString(order.quantity, getAssetQuantityDigits(order.ticker_id), 'ROUND_DOWN')}
                         </td>
                         <td className="px-4 py-3 text-center">
                             <span className="text-xs font-bold text-yellow-500 uppercase">{order.status}</span>

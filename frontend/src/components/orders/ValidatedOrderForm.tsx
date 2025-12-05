@@ -3,7 +3,7 @@ import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import Decimal from 'decimal.js';
-import { getCurrencyDigits, toFixedString, formatCurrencyDisplay } from '../../utils/numfmt';
+import { getCurrencyDigits, toFixedString, formatCurrencyDisplay, getAssetQuantityDigits } from '../../utils/numfmt';
 
 type Side = 'BUY' | 'SELL';
 
@@ -32,7 +32,7 @@ const Schema = z.object({
 
 type Form = z.infer<typeof Schema>;
 
-export default function ValidatedOrderForm({
+function ValidatedOrderForm({
   currency,
   side,
   effectivePrice,
@@ -65,6 +65,7 @@ export default function ValidatedOrderForm({
 
   const currencyDigits = getCurrencyDigits(currency);
   const total = qtyDec.gt(0) && priceDec.gt(0) ? toFixedString(priceDec.mul(qtyDec), currencyDigits, 'ROUND_DOWN') : '';
+  const qtyDigits = useMemo(() => getAssetQuantityDigits(amountUnitLabel), [amountUnitLabel]);
 
   const feeAdjustedTotal = useMemo(() => {
     const base = d(total);
@@ -90,7 +91,7 @@ export default function ValidatedOrderForm({
         <label className="text-xs font-bold text-[#90a4cb] uppercase">Amount{amountUnitLabel ? ` (${amountUnitLabel})` : ''}</label>
         <input
           type="number"
-          step="0.0001"
+          step={qtyDigits > 0 ? `0.${'0'.repeat(qtyDigits-1)}1` : '1'}
           className={`w-full mt-1 bg-[#182234] rounded-lg px-3 py-2 text-white font-mono focus:border-[#0d59f2] focus:ring-1 focus:ring-[#0d59f2] outline-none transition-all border ${errors.quantity ? 'border-red-500' : 'border-[#314368]'}`}
           placeholder="0.00"
           {...register('quantity')}
@@ -115,7 +116,7 @@ export default function ValidatedOrderForm({
               if (priceDec.lte(0)) {
                 setValue('quantity', '');
               } else {
-                const q = t.div(priceDec).toFixed(8);
+                const q = t.div(priceDec).toFixed(qtyDigits);
                 setValue('quantity', q);
               }
             } catch {
@@ -148,3 +149,6 @@ export default function ValidatedOrderForm({
     </form>
   );
 }
+
+export default ValidatedOrderForm;
+export { ValidatedOrderForm };

@@ -1,7 +1,8 @@
-import { createChart, ColorType, CandlestickSeries, AreaSeries } from 'lightweight-charts';
+import { createChart, ColorType, CandlestickSeries, AreaSeries, HistogramSeries } from 'lightweight-charts';
 import type { IChartApi, ISeriesApi, UTCTimestamp, LogicalRange } from 'lightweight-charts';
 import { useEffect, useRef, useCallback, useState } from 'react';
 import api from '../api/client';
+import { getCurrencyDigits, formatCurrencyDisplay } from '../utils/numfmt';
 import { usePrice } from '../store/prices';
 
 interface CandleData {
@@ -20,9 +21,10 @@ interface ChartProps {
   chartType?: 'candle' | 'area';
   lastPrice?: number;
   lastPriceTimestamp?: number; // In milliseconds
+  currencyCode?: string;
 }
 
-export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle', lastPrice, lastPriceTimestamp }: ChartProps) => {
+export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle', lastPrice, lastPriceTimestamp, currencyCode }: ChartProps) => {
     // Prefer external lastPrice if provided, otherwise subscribe to store
     const storePrice = usePrice(tickerId);
     const rtPrice = (typeof lastPrice === 'number') ? lastPrice : (typeof storePrice === 'number' ? storePrice : undefined);
@@ -30,6 +32,7 @@ export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle', last
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick" | "Area"> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   
   // Map range to interval
   // 1D and 1W use 1m interval for detail. 3M+ use 1d.
@@ -101,6 +104,12 @@ export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle', last
       };
     }).sort((a, b) => (a.time as number) - (b.time as number));
   }, [chartType]);
+  
+  const transformVolume = useCallback((data: CandleData[]) => {
+    return data
+      .map(c => ({ time: (new Date(c.timestamp).getTime() / 1000) as UTCTimestamp, value: c.volume }))
+      .sort((a, b) => (a.time as number) - (b.time as number));
+  }, []);
 
   // Load Initial Data
   const loadInitialData = useCallback(async () => {
@@ -165,6 +174,9 @@ export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle', last
         
         seriesRef.current.setData(unique);
         allDataRef.current = unique;
+        if (volumeSeriesRef.current) {
+          volumeSeriesRef.current.setData(transformVolume(data));
+        }
         earliestTimestamp.current = data[0].timestamp;
 
         if (chartRef.current) {
@@ -283,6 +295,10 @@ export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle', last
       rightPriceScale: {
         borderColor: '#314368',
       },
+      leftPriceScale: {
+        visible: true,
+        borderColor: '#314368',
+      },
       // Localization for KST (Tooltip)
       localization: {
         locale: 'ko-KR',
@@ -331,25 +347,39 @@ export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle', last
 
     let series: ISeriesApi<"Candlestick" | "Area">;
 
+    const digits = getCurrencyDigits(currencyCode);
     if (chartType === 'area') {
-        series = chart.addSeries(AreaSeries, {
+      series = chart.addSeries(AreaSeries, {
             topColor: 'rgba(13, 89, 242, 0.4)', // Brand Primary with opacity
             bottomColor: 'rgba(13, 89, 242, 0)',
             lineColor: '#0d59f2',
             lineWidth: 2,
+        priceFormat: { type: 'price', precision: digits, minMove: Math.pow(10, -digits) },
+        priceFormatter: (p: number) => formatCurrencyDisplay(p, currencyCode, 'ROUND_DOWN'),
         });
     } else {
-        series = chart.addSeries(CandlestickSeries, {
+      series = chart.addSeries(CandlestickSeries, {
               upColor: '#ef4444', // profit (red)
               downColor: '#0ea5e9', // loss (blue)
               borderVisible: false,
               wickUpColor: '#ef4444',
               wickDownColor: '#0ea5e9',
+          priceFormat: { type: 'price', precision: digits, minMove: Math.pow(10, -digits) },
+          priceFormatter: (p: number) => formatCurrencyDisplay(p, currencyCode, 'ROUND_DOWN'),
         });
     }
 
+    // Add volume histogram on left scale with thousands formatting
+    const volSeries = chart.addSeries(HistogramSeries, {
+      priceScaleId: 'left',
+      color: '#314368',
+      priceFormat: { type: 'volume', precision: 0, minMove: 1 },
+      priceFormatter: (v: number) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(v),
+    });
+
     chartRef.current = chart;
     seriesRef.current = series;
+    volumeSeriesRef.current = volSeries;
 
     loadInitialData();
 

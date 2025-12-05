@@ -1,8 +1,10 @@
 import { useNavigate } from 'react-router-dom';
 import Decimal from 'decimal.js';
-import { toFixedString, formatWithThousands, REPORT_ROUNDING } from '../utils/numfmt';
-import type { Asset } from '../interfaces';
+import { toFixedString, formatWithThousands, REPORT_ROUNDING, getAssetQuantityDigits } from '../utils/numfmt';
+import type { Asset, TickerResponse } from '../interfaces';
 import { usePrice } from '../store/prices';
+import { useQuery } from '@tanstack/react-query';
+import api from '../api/client';
 
 interface HoldingsTableProps {
   assets: Asset[];
@@ -11,6 +13,14 @@ interface HoldingsTableProps {
 
 export default function HoldingsTable({ assets, isLoading }: HoldingsTableProps) {
   // navigation handled in row component
+
+  // Fetch tickers for currency mapping (cached globally by react-query)
+  const tickersQ = useQuery({
+    queryKey: ['tickers'],
+    queryFn: () => api.get('market/tickers').json<TickerResponse[]>(),
+  });
+  const currencyByTicker = new Map<string, string>();
+  (tickersQ.data || []).forEach(t => currencyByTicker.set(t.id, t.currency));
 
   if (isLoading) {
     return (
@@ -58,7 +68,7 @@ export default function HoldingsTable({ assets, isLoading }: HoldingsTableProps)
           </thead>
           <tbody className="divide-y divide-[#314368]">
             {assets.map((asset) => (
-              <HoldingRow key={asset.ticker_id} asset={asset} />
+              <HoldingRow key={asset.ticker_id} asset={asset} currency={currencyByTicker.get(asset.ticker_id)} />
             ))}
           </tbody>
         </table>
@@ -67,7 +77,7 @@ export default function HoldingsTable({ assets, isLoading }: HoldingsTableProps)
   );
 }
 
-function HoldingRow({ asset }: { asset: Asset }) {
+function HoldingRow({ asset, currency }: { asset: Asset; currency?: string }) {
   const navigate = useNavigate();
   // Hooks must be at top-level in a component
   // Subscribe to just this asset's price for fine-grained re-renders
@@ -95,20 +105,20 @@ function HoldingRow({ asset }: { asset: Asset }) {
         </div>
       </td>
       <td className="px-4 py-3 text-right text-white font-mono">
-        {toFixedString(quantity, 4, 'ROUND_DOWN')}
+        {toFixedString(quantity, getAssetQuantityDigits(asset.symbol), 'ROUND_DOWN')}
       </td>
       <td className="px-4 py-3 text-right text-[#90a4cb] font-mono">
-        {formatWithThousands(toFixedString(avgPrice, 0, 'ROUND_DOWN'))}
+        {formatWithThousands(toFixedString(avgPrice, 0, 'ROUND_DOWN'))} {currency ?? ''}
       </td>
       <td className="px-4 py-3 text-right text-white font-mono font-medium">
-        {formatWithThousands(toFixedString(currentPrice, 0, 'ROUND_DOWN'))}
+        {formatWithThousands(toFixedString(currentPrice, 0, 'ROUND_DOWN'))} {currency ?? ''}
       </td>
       <td className="px-4 py-3 text-right text-white font-bold font-mono">
-        {formatWithThousands(toFixedString(totalValue, 0, 'ROUND_DOWN'))}
+        {formatWithThousands(toFixedString(totalValue, 0, 'ROUND_DOWN'))} {currency ?? ''}
       </td>
       <td className={`px-4 py-3 text-right font-mono font-medium ${pnlColor}`}>
         <div className="flex flex-col items-end">
-          <span>{isPositive ? '+' : ''}{formatWithThousands(toFixedString(pnlValue, 0, 'ROUND_DOWN'))}</span>
+          <span>{isPositive ? '+' : ''}{formatWithThousands(toFixedString(pnlValue, 0, 'ROUND_DOWN'))} {currency ?? ''}</span>
           <span className="text-xs">({isPositive ? '+' : ''}{toFixedString(profitRate, 2, REPORT_ROUNDING)}%)</span>
         </div>
       </td>
