@@ -3,9 +3,10 @@ import toast from 'react-hot-toast';
 import api from '../api/client';
 import DashboardLayout from '../components/DashboardLayout';
 import Skeleton from '../components/Skeleton';
+import { CandleChart } from '../components/CandleChart';
 import { toFixedString, REPORT_ROUNDING, formatWithThousands } from '../utils/numfmt';
 
-type MeProfile = { nickname: string; is_active: boolean; is_bankrupt?: boolean };
+type MeProfile = { id: string; nickname: string; is_active: boolean; is_bankrupt?: boolean }; // Added ID
 type SimpleMessage = { message?: string };
 
 type Shareholder = {
@@ -22,35 +23,185 @@ type ShareholderResponse = {
 };
 
 type DividendPaymentEntry = {
-    date: string; // Use string for ISO format date
+    date: string;
     source_pnl: string;
     paid_amount: string;
     ticker_id: string;
 };
 
 type IssuerDividendStats = {
-    current_dividend_rate: string; // e.g., "0.50"
+    current_dividend_rate: string;
     cumulative_paid_amount: string;
+};
+
+type HumanCorporateValueResponse = {
+    current_price?: string;
+    market_cap?: string;
+    per?: string;
 };
 
 export default function HumanETF() {
   const [profile, setProfile] = useState<MeProfile | null>(null);
+  const [isListed, setIsListed] = useState<boolean | null>(null); // null = loading
+
+  useEffect(() => {
+    const checkStatus = async () => {
+      try {
+        const [meData, corpData] = await Promise.all([
+            api.get('auth/login/me').json<MeProfile>(),
+            api.get('human/corporate_value').json<HumanCorporateValueResponse>()
+        ]);
+        setProfile(meData);
+        // If corporate_value has a current_price (meaning ticker exists and is active), user is listed.
+        // Actually, backend returns empty HumanCorporateValueResponse if ticker inactive/missing.
+        // Let's check if current_price is set.
+        if (corpData && corpData.current_price) {
+            setIsListed(true);
+        } else {
+            setIsListed(false);
+        }
+      } catch (err) {
+        console.error(err);
+        // Fallback: assume not listed if error occurs (e.g. 404)
+        setIsListed(false); 
+      }
+    };
+    checkStatus();
+  }, []);
+
+  const handleIpoSuccess = () => {
+      setIsListed(true);
+      window.location.reload();
+  };
+
+  if (isListed === null) {
+      return (
+        <DashboardLayout>
+            <div className="p-8 flex justify-center">
+                <Skeleton className="w-full max-w-4xl h-96 rounded-xl" />
+            </div>
+        </DashboardLayout>
+      );
+  }
+
+  return (
+    <DashboardLayout>
+        {isListed ? (
+            <ListedDashboard profile={profile} />
+        ) : (
+            <NotListedView profile={profile} onSuccess={handleIpoSuccess} />
+        )}
+    </DashboardLayout>
+  );
+}
+
+function NotListedView({ profile, onSuccess }: { profile: MeProfile | null, onSuccess: () => void }) {
+    const [quantity, setQuantity] = useState<string>('1000');
+    const [dividendRate, setDividendRate] = useState<number>(10); // %
+    const [isLoading, setIsLoading] = useState(false);
+
+    const handleIpo = async () => {
+        if (!confirm(`Are you sure you want to IPO? 
+
+Listing Fee: 10,000,000 KRW will be deducted.`)) return;
+        
+        setIsLoading(true);
+        try {
+            await api.post('human/ipo', {
+                json: {
+                    quantity: parseFloat(quantity),
+                    dividend_rate: dividendRate / 100,
+                    initial_price: 100 // Default initial price
+                }
+            });
+            toast.success("IPO Successful! You are now listed.");
+            onSuccess();
+        } catch (err: any) {
+            console.error("IPO Failed", err);
+            // Try to extract error message from API response if possible
+            if (err.response) {
+                try {
+                    const errorData = await err.response.json();
+                    toast.error(`IPO Failed: ${errorData.detail || 'Unknown error'}`);
+                } catch {
+                    toast.error("IPO Failed");
+                }
+            } else {
+                toast.error("IPO Failed");
+            }
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return (
+        <div className="flex flex-col items-center justify-center min-h-[60vh] gap-8 text-center p-4">
+            <div className="max-w-2xl space-y-4">
+                <div className="w-24 h-24 mx-auto rounded-full border-4 border-gray-600 bg-cover bg-center opacity-50 grayscale"
+                    style={{ backgroundImage: `url("https://api.dicebear.com/7.x/pixel-art/svg?seed=${profile?.nickname}")` }}
+                ></div>
+                <h1 className="text-white text-4xl font-bold">You are Private</h1>
+                <p className="text-[#90a4cb] text-lg">
+                    Your value is hidden from the world. Launch your IPO (Initial Public Offering) to trade yourself as an ETF.
+                </p>
+            </div>
+
+            <div className="w-full max-w-md bg-[#101623] border border-[#314368] rounded-xl p-8 flex flex-col gap-6">
+                <h2 className="text-white text-xl font-bold border-b border-[#314368] pb-4">IPO Application</h2>
+                
+                <div className="space-y-4 text-left">
+                    <div>
+                        <label className="text-[#90a4cb] text-sm block mb-1">Issuance Quantity</label>
+                        <input 
+                            type="number" 
+                            value={quantity}
+                            onChange={e => setQuantity(e.target.value)}
+                            className="w-full bg-[#182234] text-white border border-[#314368] rounded-lg px-4 py-2 focus:ring-1 focus:ring-[#0d59f2]"
+                        />
+                        <p className="text-xs text-[#90a4cb] mt-1">Initial shares to be issued to your wallet.</p>
+                    </div>
+
+                    <div>
+                        <label className="text-[#90a4cb] text-sm block mb-1">Dividend Rate: <span className="text-white font-bold">{dividendRate}%</span></label>
+                        <input 
+                            type="range" 
+                            min="10" max="100" step="1"
+                            value={dividendRate}
+                            onChange={e => setDividendRate(parseInt(e.target.value))}
+                            className="w-full h-2 bg-[#222f49] rounded-lg appearance-none cursor-pointer accent-[#0d59f2]"
+                        />
+                        <p className="text-xs text-[#90a4cb] mt-1">Percentage of your future PnL distributed to shareholders.</p>
+                    </div>
+
+                    <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+                        <div className="flex justify-between items-center text-sm">
+                            <span className="text-red-400 font-bold">Listing Fee</span>
+                            <span className="text-white font-mono font-bold">10,000,000 KRW</span>
+                        </div>
+                    </div>
+                </div>
+
+                <button 
+                    onClick={handleIpo}
+                    disabled={isLoading}
+                    className="w-full py-3 rounded-lg bg-[#0d59f2] hover:bg-[#0d59f2]/90 text-white font-bold text-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    {isLoading ? 'Processing...' : 'Launch IPO'}
+                </button>
+            </div>
+        </div>
+    );
+}
+
+function ListedDashboard({ profile }: { profile: MeProfile | null }) {
   const [shareholdersData, setShareholdersData] = useState<ShareholderResponse | null>(null);
   const [dividendStats, setDividendStats] = useState<IssuerDividendStats | null>(null);
   const [dividendHistory, setDividendHistory] = useState<DividendPaymentEntry[] | null>(null);
+  const [corporateValueData, setCorporateValueData] = useState<HumanCorporateValueResponse | null>(null);
   const [sliderValue, setSliderValue] = useState<number>(10); // Local state for slider
   
-  useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        const data = await api.get('auth/login/me').json<MeProfile>();
-        setProfile(data);
-      } catch (err) {
-        console.error(err);
-      }
-    };
-    fetchProfile();
-  }, []);
+  // My Human ETF ticker ID, derived from user ID
+  const myHumanTickerId = profile ? `HUMAN-${profile.id}` : undefined;
 
   useEffect(() => {
     const fetchShareholders = async () => {
@@ -79,11 +230,21 @@ export default function HumanETF() {
             console.error("Failed to fetch dividend history", err);
         }
     };
+    const fetchCorporateValue = async () => {
+        if (!myHumanTickerId) return; 
+        try {
+            const data = await api.get('human/corporate_value').json<HumanCorporateValueResponse>();
+            setCorporateValueData(data);
+        } catch (err) {
+            console.error("Failed to fetch corporate value", err);
+        }
+    };
     
     fetchShareholders();
     fetchDividendStats();
     fetchDividendHistory();
-  }, []);
+    fetchCorporateValue();
+  }, [myHumanTickerId]);
 
   const handleAction = async (action: 'burn' | 'bailout' | 'bankruptcy') => {
     try {
@@ -105,6 +266,9 @@ export default function HumanETF() {
           const updatedDividendStats = await api.get('human/dividend/stats').json<IssuerDividendStats>();
           setDividendStats(updatedDividendStats);
           setSliderValue(parseFloat(updatedDividendStats.current_dividend_rate) * 100);
+          // Re-fetch corporate value as it depends on total issued shares
+          const updatedCorporateValue = await api.get('human/corporate_value').json<HumanCorporateValueResponse>();
+          setCorporateValueData(updatedCorporateValue);
       }
     } catch (err) {
       console.error("Action failed", err);
@@ -114,6 +278,7 @@ export default function HumanETF() {
 
   const isLoading = !profile;
   const isDividendDataLoading = !dividendStats || !dividendHistory;
+  const isCorporateValueLoading = !corporateValueData;
 
   // Calculate ownership for chart
   const myQty = shareholdersData ? parseFloat(shareholdersData.my_holdings) : 0;
@@ -127,9 +292,26 @@ export default function HumanETF() {
   const othersOffset = 25 + 100 - myPct;
 
   return (
-    <DashboardLayout>
       <div className="flex flex-col gap-8">
         
+        {/* Header / Message */}
+        <div className="bg-gradient-to-r from-[#101623] to-[#182234] p-6 rounded-xl border border-[#314368] flex flex-col md:flex-row justify-between items-center gap-4">
+            <div>
+                <h1 className="text-white text-2xl font-bold mb-1">CEO Dashboard</h1>
+                <p className="text-[#90a4cb]">Strive for shareholder value. Your success is their dividend.</p>
+            </div>
+            <div className="flex items-center gap-3">
+                <span className={`px-3 py-1 rounded-full text-xs font-bold border ${profile?.is_active ? 'bg-green-500/10 border-green-500/30 text-green-500' : 'bg-gray-500/10 border-gray-500/30 text-gray-500'}`}>
+                    {profile?.is_active ? 'LISTED' : 'INACTIVE'}
+                </span>
+                {profile?.is_bankrupt && (
+                    <span className="px-3 py-1 rounded-full text-xs font-bold bg-red-500/10 border border-red-500/30 text-red-500">
+                        BANKRUPT
+                    </span>
+                )}
+            </div>
+        </div>
+
         {/* Profile Card */}
         <div className="flex p-6 border border-[#314368] bg-[#101623] rounded-xl items-center gap-6">
           {isLoading ? (
@@ -155,6 +337,62 @@ export default function HumanETF() {
               </div>
             </>
           )}
+        </div>
+
+        {/* Corporate Value */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Chart */}
+            <div className="flex flex-col p-6 border border-[#314368] bg-[#101623] rounded-xl gap-4">
+                <h2 className="text-white text-lg font-bold">My ETF Value</h2>
+                {myHumanTickerId ? (
+                    <div className="h-64 w-full bg-[#101623] rounded-lg overflow-hidden border border-[#314368]/30 relative">
+                        <CandleChart 
+                            tickerId={myHumanTickerId} 
+                            range="1D"
+                            chartType="area" // Area chart for simpler representation
+                            currencyCode="KRW" // Assuming Human ETFs are KRW denominated
+                        />
+                    </div>
+                ) : (
+                    <div className="h-64 w-full flex items-center justify-center text-[#90a4cb] border border-[#314368] rounded-lg">
+                        No active Human ETF.
+                    </div>
+                )}
+            </div>
+
+            {/* Metrics */}
+            <div className="flex flex-col p-6 border border-[#314368] bg-[#101623] rounded-xl gap-4">
+                <h2 className="text-white text-lg font-bold">Key Metrics</h2>
+                {isCorporateValueLoading ? (
+                    <div className="space-y-4">
+                        <Skeleton className="h-8 w-3/4" />
+                        <Skeleton className="h-6 w-1/2" />
+                        <Skeleton className="h-8 w-3/4" />
+                        <Skeleton className="h-6 w-1/2" />
+                    </div>
+                ) : (
+                    <>
+                        <div className="flex flex-col gap-1">
+                            <p className="text-[#90a4cb] text-sm">Current Price</p>
+                            <p className="text-white text-2xl font-bold">
+                                {corporateValueData?.current_price ? formatWithThousands(toFixedString(parseFloat(corporateValueData.current_price), 0, REPORT_ROUNDING)) : '-'}
+                            </p>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <p className="text-[#90a4cb] text-sm">Market Cap</p>
+                            <p className="text-white text-2xl font-bold">
+                                {corporateValueData?.market_cap ? formatWithThousands(toFixedString(parseFloat(corporateValueData.market_cap), 0, REPORT_ROUNDING)) : '-'}
+                            </p>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <p className="text-[#90a4cb] text-sm">P/E Ratio (Season)</p>
+                            <p className="text-white text-2xl font-bold">
+                                {corporateValueData?.per ? toFixedString(parseFloat(corporateValueData.per), 2, REPORT_ROUNDING) : '-'}
+                            </p>
+                        </div>
+                    </>
+                )}
+            </div>
         </div>
 
         {/* Cap Table Section */}
@@ -316,7 +554,7 @@ export default function HumanETF() {
             <span className="font-medium text-lg font-bold">Dividend Rate Setting</span>
             <div className="flex items-center gap-2">
                 <span className="font-mono font-bold text-[#00FF41] text-xl">
-                    {dividendStats ? (parseFloat(dividendStats.current_dividend_rate) * 100).toFixed(0) : '-'}%
+                    {dividendStats ? (parseFloat(dividendStats.current_dividend_rate) * 100).toFixed(0) : '-'}
                 </span>
                 {profile?.is_bankrupt && <span className="text-xs text-red-500 font-bold border border-red-500 px-2 py-0.5 rounded">Bankrupt Min: 50%</span>}
             </div>
@@ -406,6 +644,5 @@ export default function HumanETF() {
 
         </div>
       </div>
-    </DashboardLayout>
   );
 }
