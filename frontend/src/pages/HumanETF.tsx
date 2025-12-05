@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import api from '../api/client';
 import DashboardLayout from '../components/DashboardLayout';
 import Skeleton from '../components/Skeleton';
 import { CandleChart } from '../components/CandleChart';
 import { toFixedString, REPORT_ROUNDING, formatWithThousands } from '../utils/numfmt';
+
+const DEFAULT_PROPOSAL_END = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 16); // one day later
 
 type MeProfile = { id: string; nickname: string; is_active: boolean; is_bankrupt?: boolean; is_listed?: boolean }; // Added is_listed
 type SimpleMessage = { message?: string };
@@ -213,9 +215,25 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
     const [proposals, setProposals] = useState<VoteProposal[] | null>(null);
     const [lockedStake, setLockedStake] = useState<number>(0);
     const [nowTs, setNowTs] = useState<number>(() => Date.now());
+    const [newProposal, setNewProposal] = useState({
+        title: '',
+        description: '',
+        voteType: 'DIVIDEND_CHANGE',
+        targetValue: '',
+        endAt: DEFAULT_PROPOSAL_END,
+    });
   
   // My Human ETF ticker ID, derived from user ID
   const myHumanTickerId = profile ? `HUMAN-${profile.id}` : undefined;
+
+    const refreshProposals = useCallback(async () => {
+        if (!myHumanTickerId) return;
+        const listRes = await api.get('votes/proposals', { searchParams: { ticker_id: myHumanTickerId } }).json<{ items: Omit<VoteProposal, 'tally' | 'my_vote'>[] }>();
+        const detailed = await Promise.all(listRes.items.map(async (p) => api.get(`votes/proposals/${p.id}`).json<VoteProposal>()));
+        setProposals(detailed);
+        const locked = detailed.filter(p => p.status === 'PENDING' && p.my_vote).reduce((sum, p) => sum + parseFloat(p.my_vote!.quantity), 0);
+        setLockedStake(locked);
+    }, [myHumanTickerId]);
 
   useEffect(() => {
         const timer = setInterval(() => setNowTs(Date.now()), 30000);
@@ -259,33 +277,14 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
         }
     };
 
-    const fetchProposals = async () => {
-        if (!myHumanTickerId) return;
-        try {
-            const listRes = await api.get('votes/proposals', { searchParams: { ticker_id: myHumanTickerId } }).json<{ items: Omit<VoteProposal, 'tally' | 'my_vote'>[] }>();
-            // Fetch details to include tally + my_vote
-            const detailed = await Promise.all(
-                listRes.items.map(async (p) => {
-                    const detail = await api.get(`votes/proposals/${p.id}`).json<VoteProposal>();
-                    return detail;
-                })
-            );
-            setProposals(detailed);
-            const locked = detailed
-                .filter(p => p.status === 'PENDING' && p.my_vote)
-                .reduce((sum, p) => sum + parseFloat(p.my_vote!.quantity), 0);
-            setLockedStake(locked);
-        } catch (err) {
-            console.error('Failed to fetch proposals', err);
-        }
-    };
-    
-    fetchShareholders();
-    fetchDividendStats();
-    fetchDividendHistory();
-    fetchCorporateValue();
-    fetchProposals();
-  }, [myHumanTickerId]);
+        (async () => {
+                await fetchShareholders();
+                await fetchDividendStats();
+                await fetchDividendHistory();
+                await fetchCorporateValue();
+            await refreshProposals();
+        })();
+    }, [myHumanTickerId, refreshProposals]);
 
   const handleAction = async (action: 'burn' | 'bailout' | 'bankruptcy') => {
     try {
@@ -659,6 +658,85 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
                 </div>
             </div>
 
+            {/* Create Proposal */}
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 bg-[#0c1423] border border-[#1f2b44] rounded-lg p-3">
+                <input
+                    value={newProposal.title}
+                    onChange={(e) => setNewProposal(prev => ({ ...prev, title: e.target.value }))}
+                    placeholder="Title"
+                    className="lg:col-span-1 bg-[#182234] border border-[#314368] rounded px-3 py-2 text-white text-sm"
+                />
+                <input
+                    value={newProposal.description}
+                    onChange={(e) => setNewProposal(prev => ({ ...prev, description: e.target.value }))}
+                    placeholder="Description"
+                    className="lg:col-span-1 bg-[#182234] border border-[#314368] rounded px-3 py-2 text-white text-sm"
+                />
+                <select
+                    value={newProposal.voteType}
+                    onChange={(e) => setNewProposal(prev => ({ ...prev, voteType: e.target.value }))}
+                    className="bg-[#182234] border border-[#314368] rounded px-3 py-2 text-white text-sm"
+                >
+                    <option value="DIVIDEND_CHANGE">Dividend Change</option>
+                    <option value="FORCED_DELISTING">Forced Delisting</option>
+                    <option value="IMPEACHMENT">Impeachment</option>
+                </select>
+                <input
+                    value={newProposal.targetValue}
+                    onChange={(e) => setNewProposal(prev => ({ ...prev, targetValue: e.target.value }))}
+                    placeholder="Target value (e.g., 0.7)"
+                    className="bg-[#182234] border border-[#314368] rounded px-3 py-2 text-white text-sm"
+                />
+                <input
+                    type="datetime-local"
+                    value={newProposal.endAt}
+                    onChange={(e) => setNewProposal(prev => ({ ...prev, endAt: e.target.value }))}
+                    className="bg-[#182234] border border-[#314368] rounded px-3 py-2 text-white text-sm"
+                />
+                <div className="lg:col-span-5 flex justify-end">
+                    <button
+                        onClick={async () => {
+                            if (!myHumanTickerId) return;
+                            if (!newProposal.title.trim()) {
+                                toast.error('Title is required');
+                                return;
+                            }
+                            if (!newProposal.endAt) {
+                                toast.error('End time is required');
+                                return;
+                            }
+                            try {
+                                await api.post('votes/proposals', {
+                                    json: {
+                                        ticker_id: myHumanTickerId,
+                                        title: newProposal.title,
+                                        description: newProposal.description || undefined,
+                                        vote_type: newProposal.voteType,
+                                        target_value: newProposal.targetValue || undefined,
+                                        end_at: new Date(newProposal.endAt).toISOString(),
+                                    },
+                                });
+                                toast.success('Proposal created');
+                                await refreshProposals();
+                                setNewProposal({
+                                    title: '',
+                                    description: '',
+                                    voteType: 'DIVIDEND_CHANGE',
+                                    targetValue: '',
+                                    endAt: DEFAULT_PROPOSAL_END,
+                                });
+                            } catch (err) {
+                                console.error('Create proposal failed', err);
+                                toast.error('Create proposal failed');
+                            }
+                        }}
+                        className="px-4 py-2 bg-[#0d59f2] text-white text-sm font-bold rounded hover:bg-[#0b4bcc]"
+                    >
+                        Create Proposal
+                    </button>
+                </div>
+            </div>
+
             {!proposals ? (
                 <Skeleton className="h-24 w-full" />
             ) : proposals.length === 0 ? (
@@ -696,11 +774,7 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
                                         await api.post(`votes/proposals/${p.id}/vote`, { json: { choice, quantity: qty } });
                                         toast.success('Vote submitted');
                                         // refresh proposals and holdings
-                                        const listRes = await api.get('votes/proposals', { searchParams: { ticker_id: myHumanTickerId } }).json<{ items: Omit<VoteProposal, 'tally' | 'my_vote'>[] }>();
-                                        const detailed = await Promise.all(listRes.items.map(async (ip) => api.get(`votes/proposals/${ip.id}`).json<VoteProposal>()));
-                                        setProposals(detailed);
-                                        const locked = detailed.filter(dp => dp.status === 'PENDING' && dp.my_vote).reduce((sum, dp) => sum + parseFloat(dp.my_vote!.quantity), 0);
-                                        setLockedStake(locked);
+                                        await refreshProposals();
                                         const updatedShareholders = await api.get('human/shareholders').json<ShareholderResponse>();
                                         setShareholdersData(updatedShareholders);
                                     } catch (err) {
@@ -713,11 +787,7 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
                                     try {
                                         await api.post(`votes/proposals/${p.id}/unvote`);
                                         toast.success('Vote removed');
-                                        const listRes = await api.get('votes/proposals', { searchParams: { ticker_id: myHumanTickerId } }).json<{ items: Omit<VoteProposal, 'tally' | 'my_vote'>[] }>();
-                                        const detailed = await Promise.all(listRes.items.map(async (ip) => api.get(`votes/proposals/${ip.id}`).json<VoteProposal>()));
-                                        setProposals(detailed);
-                                        const locked = detailed.filter(dp => dp.status === 'PENDING' && dp.my_vote).reduce((sum, dp) => sum + parseFloat(dp.my_vote!.quantity), 0);
-                                        setLockedStake(locked);
+                                        await refreshProposals();
                                         const updatedShareholders = await api.get('human/shareholders').json<ShareholderResponse>();
                                         setShareholdersData(updatedShareholders);
                                     } catch (err) {
