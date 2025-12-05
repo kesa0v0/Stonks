@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import api from '../api/client';
+import { formatCurrencyDisplay, toFixedString, REPORT_ROUNDING, formatWithThousands } from '../utils/numfmt';
 import DashboardLayout from '../components/DashboardLayout';
 import type { TickerResponse, MoverResponse, Portfolio } from '../interfaces';
 import { usePricesAll, usePricesVersion } from '../store/prices';
@@ -223,13 +224,13 @@ export default function Dashboard() {
                           <td className="p-4 text-white font-medium">{t.symbol}</td>
                           <td className="p-4 text-gray-300">{t.name}</td>
                           <td className="p-4 text-right text-white font-mono">
-                            {t.current_price ? Number(t.current_price).toLocaleString() : '-'} {t.currency}
+                            {t.current_price ? formatCurrencyDisplay(t.current_price, t.currency, 'ROUND_DOWN') : '-'} {t.currency}
                           </td>
                           <td className={`p-4 text-right font-mono font-medium ${isPositive ? 'text-profit' : 'text-loss'}`}>
-                            {t.change_percent ? `${isPositive ? '+' : ''}${change.toFixed(2)}%` : '-'}
+                            {t.change_percent ? `${isPositive ? '+' : ''}${toFixedString(change, 2, REPORT_ROUNDING)}%` : '-'}
                           </td>
                           <td className="p-4 text-right text-gray-400 font-mono">
-                            {t.volume ? Number(t.volume).toLocaleString(undefined, { maximumFractionDigits: 0 }) : '-'}
+                            {t.volume ? formatWithThousands(toFixedString(t.volume, 0, 'ROUND_DOWN')) : '-'}
                           </td>
                           <td className="p-4 text-center">
                             <button onClick={() => onTrade(t)} className="h-8 px-4 rounded-md bg-primary text-background-dark font-semibold text-sm hover:bg-primary/90">Trade</button>
@@ -276,7 +277,7 @@ function ListMovers({ data }: { data?: MoverResponse[] }) {
           <div key={i} className="flex justify-between items-center">
             <p className="text-white tracking-light text-lg font-bold">{m.ticker.symbol}</p>
             <p className={`${isPositive ? 'text-profit' : 'text-loss'} text-base font-medium`}>
-              {m.change_percent ? `${isPositive ? '+' : ''}${change.toFixed(1)}%` : '-'}
+              {m.change_percent ? `${isPositive ? '+' : ''}${toFixedString(change, 1, REPORT_ROUNDING)}%` : '-'}
             </p>
           </div>
         );

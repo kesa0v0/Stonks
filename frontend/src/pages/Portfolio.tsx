@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import Decimal from 'decimal.js';
+import { toFixedString, REPORT_ROUNDING, formatWithThousands } from '../utils/numfmt';
 import api from '../api/client';
 import DashboardLayout from '../components/DashboardLayout';
 import type { Portfolio as IPortfolio, OrderListItem } from '../interfaces';
@@ -145,15 +146,15 @@ export default function Portfolio() {
         ) : (
               <StatCard 
                 title="Total Asset Value" 
-                value={`$${Math.floor(Number(portfolio.total_asset_value)).toLocaleString()}`} 
-                trend={portfolio.total_asset_change_percent ? `${Number(portfolio.total_asset_change_percent) >= 0 ? '+' : ''}${portfolio.total_asset_change_percent}% (Today)` : undefined}
+                value={`$${formatWithThousands(toFixedString(Number(portfolio.total_asset_value), 0, 'ROUND_DOWN'))}`} 
+                trend={portfolio.total_asset_change_percent ? `${Number(portfolio.total_asset_change_percent) >= 0 ? '+' : ''}${toFixedString(Number(portfolio.total_asset_change_percent), 2, REPORT_ROUNDING)}% (Today)` : undefined}
                 trendPositive={Number(portfolio.total_asset_change_percent || 0) >= 0}
               />
         )}
         {isLoading ? (
           <SkeletonCard />
         ) : (
-          <StatCard title="Available Cash" value={`$${Math.floor(Number(portfolio.cash_balance)).toLocaleString()}`} />
+          <StatCard title="Available Cash" value={`$${formatWithThousands(toFixedString(Number(portfolio.cash_balance), 0, 'ROUND_DOWN'))}`} />
         )}
         {isLoading ? (
           <SkeletonCard />
@@ -181,7 +182,7 @@ export default function Portfolio() {
                 </svg>
                 <div className="absolute flex flex-col items-center justify-center">
                   <p className="text-[#90a4cb] text-sm">Total Assets</p>
-                  <p className="text-white text-xl font-bold">${Math.floor(totalGrossAssets).toLocaleString()}</p>
+                  <p className="text-white text-xl font-bold">${formatWithThousands(toFixedString(totalGrossAssets, 0, 'ROUND_DOWN'))}</p>
                 </div>
               </>
             )}
@@ -255,8 +256,8 @@ export default function Portfolio() {
                                     {order.side}
                                 </span>
                             </td>
-                            <td className="px-6 py-4 text-right text-white/70">{order.price ? Number(order.price).toLocaleString() : '-'}</td>
-                            <td className="px-6 py-4 text-right text-white/70">{Number(order.quantity)}</td>
+                            <td className="px-6 py-4 text-right text-white/70">{order.price ? formatWithThousands(toFixedString(order.price, 0, 'ROUND_DOWN')) : '-'}</td>
+                            <td className="px-6 py-4 text-right text-white/70">{toFixedString(order.quantity, 4, 'ROUND_DOWN')}</td>
                             <td className="px-6 py-4 text-center">
                                 <span className={`text-xs font-bold uppercase ${statusColor}`}>{order.status}</span>
                             </td>

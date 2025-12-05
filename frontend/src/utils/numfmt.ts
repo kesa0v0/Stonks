@@ -53,3 +53,7 @@ export const formatCurrencyDisplay = (
   const fixed = toFixedString(value, digits, rounding);
   return formatWithThousands(fixed);
 };
+
+// Suggested global policy presets
+export const INPUT_ROUNDING: RoundingKey = 'ROUND_DOWN';
+export const REPORT_ROUNDING: RoundingKey = 'ROUND_HALF_UP';

@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import api from '../api/client';
+import { toFixedString, REPORT_ROUNDING, formatCurrencyDisplay } from '../utils/numfmt';
 import DashboardLayout from '../components/DashboardLayout';
 import { CandleChart } from '../components/CandleChart';
 import OpenOrders from '../components/OpenOrders';
@@ -30,7 +31,7 @@ function RealTimeHeaderStats({ tickerId, selectedTicker }: { tickerId: string; s
       <div className="text-right hidden sm:block">
         <p className="text-[#90a4cb] text-xs uppercase font-bold">24h Change</p>
         <p className={`font-mono font-bold ${change >= 0 ? 'text-profit' : 'text-loss'}`}>
-          {change >= 0 ? '+' : ''}{change.toFixed(2)}%
+          {change >= 0 ? '+' : ''}{toFixedString(change, 2, REPORT_ROUNDING)}%
         </p>
       </div>
       <div className="text-right hidden sm:block">
@@ -266,25 +267,25 @@ export default function Market() {
                     {/* Asks (Sell Orders) - Blue (Loss) */}
                     {orderBook?.asks.slice(0, 8).reverse().map((ask, i) => (
                       <tr key={`ask-${i}`} className="hover:bg-[#182234] transition-colors relative">
-                        <td className="text-loss py-1">{Number(ask.price).toLocaleString()}</td>
-                        <td className="text-right text-white/70">{Number(ask.quantity).toFixed(4)}</td>
-                        <td className="text-right text-white/40">{(Number(ask.price) * Number(ask.quantity)).toLocaleString()}</td>
+                        <td className="text-loss py-1">{formatCurrencyDisplay(ask.price, currency, 'ROUND_DOWN')}</td>
+                        <td className="text-right text-white/70">{toFixedString(ask.quantity, 4, 'ROUND_DOWN')}</td>
+                        <td className="text-right text-white/40">{formatCurrencyDisplay(Number(ask.price) * Number(ask.quantity), currency, 'ROUND_DOWN')}</td>
                       </tr>
                     ))}
                     
                     {/* Current Price Divider */}
                     <tr className="border-y border-[#314368] bg-[#222f49]/50">
                       <td colSpan={3} className="py-2 text-center text-lg font-bold text-white">
-                        {realTimePrice ? realTimePrice.toLocaleString() : '-'} <span className="text-xs text-[#90a4cb] font-normal">KRW</span>
+                        {realTimePrice ? formatCurrencyDisplay(realTimePrice, currency, 'ROUND_DOWN') : '-'} <span className="text-xs text-[#90a4cb] font-normal">{currency}</span>
                       </td>
                     </tr>
 
                     {/* Bids (Buy Orders) - Red (Profit) */}
                     {orderBook?.bids.slice(0, 8).map((bid, i) => (
                       <tr key={`bid-${i}`} className="hover:bg-[#2a1818] transition-colors relative">
-                        <td className="text-profit py-1">{Number(bid.price).toLocaleString()}</td>
-                        <td className="text-right text-white/70">{Number(bid.quantity).toFixed(4)}</td>
-                        <td className="text-right text-white/40">{(Number(bid.price) * Number(bid.quantity)).toLocaleString()}</td>
+                        <td className="text-profit py-1">{formatCurrencyDisplay(bid.price, currency, 'ROUND_DOWN')}</td>
+                        <td className="text-right text-white/70">{toFixedString(bid.quantity, 4, 'ROUND_DOWN')}</td>
+                        <td className="text-right text-white/40">{formatCurrencyDisplay(Number(bid.price) * Number(bid.quantity), currency, 'ROUND_DOWN')}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -360,11 +361,11 @@ export default function Market() {
                       <span className="text-[#90a4cb]">
                           Holding: <span className="font-mono text-white">{Number(currentHolding.quantity).toLocaleString(undefined, { maximumFractionDigits: 4 })}</span>
                       </span>
-                      {holdingPnL !== null && (
+                        {holdingPnL !== null && (
                           <span className={`font-mono font-bold ${holdingPnL >= 0 ? 'text-profit' : 'text-loss'}`}>
-                              {holdingPnL >= 0 ? '+' : ''}{holdingPnL.toFixed(2)}%
+                            {holdingPnL >= 0 ? '+' : ''}{toFixedString(holdingPnL, 2, REPORT_ROUNDING)}%
                           </span>
-                      )}
+                        )}
                   </div>
                 )}
 

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../api/client';
+import { toFixedString, REPORT_ROUNDING, formatWithThousands, formatCurrencyDisplay } from '../utils/numfmt';
 import DashboardLayout from '../components/DashboardLayout';
 import type { RankingEntry, HallOfFameResponse } from '../interfaces';
 
@@ -206,7 +207,7 @@ const BadgeCard = ({ title, user, desc, color }: { title: string, user?: Ranking
     {/* Tooltip */}
     <div className="absolute bottom-full mb-2 w-max max-w-xs p-2 text-xs text-white bg-black/90 rounded-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
       <p className="font-bold">{desc}</p>
-      {user && <p className="text-gray-300 mt-1">Value: {parseFloat(user.value).toLocaleString()}</p>}
+      {user && <p className="text-gray-300 mt-1">Value: {formatWithThousands(toFixedString(user.value, 0, 'ROUND_DOWN'))}</p>}
     </div>
   </div>
 );
@@ -227,10 +228,10 @@ function getValueColor(type: string, value: number) {
 }
 
 function formatValue(type: string, value: string) {
-  const num = parseFloat(value);
-  if (type === 'pnl' || type === 'loss') return `${Math.floor(num).toLocaleString()} KRW`;
-  if (type === 'volume' || type === 'night') return `${num} 회`;
-  if (type === 'win_rate' || type === 'market_ratio') return `${num.toFixed(2)} %`;
-  if (type === 'profit_factor') return `${num.toFixed(2)}`;
-  return num;
+  const num = Number(value);
+  if (type === 'pnl' || type === 'loss') return `${formatWithThousands(toFixedString(num, 0, 'ROUND_DOWN'))} KRW`;
+  if (type === 'volume' || type === 'night') return `${formatWithThousands(toFixedString(num, 0, 'ROUND_DOWN'))} 회`;
+  if (type === 'win_rate' || type === 'market_ratio') return `${toFixedString(num, 2, REPORT_ROUNDING)} %`;
+  if (type === 'profit_factor') return `${toFixedString(num, 2, REPORT_ROUNDING)}`;
+  return toFixedString(num, 2, REPORT_ROUNDING);
 }

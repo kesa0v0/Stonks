@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import Decimal from 'decimal.js';
+import { toFixedString, formatWithThousands, REPORT_ROUNDING } from '../utils/numfmt';
 import type { Asset } from '../interfaces';
 import { usePrice } from '../store/prices';
 
@@ -94,21 +95,21 @@ function HoldingRow({ asset }: { asset: Asset }) {
         </div>
       </td>
       <td className="px-4 py-3 text-right text-white font-mono">
-        {quantity.toFixed(4)}
+        {toFixedString(quantity, 4, 'ROUND_DOWN')}
       </td>
       <td className="px-4 py-3 text-right text-[#90a4cb] font-mono">
-        {avgPrice.toFixed(0)}
+        {formatWithThousands(toFixedString(avgPrice, 0, 'ROUND_DOWN'))}
       </td>
       <td className="px-4 py-3 text-right text-white font-mono font-medium">
-        {currentPrice.toFixed(0)}
+        {formatWithThousands(toFixedString(currentPrice, 0, 'ROUND_DOWN'))}
       </td>
       <td className="px-4 py-3 text-right text-white font-bold font-mono">
-        {totalValue.floor().toString()}
+        {formatWithThousands(toFixedString(totalValue, 0, 'ROUND_DOWN'))}
       </td>
       <td className={`px-4 py-3 text-right font-mono font-medium ${pnlColor}`}>
         <div className="flex flex-col items-end">
-          <span>{isPositive ? '+' : ''}{pnlValue.floor().toString()}</span>
-          <span className="text-xs">({isPositive ? '+' : ''}{profitRate.toFixed(2)}%)</span>
+          <span>{isPositive ? '+' : ''}{formatWithThousands(toFixedString(pnlValue, 0, 'ROUND_DOWN'))}</span>
+          <span className="text-xs">({isPositive ? '+' : ''}{toFixedString(profitRate, 2, REPORT_ROUNDING)}%)</span>
         </div>
       </td>
       <td className="px-4 py-3 text-center">

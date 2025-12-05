@@ -1,4 +1,6 @@
 // no default React import needed
+import Decimal from 'decimal.js';
+import { getCurrencyDigits, toFixedString } from '../../utils/numfmt';
 
 type OrderType = 'MARKET' | 'LIMIT' | 'STOP_LOSS' | 'TAKE_PROFIT' | 'STOP_LIMIT' | 'TRAILING_STOP';
 
@@ -21,6 +23,22 @@ export default function OrderInputs({
   onStopPriceChange: (v: string) => void;
   onTrailingGapChange: (v: string) => void;
 }) {
+  const digits = getCurrencyDigits(currency);
+
+  const priceStr = typeof price === 'number' ? toFixedString(price, digits, 'ROUND_DOWN') : '';
+  const stopPriceStr = typeof stopPrice === 'number' ? toFixedString(stopPrice, digits, 'ROUND_DOWN') : '';
+  const trailingGapStr = typeof trailingGap === 'number' ? toFixedString(trailingGap, digits, 'ROUND_DOWN') : '';
+
+  const sanitize = (raw: string) => {
+    const trimmed = raw.trim();
+    if (!trimmed) return '';
+    try {
+      const v = new Decimal(trimmed);
+      return toFixedString(v, digits, 'ROUND_DOWN');
+    } catch {
+      return '';
+    }
+  };
   return (
     <>
       {(orderType === 'LIMIT' || orderType === 'STOP_LIMIT') && (
@@ -31,8 +49,8 @@ export default function OrderInputs({
           <input
             type="number"
             className="w-full mt-1 bg-[#182234] border border-[#314368] rounded-lg px-3 py-2 text-white font-mono focus:border-[#0d59f2] focus:ring-1 focus:ring-[#0d59f2] outline-none transition-all"
-            value={price}
-            onChange={(e) => onPriceChange(e.target.value)}
+            value={priceStr}
+            onChange={(e) => onPriceChange(sanitize(e.target.value))}
             placeholder="Price"
           />
         </div>
@@ -46,8 +64,8 @@ export default function OrderInputs({
           <input
             type="number"
             className="w-full mt-1 bg-[#182234] border border-[#314368] rounded-lg px-3 py-2 text-white font-mono focus:border-[#0d59f2] focus:ring-1 focus:ring-[#0d59f2] outline-none transition-all"
-            value={stopPrice}
-            onChange={(e) => onStopPriceChange(e.target.value)}
+            value={stopPriceStr}
+            onChange={(e) => onStopPriceChange(sanitize(e.target.value))}
             placeholder="Trigger Price"
           />
         </div>
@@ -61,8 +79,8 @@ export default function OrderInputs({
           <input
             type="number"
             className="w-full mt-1 bg-[#182234] border border-[#314368] rounded-lg px-3 py-2 text-white font-mono focus:border-[#0d59f2] focus:ring-1 focus:ring-[#0d59f2] outline-none transition-all"
-            value={trailingGap}
-            onChange={(e) => onTrailingGapChange(e.target.value)}
+            value={trailingGapStr}
+            onChange={(e) => onTrailingGapChange(sanitize(e.target.value))}
             placeholder="Gap Amount"
           />
         </div>
