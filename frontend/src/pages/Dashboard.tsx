@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import Decimal from 'decimal.js';
 import api from '../api/client';
 import { formatCurrencyDisplay, toFixedString, REPORT_ROUNDING, formatWithThousands } from '../utils/numfmt';
 import DashboardLayout from '../components/DashboardLayout';
@@ -51,14 +52,17 @@ export default function Dashboard() {
     
     return portfolioQ.data.assets.map(a => {
       const p = prices.get(a.ticker_id);
-      const assetQuantity = Number(a.quantity);
-      const assetAveragePrice = Number(a.average_price);
-      const assetCurrentPrice = p !== undefined ? p : Number(a.current_price);
+      const assetQuantity = new Decimal(a.quantity);
+      const assetAveragePrice = new Decimal(a.average_price);
+      // prices store returns number, converting to Decimal for consistent calc
+      const assetCurrentPrice = p !== undefined ? new Decimal(p) : new Decimal(a.current_price);
 
-      const totalValue = assetCurrentPrice * assetQuantity;
-      let profitRate = 0;
-      if (assetAveragePrice * assetQuantity !== 0) {
-          profitRate = ((totalValue - (assetAveragePrice * assetQuantity)) / Math.abs(assetAveragePrice * assetQuantity)) * 100;
+      const totalValue = assetCurrentPrice.mul(assetQuantity);
+      let profitRate = new Decimal(0);
+      const costBasis = assetAveragePrice.mul(assetQuantity);
+      
+      if (!costBasis.isZero()) {
+          profitRate = totalValue.minus(costBasis).div(costBasis.abs()).mul(100);
       }
 
       return {
@@ -81,17 +85,25 @@ export default function Dashboard() {
     const p = prices.get(t.id);
     if (p === undefined) return t;
     
-    const current = Number(t.current_price || 0);
-    const change = Number(t.change_percent || 0);
+    const current = new Decimal(t.current_price || 0);
+    const change = new Decimal(t.change_percent || 0);
+    const newPrice = new Decimal(p);
     
-    // Calculate previous close from initial data
-    const prev = current / (1 + change / 100);
+    // Calculate previous close from initial data: prev = current / (1 + change / 100)
+    // If change is -100%, we have division by zero issue.
+    const divisor = new Decimal(1).plus(change.div(100));
+    let prev = new Decimal(0);
+    if (!divisor.isZero()) {
+        prev = current.div(divisor);
+    }
     
-    // Calculate new change percent
-    // Avoid division by zero if prev is 0 (unlikely but possible)
-    const newChange = prev !== 0 ? ((p - prev) / prev) * 100 : 0;
+    // Calculate new change percent: ((newPrice - prev) / prev) * 100
+    let newChange = new Decimal(0);
+    if (!prev.isZero()) {
+        newChange = newPrice.minus(prev).div(prev).mul(100);
+    }
     
-    return { ...t, current_price: String(p), change_percent: String(newChange) };
+    return { ...t, current_price: newPrice.toString(), change_percent: newChange.toString() };
   };
 
   // Helper to merge real-time price into MoverResponse
@@ -99,22 +111,30 @@ export default function Dashboard() {
     const p = prices.get(m.ticker.id);
     if (p === undefined) return m;
     
-    const currentPrice = p;
+    const currentPrice = new Decimal(p);
     // Use the pricing data from the MoverResponse itself as the baseline
-    const initialPrice = Number(m.price);
-    const initialChange = Number(m.change_percent);
+    const initialPrice = new Decimal(m.price);
+    const initialChange = new Decimal(m.change_percent);
     
-    const prev = initialPrice / (1 + initialChange / 100);
-    const newChange = prev !== 0 ? ((currentPrice - prev) / prev) * 100 : 0;
+    const divisor = new Decimal(1).plus(initialChange.div(100));
+    let prev = new Decimal(0);
+    if (!divisor.isZero()) {
+        prev = initialPrice.div(divisor);
+    }
+    
+    let newChange = new Decimal(0);
+    if (!prev.isZero()) {
+        newChange = currentPrice.minus(prev).div(prev).mul(100);
+    }
     
     return {
       ...m,
-      price: String(currentPrice),
-      change_percent: String(newChange),
+      price: currentPrice.toString(),
+      change_percent: newChange.toString(),
       ticker: { 
         ...m.ticker, 
-        current_price: String(currentPrice), 
-        change_percent: String(newChange) 
+        current_price: currentPrice.toString(), 
+        change_percent: newChange.toString() 
       }
     };
   };
@@ -233,8 +253,8 @@ export default function Dashboard() {
                         Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={6} />)
                     ) : (
                       displayedTickers.slice(0, 50).map(t => {
-                      const change = Number(t.change_percent || 0);
-                      const isPositive = change >= 0;
+                      const change = new Decimal(t.change_percent || 0);
+                      const isPositive = change.greaterThanOrEqualTo(0);
                       return (
                         <tr key={t.id} className="hover:bg-[#182234]">
                           <td className="p-4 text-white font-medium">
@@ -253,7 +273,7 @@ export default function Dashboard() {
                             {t.dividend_rate ? <span className="text-green-400 font-bold">{t.dividend_rate}%</span> : <span className="text-gray-600">-</span>}
                           </td>
                           <td className="p-4 text-right text-gray-400 font-mono">
-                            {t.volume ? formatWithThousands(toFixedString(t.volume, 0, 'ROUND_DOWN')) : '-'}
+                            {t.volume ? formatWithThousands(toFixedString(new Decimal(t.volume), 0, 'ROUND_DOWN')) : '-'}
                           </td>
                           <td className="p-4 text-center">
                             <button onClick={() => onTrade(t)} className="h-8 px-4 rounded-md bg-primary text-background-dark font-semibold text-sm hover:bg-primary/90">Trade</button>
@@ -293,8 +313,8 @@ function ListMovers({ data }: { data?: MoverResponse[] }) {
   return (
     <>
       {items.map((m, i) => {
-        const change = Number(m.change_percent);
-        const isPositive = change >= 0;
+        const change = new Decimal(m.change_percent);
+        const isPositive = change.greaterThanOrEqualTo(0);
 
         return (
           <div key={i} className="flex justify-between items-center">
