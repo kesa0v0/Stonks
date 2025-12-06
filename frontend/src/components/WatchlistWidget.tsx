@@ -12,7 +12,8 @@ export default function WatchlistWidget() {
   const prices = usePricesAll();
   const { items: watchlistItems, isLoading, isPinned, toggle, mutatingId } = useWatchlist();
   const items = (watchlistItems || []).map(item => {
-    const live = prices.get(item.ticker.id);
+    // prices is now a Record<string, number>, not a Map
+    const live = prices[item.ticker.id];
     const price = live ?? Number(item.current_price ?? item.ticker.current_price ?? 0);
     return { ...item, price };
   });

@@ -51,7 +51,7 @@ export default function Dashboard() {
     if (!portfolioQ.data) return [];
     
     return portfolioQ.data.assets.map(a => {
-      const p = prices.get(a.ticker_id);
+      const p = prices[a.ticker_id];
       const assetQuantity = new Decimal(a.quantity);
       const assetAveragePrice = new Decimal(a.average_price);
       // prices store returns number, converting to Decimal for consistent calc
@@ -82,7 +82,7 @@ export default function Dashboard() {
 
   // Merge real-time prices
   const mergePrice = (t: TickerResponse) => {
-    const p = prices.get(t.id);
+    const p = prices[t.id];
     if (p === undefined) return t;
     
     const current = new Decimal(t.current_price || 0);
@@ -108,7 +108,7 @@ export default function Dashboard() {
 
   // Helper to merge real-time price into MoverResponse
   const mergeMover = (m: MoverResponse) => {
-    const p = prices.get(m.ticker.id);
+    const p = prices[m.ticker.id];
     if (p === undefined) return m;
     
     const currentPrice = new Decimal(p);

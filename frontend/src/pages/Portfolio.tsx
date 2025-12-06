@@ -74,7 +74,7 @@ export default function Portfolio() {
     };
     
     const updatedAssets = fetchedPortfolio.assets.map(a => {
-      const p = prices.get(a.ticker_id); // This is a number
+      const p = prices[a.ticker_id]; // This is a number or undefined
       
       const assetQuantity = Number(a.quantity);
       const assetAveragePrice = Number(a.average_price);
