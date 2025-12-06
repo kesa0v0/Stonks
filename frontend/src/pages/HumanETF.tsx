@@ -6,6 +6,7 @@ import Skeleton from '../components/Skeleton';
 import Avatar from '../components/Avatar';
 import { CandleChart } from '../components/CandleChart';
 import { toFixedString, REPORT_ROUNDING, formatWithThousands } from '../utils/numfmt';
+import Decimal from 'decimal.js';
 
 const DEFAULT_PROPOSAL_END = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 16); // one day later
 
@@ -122,7 +123,7 @@ function NotListedView({ profile, onSuccess }: { profile: MeProfile | null, onSu
         try {
             await api.post('human/ipo', {
                 json: {
-                    quantity: parseFloat(quantity),
+                    quantity: new Decimal(quantity).toNumber(), // API likely expects number
                     dividend_rate: dividendRate / 100
                 }
             });
@@ -214,7 +215,7 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
   const [corporateValueData, setCorporateValueData] = useState<HumanCorporateValueResponse | null>(null);
   const [sliderValue, setSliderValue] = useState<number>(10); // Local state for slider
     const [proposals, setProposals] = useState<VoteProposal[] | null>(null);
-    const [lockedStake, setLockedStake] = useState<number>(0);
+    const [lockedStake, setLockedStake] = useState<Decimal>(new Decimal(0));
     const [nowTs, setNowTs] = useState<number>(() => Date.now());
     const [newProposal, setNewProposal] = useState({
         title: '',
@@ -232,7 +233,7 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
         const listRes = await api.get('votes/proposals', { searchParams: { ticker_id: myHumanTickerId } }).json<{ items: Omit<VoteProposal, 'tally' | 'my_vote'>[] }>();
         const detailed = await Promise.all(listRes.items.map(async (p) => api.get(`votes/proposals/${p.id}`).json<VoteProposal>()));
         setProposals(detailed);
-        const locked = detailed.filter(p => p.status === 'PENDING' && p.my_vote).reduce((sum, p) => sum + parseFloat(p.my_vote!.quantity), 0);
+        const locked = detailed.filter(p => p.status === 'PENDING' && p.my_vote).reduce((sum, p) => sum.plus(new Decimal(p.my_vote!.quantity)), new Decimal(0));
         setLockedStake(locked);
     }, [myHumanTickerId]);
 
@@ -255,7 +256,7 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
             const data = await api.get('human/dividend/stats').json<IssuerDividendStats>();
             setDividendStats(data);
             // Initialize slider with current rate
-            setSliderValue(parseFloat(data.current_dividend_rate) * 100);
+            setSliderValue(new Decimal(data.current_dividend_rate).times(100).toNumber());
         } catch (err) {
             console.error("Failed to fetch dividend stats", err);
         }
@@ -306,7 +307,7 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
           // Re-fetch dividend stats as it might affect future payouts or trigger calculations
           const updatedDividendStats = await api.get('human/dividend/stats').json<IssuerDividendStats>();
           setDividendStats(updatedDividendStats);
-          setSliderValue(parseFloat(updatedDividendStats.current_dividend_rate) * 100);
+          setSliderValue(new Decimal(updatedDividendStats.current_dividend_rate).times(100).toNumber());
           // Re-fetch corporate value as it depends on total issued shares
           const updatedCorporateValue = await api.get('human/corporate_value').json<HumanCorporateValueResponse>();
           setCorporateValueData(updatedCorporateValue);
@@ -322,15 +323,15 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
   const isCorporateValueLoading = !corporateValueData;
 
   // Calculate ownership for chart
-  const myQty = shareholdersData ? parseFloat(shareholdersData.my_holdings) : 0;
-  const totalQty = shareholdersData ? parseFloat(shareholdersData.total_issued) : 1;
-  const myPct = totalQty > 0 ? (myQty / totalQty) * 100 : 0;
-  const othersPct = 100 - myPct;
+  const myQty = shareholdersData ? new Decimal(shareholdersData.my_holdings) : new Decimal(0);
+  const totalQty = shareholdersData ? new Decimal(shareholdersData.total_issued) : new Decimal(1);
+  const myPct = totalQty.gt(0) ? myQty.div(totalQty).times(100) : new Decimal(0);
+  const othersPct = new Decimal(100).minus(myPct);
 
   const r = 15.9155;
-  const myDash = `${myPct} ${100 - myPct}`;
-  const othersDash = `${othersPct} ${100 - othersPct}`;
-  const othersOffset = 25 + 100 - myPct;
+  const myDash = `${myPct.toFixed(1)} ${othersPct.toFixed(1)}`;
+  const othersDash = `${othersPct.toFixed(1)} ${myPct.toFixed(1)}`;
+  const othersOffset = 25 + othersPct.toNumber(); // CSS dashoffset needs number
 
   return (
       <div className="flex flex-col gap-8">
@@ -415,19 +416,19 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
                         <div className="flex flex-col gap-1">
                             <p className="text-[#90a4cb] text-sm">Current Price</p>
                             <p className="text-white text-2xl font-bold">
-                                {corporateValueData?.current_price ? formatWithThousands(toFixedString(parseFloat(corporateValueData.current_price), 0, REPORT_ROUNDING)) : '-'} KRW
+                                {corporateValueData?.current_price ? formatWithThousands(toFixedString(corporateValueData.current_price, 0, REPORT_ROUNDING)) : '-'} KRW
                             </p>
                         </div>
                         <div className="flex flex-col gap-1">
                             <p className="text-[#90a4cb] text-sm">Market Cap</p>
                             <p className="text-white text-2xl font-bold">
-                                {corporateValueData?.market_cap ? formatWithThousands(toFixedString(parseFloat(corporateValueData.market_cap), 0, REPORT_ROUNDING)) : '-'} KRW
+                                {corporateValueData?.market_cap ? formatWithThousands(toFixedString(corporateValueData.market_cap, 0, REPORT_ROUNDING)) : '-'} KRW
                             </p>
                         </div>
                         <div className="flex flex-col gap-1">
                             <p className="text-[#90a4cb] text-sm">P/E Ratio (Season)</p>
                             <p className="text-white text-2xl font-bold">
-                                {corporateValueData?.per ? toFixedString(parseFloat(corporateValueData.per), 2, REPORT_ROUNDING) : '-'}x
+                                {corporateValueData?.per ? toFixedString(corporateValueData.per, 2, REPORT_ROUNDING) : '-'}x
                             </p>
                         </div>
                     </>
@@ -489,7 +490,7 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
                                         <tr key={s.rank} className="hover:bg-[#182234]">
                                             <td className="p-4 text-white font-mono">{s.rank}</td>
                                             <td className="p-4 text-white font-bold">{s.nickname}</td>
-                                            <td className="p-4 text-right text-[#90a4cb] font-mono">{formatWithThousands(toFixedString(parseFloat(s.quantity), 0, 'ROUND_DOWN'))}</td>
+                                            <td className="p-4 text-right text-[#90a4cb] font-mono">{formatWithThousands(toFixedString(s.quantity, 0, 'ROUND_DOWN'))}</td>
                                             <td className="p-4 text-right text-white font-mono">{s.percentage}%</td>
                                         </tr>
                                     ))
@@ -528,14 +529,14 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
                         <div className="flex flex-col gap-2">
                             <p className="text-[#90a4cb]">Current Dividend Rate:</p>
                             <p className="text-red-500 text-3xl font-bold">
-                                {toFixedString(parseFloat(dividendStats!.current_dividend_rate) * 100, 0, REPORT_ROUNDING)}%{' '}
+                                {toFixedString(new Decimal(dividendStats!.current_dividend_rate).times(100), 0, REPORT_ROUNDING)}%{' '}
                                 <span className="text-white text-base">of current profit goes to shareholders.</span>
                             </p>
                         </div>
                         <div className="flex flex-col gap-2">
                             <p className="text-[#90a4cb]">Cumulative Dividends Paid:</p>
                             <p className="text-white text-2xl font-bold">
-                                {formatWithThousands(toFixedString(parseFloat(dividendStats!.cumulative_paid_amount), 0, REPORT_ROUNDING))} KRW
+                                {formatWithThousands(toFixedString(dividendStats!.cumulative_paid_amount, 0, REPORT_ROUNDING))} KRW
                             </p>
                         </div>
                     </>
@@ -570,7 +571,7 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
                                             <td className="p-4 text-white font-mono text-sm">{new Date(entry.date).toLocaleDateString()}</td>
                                             <td className="p-4 text-white font-bold text-sm">{entry.ticker_id}</td>
                                             <td className="p-4 text-right text-red-500 font-mono text-sm">
-                                                -{formatWithThousands(toFixedString(parseFloat(entry.paid_amount), 0, 'ROUND_DOWN'))} KRW
+                                                -{formatWithThousands(toFixedString(entry.paid_amount, 0, 'ROUND_DOWN'))} KRW
                                             </td>
                                         </tr>
                                     ))
@@ -594,7 +595,7 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
             <span className="font-medium text-lg font-bold">Dividend Rate Setting</span>
             <div className="flex items-center gap-2">
                 <span className="font-mono font-bold text-[#00FF41] text-xl">
-                    {dividendStats ? (parseFloat(dividendStats.current_dividend_rate) * 100).toFixed(0) : '-'}
+                    {dividendStats ? new Decimal(dividendStats.current_dividend_rate).times(100).toFixed(0) : '-'}
                 </span>
                 {profile?.is_bankrupt && <span className="text-xs text-red-500 font-bold border border-red-500 px-2 py-0.5 rounded">Bankrupt Min: 50%</span>}
             </div>
@@ -624,7 +625,7 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
                 onClick={async () => {
                     if (!dividendStats) return;
                     try {
-                        const rate = (sliderValue / 100).toFixed(2);
+                        const rate = new Decimal(sliderValue).div(100).toFixed(2);
                         await api.patch('human/dividend_rate', { json: { dividend_rate: parseFloat(rate) } });
                         toast.success(`Dividend rate updated to ${sliderValue}%`);
                         
@@ -654,7 +655,7 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
                 <div className="text-right text-xs text-[#90a4cb]">
                     <div>My holdings: <span className="text-white font-mono">{formatWithThousands(toFixedString(myQty, 0, REPORT_ROUNDING))}</span></div>
                     <div>Locked (voting): <span className="text-white font-mono">{formatWithThousands(toFixedString(lockedStake, 0, REPORT_ROUNDING))}</span></div>
-                    <div>Free to stake: <span className="text-white font-mono">{formatWithThousands(toFixedString(Math.max(myQty - lockedStake, 0), 0, REPORT_ROUNDING))}</span></div>
+                    <div>Free to stake: <span className="text-white font-mono">{formatWithThousands(toFixedString(Decimal.max(myQty.minus(lockedStake), 0), 0, REPORT_ROUNDING))}</span></div>
                 </div>
             </div>
 
@@ -756,22 +757,23 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
                         </thead>
                         <tbody className="divide-y divide-[#314368]">
                             {proposals.map((p) => {
-                                const myVoteQty = p.my_vote ? parseFloat(p.my_vote.quantity) : 0;
-                                const yes = parseFloat(p.tally.yes || '0');
-                                const no = parseFloat(p.tally.no || '0');
+                                const myVoteQty = p.my_vote ? new Decimal(p.my_vote.quantity) : new Decimal(0);
+                                const yes = new Decimal(p.tally.yes || '0');
+                                const no = new Decimal(p.tally.no || '0');
                                 const isOpen = p.status === 'PENDING' && new Date(p.end_at).getTime() >= nowTs;
 
                                 const handleVoteClick = async (choice: boolean) => {
-                                    const defaultQty = Math.max(myQty - lockedStake + myVoteQty, 0);
+                                    const defaultQty = Decimal.max(myQty.minus(lockedStake).plus(myVoteQty), 0);
                                     const input = prompt(`Enter shares to stake (${choice ? 'YES' : 'NO'}). Available: ${defaultQty.toFixed(0)}`, defaultQty.toFixed(0));
                                     if (!input) return;
-                                    const qty = Number(input);
-                                    if (!Number.isFinite(qty) || qty <= 0) {
-                                        toast.error('Invalid quantity');
-                                        return;
-                                    }
+                                    
                                     try {
-                                        await api.post(`votes/proposals/${p.id}/vote`, { json: { choice, quantity: qty } });
+                                        const qty = new Decimal(input);
+                                        if (qty.lte(0)) {
+                                            toast.error('Invalid quantity');
+                                            return;
+                                        }
+                                        await api.post(`votes/proposals/${p.id}/vote`, { json: { choice, quantity: qty.toNumber() } });
                                         toast.success('Vote submitted');
                                         // refresh proposals and holdings
                                         await refreshProposals();
@@ -779,7 +781,7 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
                                         setShareholdersData(updatedShareholders);
                                     } catch (err) {
                                         console.error('Vote failed', err);
-                                        toast.error('Vote failed');
+                                        toast.error('Vote failed (Invalid Input?)');
                                     }
                                 };
 
@@ -805,13 +807,13 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
                                         <td className="p-3 text-xs text-[#90a4cb]">{p.status}</td>
                                         <td className="p-3 text-xs text-[#90a4cb]">{new Date(p.end_at).toLocaleString()}</td>
                                         <td className="p-3 text-right text-white font-mono">{formatWithThousands(yes.toFixed(0))} / {formatWithThousands(no.toFixed(0))}</td>
-                                        <td className="p-3 text-right text-white font-mono">{myVoteQty > 0 ? `${myVoteQty.toFixed(0)} (${p.my_vote?.choice ? 'YES' : 'NO'})` : '-'}</td>
+                                        <td className="p-3 text-right text-white font-mono">{myVoteQty.gt(0) ? `${myVoteQty.toFixed(0)} (${p.my_vote?.choice ? 'YES' : 'NO'})` : '-'}</td>
                                         <td className="p-3 text-right">
                                             {isOpen ? (
                                                 <div className="flex gap-2 justify-end">
                                                     <button onClick={() => handleVoteClick(true)} className="px-3 py-1 text-xs rounded bg-[#0d59f2] text-white hover:bg-[#0b4bcc]">Vote Yes</button>
                                                     <button onClick={() => handleVoteClick(false)} className="px-3 py-1 text-xs rounded bg-[#ef4444] text-white hover:bg-[#dc2626]">Vote No</button>
-                                                    {myVoteQty > 0 && <button onClick={handleUnvote} className="px-3 py-1 text-xs rounded border border-[#314368] text-[#90a4cb] hover:bg-[#182234]">Unvote</button>}
+                                                    {myVoteQty.gt(0) && <button onClick={handleUnvote} className="px-3 py-1 text-xs rounded border border-[#314368] text-[#90a4cb] hover:bg-[#182234]">Unvote</button>}
                                                 </div>
                                             ) : (
                                                 <span className="text-xs text-[#90a4cb]">Closed</span>

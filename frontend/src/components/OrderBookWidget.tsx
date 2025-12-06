@@ -9,7 +9,7 @@ import type { OrderBookResponse } from '../interfaces';
 interface OrderBookWidgetProps {
   tickerId: string;
   currency: string;
-  realTimePrice?: number;
+  realTimePrice?: Decimal.Value;
 }
 
 const OrderBookWidget = memo(function OrderBookWidget({ tickerId, currency, realTimePrice }: OrderBookWidgetProps) {

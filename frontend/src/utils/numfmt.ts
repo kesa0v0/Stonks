@@ -77,7 +77,9 @@ export const formatWithThousands = (s: string) => {
   }
   // Intl path: format integer part via Intl, preserve decimal string
   const [intPart, fracPart] = s.split('.');
-  const intFormatted = new Intl.NumberFormat(NUMBER_LOCALE, { maximumFractionDigits: 0 }).format(Number(intPart || '0'));
+  // Use BigInt for safety with large integers
+  const intVal = intPart ? BigInt(intPart) : 0n;
+  const intFormatted = new Intl.NumberFormat(NUMBER_LOCALE, { maximumFractionDigits: 0 }).format(intVal);
   return fracPart ? `${intFormatted}.${fracPart}` : intFormatted;
 };
 

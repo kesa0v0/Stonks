@@ -111,8 +111,8 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
             "order_id": str(order_uuid),
             "ticker_id": ticker_id,
             "side": str(trade_side),
-            "quantity": float(quantity),
-            "price": float(order.price) if order.price else 0,
+            "quantity": str(quantity),
+            "price": str(order.price) if order.price else "0",
             "status": str(OrderStatus.PENDING)
         }
         await publish_event(redis_client, event, channel="trade_events")
@@ -298,10 +298,10 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
             "order_id": str(order_id),
             "ticker_id": str(ticker_id),
             "side": str(side),
-            "quantity": float(quantity), # This is the executed quantity (filled from OB)
-            "price": float(current_price),
-            "fee": float(fee),
-            "realized_pnl": float(order.realized_pnl) if hasattr(order, "realized_pnl") and order.realized_pnl is not None else None,
+            "quantity": str(quantity), # This is the executed quantity (filled from OB)
+            "price": str(current_price),
+            "fee": str(fee),
+            "realized_pnl": str(order.realized_pnl) if hasattr(order, "realized_pnl") and order.realized_pnl is not None else None,
             "status": str(order.status)
         }
         await publish_event(redis_client, event, channel="trade_events")
@@ -512,7 +512,7 @@ async def execute_p2p_trade(
         # 9. 가격 업데이트 (Redis) & 이벤트 발행
         price_data = {
             "ticker_id": ticker_id,
-            "price": float(match_price),
+            "price": str(match_price),
             "timestamp": float(time.time())
         }
         # Redis에 현재가 저장 (다른 서비스/frontend 참조용)
@@ -527,10 +527,10 @@ async def execute_p2p_trade(
             "order_id": str(buy_order.id),
             "ticker_id": ticker_id,
             "side": "BUY",
-            "quantity": float(match_quantity),
-            "price": float(match_price),
-            "fee": float(fee),
-            "realized_pnl": float(buy_order.realized_pnl or 0),
+            "quantity": str(match_quantity),
+            "price": str(match_price),
+            "fee": str(fee),
+            "realized_pnl": str(buy_order.realized_pnl or 0),
             "status": str(buy_order.status)
         }, channel="trade_events")
         
@@ -541,10 +541,10 @@ async def execute_p2p_trade(
             "order_id": str(sell_order.id),
             "ticker_id": ticker_id,
             "side": "SELL",
-            "quantity": float(match_quantity),
-            "price": float(match_price),
-            "fee": float(fee),
-            "realized_pnl": float(sell_order.realized_pnl or 0),
+            "quantity": str(match_quantity),
+            "price": str(match_price),
+            "fee": str(fee),
+            "realized_pnl": str(sell_order.realized_pnl or 0),
             "status": str(sell_order.status)
         }, channel="trade_events")
 

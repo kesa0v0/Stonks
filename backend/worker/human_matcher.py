@@ -2,7 +2,8 @@ import asyncio
 import logging
 import redis.asyncio as redis
 from decimal import Decimal
-from sqlalchemy import select
+from datetime import datetime, timezone
+from sqlalchemy import select, func
 from backend.core.database import AsyncSessionLocal
 from backend.core.config import settings
 from backend.core.enums import OrderStatus, OrderSide, OrderType
@@ -19,7 +20,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("human_matcher")
 
-async def update_candle_data(db: AsyncSession, ticker_id: str, trade_price: Decimal, trade_quantity: Decimal, trade_timestamp: datetime):
+async def update_candle_data(db: AsyncSessionLocal, ticker_id: str, trade_price: Decimal, trade_quantity: Decimal, trade_timestamp: datetime):
     """
     주문 체결 시 1분봉 및 일봉 캔들 데이터를 업데이트하거나 새로 생성합니다.
     """
@@ -33,7 +34,7 @@ async def update_candle_data(db: AsyncSession, ticker_id: str, trade_price: Deci
     day_start = trade_timestamp.replace(hour=0, minute=0, second=0, microsecond=0)
     await _upsert_candle(db, ticker_id, '1d', day_start, trade_price, trade_quantity)
 
-async def _upsert_candle(db: AsyncSession, ticker_id: str, interval: str, timestamp: datetime, price: Decimal, quantity: Decimal):
+async def _upsert_candle(db: AsyncSessionLocal, ticker_id: str, interval: str, timestamp: datetime, price: Decimal, quantity: Decimal):
     """
     단일 캔들 (1분봉 또는 일봉)을 업데이트하거나 새로 생성하는 내부 헬퍼 함수
     """
@@ -109,12 +110,12 @@ async def match_human_orders():
                         
                         # 3. Sort for Matching Priority
                         def get_buy_price(o):
-                            if o.type == OrderType.MARKET: return float('inf')
-                            return float(o.target_price) if o.target_price is not None else 0
+                            if o.type == OrderType.MARKET: return Decimal('inf')
+                            return o.target_price if o.target_price is not None else Decimal('0')
                             
                         def get_sell_price(o):
-                            if o.type == OrderType.MARKET: return 0
-                            return float(o.target_price) if o.target_price is not None else float('inf')
+                            if o.type == OrderType.MARKET: return Decimal('0')
+                            return o.target_price if o.target_price is not None else Decimal('inf')
 
                         # Buy: Price High -> Low, Time Old -> New
                         buy_orders.sort(key=lambda x: (-get_buy_price(x), x.created_at))
@@ -158,19 +159,19 @@ async def match_human_orders():
                             # 5. Execute Trade
                             # execute_p2p_trade 내부에서 commit을 수행하므로, 현재 session 객체들은 expire 될 수 있음.
                             # 따라서 IDs만 넘기고, 성공 후에는 loop를 다시 시작(re-fetch)함.
+                            # Note: Ensure match_price and match_qty are Decimal. SQLAlchemy models usually return Decimal for Numeric.
                             success = await execute_p2p_trade(
                                 db=db,
                                 redis_client=redis_client,
                                 buy_order_id=best_buy.id,
                                 sell_order_id=best_sell.id,
-                                match_price=Decimal(str(match_price)),
-                                match_quantity=Decimal(str(match_qty))
+                                match_price=match_price,
+                                match_quantity=match_qty
                             )
                             
                             if success:
                                 # 캔들 데이터 업데이트
-                                from datetime import datetime, timezone # Import for now()
-                                await update_candle_data(db, ticker_id, Decimal(str(match_price)), Decimal(str(match_qty)), datetime.now(timezone.utc))
+                                await update_candle_data(db, ticker_id, match_price, match_qty, datetime.now(timezone.utc))
                                 
                                 # 매칭 후 호가창 업데이트 발행
                                 await publish_current_orderbook_snapshot(db, redis_client, ticker_id)

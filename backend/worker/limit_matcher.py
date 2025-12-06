@@ -2,6 +2,7 @@ import asyncio
 import json
 import signal
 import redis.asyncio as redis
+from decimal import Decimal
 from sqlalchemy import select, or_
 from backend.core.config import settings
 from backend.core.database import AsyncSessionLocal
@@ -77,18 +78,21 @@ async def match_orders():
 
                 data = json.loads(message['data'])
                 ticker_id = data['ticker_id']
-                current_price = float(data['price'])
+                current_price = Decimal(str(data['price']))
                 
                 # 비동기 DB 세션 생성 (체결 및 트레일링 스탑 업데이트용)
                 async with AsyncSessionLocal() as db:
                     try:
                         # 1. LIMIT Candidates (Redis)
-                        buy_limit_ids = await cache.fetch_candidates(ticker_id, OrderSide.BUY, current_price, "LIMIT")
-                        sell_limit_ids = await cache.fetch_candidates(ticker_id, OrderSide.SELL, current_price, "LIMIT")
+                        # cache.fetch_candidates logic relies on scores (floats in Redis sorted sets)
+                        # but we pull the ID and re-check data from hash with Decimal.
+                        # Note: fetch_candidates implementation needs to be compatible.
+                        buy_limit_ids = await cache.fetch_candidates(ticker_id, OrderSide.BUY, float(current_price), "LIMIT")
+                        sell_limit_ids = await cache.fetch_candidates(ticker_id, OrderSide.SELL, float(current_price), "LIMIT")
                         
                         # 2. STOP Candidates (Redis)
-                        buy_stop_ids = await cache.fetch_candidates(ticker_id, OrderSide.BUY, current_price, "STOP")
-                        sell_stop_ids = await cache.fetch_candidates(ticker_id, OrderSide.SELL, current_price, "STOP")
+                        buy_stop_ids = await cache.fetch_candidates(ticker_id, OrderSide.BUY, float(current_price), "STOP")
+                        sell_stop_ids = await cache.fetch_candidates(ticker_id, OrderSide.SELL, float(current_price), "STOP")
 
                         # Combine all candidates
                         all_candidates = set(buy_limit_ids + sell_limit_ids + buy_stop_ids + sell_stop_ids)
@@ -105,7 +109,7 @@ async def match_orders():
                                 o_side = OrderSide(order_data["side"])
                                 o_type = OrderType(order_data["type"])
                                 o_status = OrderStatus(order_data["status"])
-                                o_qty = float(order_data["quantity"])
+                                o_qty = Decimal(str(order_data["quantity"]))
                                 o_ticker = order_data["ticker_id"]
                                 
                                 if o_status != OrderStatus.PENDING:
@@ -113,10 +117,10 @@ async def match_orders():
                                     
                                 # Check Conditions
                                 matched = False
-                                trigger_price = 0.0
+                                trigger_price = Decimal("0")
                                 
                                 if o_type == OrderType.LIMIT:
-                                    target = float(order_data["target_price"])
+                                    target = Decimal(str(order_data["target_price"]))
                                     if o_side == OrderSide.BUY and target >= current_price:
                                         matched = True
                                         trigger_price = target
@@ -125,7 +129,7 @@ async def match_orders():
                                         trigger_price = target
                                         
                                 elif o_type in [OrderType.STOP_LOSS, OrderType.TAKE_PROFIT, OrderType.STOP_LIMIT, OrderType.TRAILING_STOP]:
-                                    stop = float(order_data["stop_price"])
+                                    stop = Decimal(str(order_data["stop_price"]))
                                     
                                     if o_side == OrderSide.BUY:
                                         if current_price >= stop:
@@ -157,7 +161,7 @@ async def match_orders():
                                         order_id=order_id,
                                         ticker_id=o_ticker,
                                         side=o_side.value,
-                                        quantity=o_qty
+                                        quantity=o_qty # Passed as Decimal
                                     )
                                     
                                     if success:
@@ -178,8 +182,18 @@ async def match_orders():
                         
                         for order in ts_sells:
                             if stop_event.is_set(): break
-                            new_stop = current_price - float(order.trailing_gap)
-                            if new_stop > float(order.stop_price):
+                            # Use Decimal for calculations. Assuming order model attributes are Decimal-compatible or cast them.
+                            # SQLAlchemy Numeric returns Decimal usually.
+                            trailing_gap = order.trailing_gap
+                            if not isinstance(trailing_gap, Decimal):
+                                trailing_gap = Decimal(str(trailing_gap))
+                            
+                            stop_price = order.stop_price
+                            if not isinstance(stop_price, Decimal):
+                                stop_price = Decimal(str(stop_price))
+
+                            new_stop = current_price - trailing_gap
+                            if new_stop > stop_price:
                                 print(f"   >> Updating Trailing Stop Sell {order.id}: {order.stop_price} -> {new_stop}")
                                 order.stop_price = new_stop
                                 order.high_water_mark = current_price
@@ -196,8 +210,16 @@ async def match_orders():
                         
                         for order in ts_buys:
                             if stop_event.is_set(): break
-                            new_stop = current_price + float(order.trailing_gap)
-                            if new_stop < float(order.stop_price):
+                            trailing_gap = order.trailing_gap
+                            if not isinstance(trailing_gap, Decimal):
+                                trailing_gap = Decimal(str(trailing_gap))
+                            
+                            stop_price = order.stop_price
+                            if not isinstance(stop_price, Decimal):
+                                stop_price = Decimal(str(stop_price))
+                                
+                            new_stop = current_price + trailing_gap
+                            if new_stop < stop_price:
                                 print(f"   >> Updating Trailing Stop Buy {order.id}: {order.stop_price} -> {new_stop}")
                                 order.stop_price = new_stop
                                 order.high_water_mark = current_price
