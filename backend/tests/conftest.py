@@ -326,6 +326,110 @@ async def mock_external_services():
     mock_redis_instance.set.side_effect = mock_set
     mock_redis_instance.aclose.side_effect = mock_aclose
     
+    # New Redis Methods for Order Cache
+    async def mock_zadd(name, mapping, **kwargs):
+        name_str = str(name)
+        if name_str not in redis_data:
+            redis_data[name_str] = [] # List of (score, member)
+        
+        # Mapping is {member: score}
+        for member, score in mapping.items():
+            # Remove existing if any
+            redis_data[name_str] = [x for x in redis_data[name_str] if x[1] != str(member)]
+            redis_data[name_str].append((float(score), str(member)))
+        
+        # Sort by score
+        redis_data[name_str].sort(key=lambda x: x[0])
+        return len(mapping)
+
+    async def mock_zrangebyscore(name, min_score, max_score, **kwargs):
+        name_str = str(name)
+        if name_str not in redis_data:
+            return []
+        
+        res = []
+        for score, member in redis_data[name_str]:
+            # Handle inf
+            if min_score != "-inf" and score < float(min_score):
+                continue
+            if max_score != "+inf" and score > float(max_score):
+                continue
+            res.append(member)
+        return res
+
+    async def mock_zrem(name, *values):
+        name_str = str(name)
+        if name_str not in redis_data:
+            return 0
+        
+        original_len = len(redis_data[name_str])
+        redis_data[name_str] = [x for x in redis_data[name_str] if x[1] not in [str(v) for v in values]]
+        return original_len - len(redis_data[name_str])
+
+    async def mock_hset(name, mapping):
+        name_str = str(name)
+        if name_str not in redis_data:
+            redis_data[name_str] = {}
+        
+        # Allow simple dict simulation for Hash
+        if not isinstance(redis_data[name_str], dict):
+             redis_data[name_str] = {}
+
+        for k, v in mapping.items():
+            redis_data[name_str][str(k)] = str(v)
+        return len(mapping)
+
+    async def mock_hgetall(name):
+        name_str = str(name)
+        return redis_data.get(name_str, {})
+
+    async def mock_delete(*names):
+        count = 0
+        for name in names:
+            name_str = str(name)
+            if name_str in redis_data:
+                del redis_data[name_str]
+                count += 1
+        return count
+
+    mock_redis_instance.zadd.side_effect = mock_zadd
+    mock_redis_instance.zrangebyscore.side_effect = mock_zrangebyscore
+    mock_redis_instance.zrem.side_effect = mock_zrem
+    mock_redis_instance.hset.side_effect = mock_hset
+    mock_redis_instance.hgetall.side_effect = mock_hgetall
+    mock_redis_instance.delete.side_effect = mock_delete
+
+    # Mock Pipeline
+    class MockPipeline:
+        def __init__(self):
+            self.commands = []
+            
+        def zadd(self, name, mapping):
+            self.commands.append((mock_zadd, (name, mapping)))
+            return self
+            
+        def zrem(self, name, *values):
+            self.commands.append((mock_zrem, (name, *values)))
+            return self
+            
+        def hset(self, name, mapping):
+            self.commands.append((mock_hset, (name, mapping)))
+            return self
+            
+        def delete(self, *names):
+            self.commands.append((mock_delete, names))
+            return self
+
+        async def execute(self):
+            results = []
+            for func, args in self.commands:
+                results.append(await func(*args))
+            return results
+
+    # pipeline() should be synchronous and return MockPipeline
+    mock_redis_instance.pipeline = MagicMock(return_value=MockPipeline())
+
+    
     # We still need to patch aio_pika as it is not a FastAPI dependency
     with patch("aio_pika.connect_robust") as mock_rabbit: 
         mock_channel = AsyncMock() 

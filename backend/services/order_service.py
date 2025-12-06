@@ -27,6 +27,7 @@ from backend.schemas.order import OrderCreate
 from backend.core.config import settings
 from backend.core.event_hook import publish_event
 from backend.services.market_service import publish_current_orderbook_snapshot # Import the new helper
+from backend.worker.order_cache import LimitOrderCache # Import Cache
 
 ORDER_COUNTER = Counter('stonks_orders_created_total', 'Total orders created', ['side', 'type'])
 
@@ -251,6 +252,10 @@ async def place_order(
         )
         db.add(new_order)
         await db.commit() # 비동기 커밋
+
+        # [NEW] Redis Cache에 즉시 등록
+        cache = LimitOrderCache(redis)
+        await cache.add_order(new_order)
         
         # [Event Hook] 지정가 주문 생성 알림 (Frontend OrderBook 반영용)
         event = {
@@ -354,6 +359,10 @@ async def cancel_order_logic(
     order_obj.fail_reason = "Cancelled by user"
     order_obj.cancelled_at = datetime.now(timezone.utc)
     await db.commit()
+
+    # [NEW] Redis Cache에서 즉시 제거
+    cache = LimitOrderCache(redis)
+    await cache.remove_order(str(order_id), order_obj.ticker_id)
 
     # [Event Hook] 주문 취소 알림 (Frontend OrderBook 반영용)
     event = {

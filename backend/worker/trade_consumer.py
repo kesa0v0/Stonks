@@ -1,6 +1,7 @@
 # backend/worker/trade_consumer.py
 import asyncio
 import json
+import signal
 import aio_pika
 import redis.asyncio as async_redis
 from backend.core.config import settings
@@ -48,6 +49,18 @@ async def process_message(message: aio_pika.IncomingMessage):
         # db.close()는 async with가 자동 처리
 
 async def main():
+    # Shutdown Event
+    stop_event = asyncio.Event()
+
+    def shutdown():
+        print("\n🛑 Received Shutdown Signal. Stopping Consumer...")
+        stop_event.set()
+
+    # Signal Handling
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, shutdown)
+
     # RabbitMQ 연결
     connection = await aio_pika.connect_robust(
         host=settings.RABBITMQ_HOST,
@@ -60,14 +73,26 @@ async def main():
         # 채널 생성 및 큐 선언 (API와 동일한 이름이어야 함)
         channel = await connection.channel()
         queue = await channel.declare_queue("trade_queue", durable=True)
+        # Prefetch count 1 to ensure fair dispatch and safe shutdown (don't buffer too many unacked messages)
+        await channel.set_qos(prefetch_count=1)
 
-        print("🚀 Trade Worker Started! Waiting for orders...")
+        print("🚀 Trade Worker Started! Waiting for orders... (Press CTRL+C to stop)")
         
         # 메시지 소비 시작
-        await queue.consume(process_message)
+        consumer_tag = await queue.consume(process_message)
         
-        # 무한 대기 (워커가 죽지 않도록)
-        await asyncio.Future()
+        # Wait for shutdown signal
+        await stop_event.wait()
+        
+        print("⏳ Closing Consumer and Connection...")
+        # Cancel consumer to stop receiving new messages
+        await queue.cancel(consumer_tag)
+        
+        # Allow some time for active tasks to complete if necessary?
+        # aio_pika's async with connection block handles graceful close, 
+        # but explicit close helps ensure we don't kill mid-process.
+        
+    print("👋 Trade Worker Stopped.")
 
 if __name__ == "__main__":
     asyncio.run(main())

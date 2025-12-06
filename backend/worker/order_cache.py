@@ -1,76 +1,199 @@
 import asyncio
-from typing import List, Optional
+import json
+from decimal import Decimal
+from typing import List, Optional, Dict, Any
+from uuid import UUID
 
 import redis.asyncio as redis
 from sqlalchemy import select
 from backend.models import Order, OrderStatus, OrderSide, OrderType
 from backend.core.database import AsyncSessionLocal
 
-LIMIT_KEY = "oo:limit:{ticker}:{side}"
+# Redis Key Patterns
+LIMIT_KEY = "oo:limit:{ticker}:{side}"       # Sorted Set (Score=Price, Member=OrderID)
+STOP_KEY = "oo:stop:{ticker}:{side}"         # Sorted Set (Score=StopPrice, Member=OrderID)
+ORDER_DATA_KEY = "oo:data:{order_id}"        # Hash (Field=Attribute, Value=Value)
 
 class LimitOrderCache:
     def __init__(self, redis_client: redis.Redis):
         self.redis = redis_client
 
-    async def add_limit_order(self, order: Order):
-        if order.type != OrderType.LIMIT or order.status != OrderStatus.PENDING:
+    async def store_order_data(self, order: Order):
+        """Stores full order details in Redis Hash."""
+        data = {
+            "id": str(order.id),
+            "user_id": str(order.user_id),
+            "ticker_id": order.ticker_id,
+            "side": order.side.value,
+            "type": order.type.value,
+            "status": order.status.value,
+            "quantity": str(order.quantity),
+            "unfilled_quantity": str(order.unfilled_quantity),
+            "target_price": str(order.target_price) if order.target_price else "",
+            "stop_price": str(order.stop_price) if order.stop_price else "",
+            "trailing_gap": str(order.trailing_gap) if order.trailing_gap else "",
+            "high_water_mark": str(order.high_water_mark) if order.high_water_mark else "",
+        }
+        # Filter out empty strings to save space/cleanliness (optional, but good for parsing)
+        data = {k: v for k, v in data.items() if v != ""}
+        
+        await self.redis.hset(ORDER_DATA_KEY.format(order_id=str(order.id)), mapping=data)
+
+    async def get_order_data(self, order_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieves order data from Redis Hash."""
+        data = await self.redis.hgetall(ORDER_DATA_KEY.format(order_id=order_id))
+        if not data:
+            return None
+        return data
+
+    async def add_order(self, order: Order):
+        """Adds order to cache (Data Hash + Index Sorted Set)."""
+        if order.status != OrderStatus.PENDING:
             return
-        key = LIMIT_KEY.format(ticker=order.ticker_id, side=order.side.value.lower())
-        score = float(order.target_price)
-        await self.redis.zadd(key, {str(order.id): score})
+
+        # 1. Store Data
+        await self.store_order_data(order)
+
+        # 2. Add to Index (Sorted Set) based on Type
+        # LIMIT -> LIMIT_KEY (Score = target_price)
+        # STOP_LOSS, TAKE_PROFIT, STOP_LIMIT, TRAILING_STOP -> STOP_KEY (Score = stop_price)
+        
+        pipe = self.redis.pipeline()
+        
+        if order.type == OrderType.LIMIT:
+            key = LIMIT_KEY.format(ticker=order.ticker_id, side=order.side.value.lower())
+            score = float(order.target_price)
+            pipe.zadd(key, {str(order.id): score})
+            
+        elif order.type in [OrderType.STOP_LOSS, OrderType.TAKE_PROFIT, OrderType.STOP_LIMIT, OrderType.TRAILING_STOP]:
+            key = STOP_KEY.format(ticker=order.ticker_id, side=order.side.value.lower())
+            # For Trailing Stop, stop_price changes, but initial add uses current stop_price
+            if order.stop_price:
+                score = float(order.stop_price)
+                pipe.zadd(key, {str(order.id): score})
+        
+        await pipe.execute()
+
+    # Alias for backward compatibility if needed, or replace usages
+    add_limit_order = add_order
 
     async def remove_order(self, order_id: str, ticker_id: Optional[str] = None):
-        # If ticker unknown, try both sides/all tickers (slower but safe)
+        """Removes order from all caches."""
+        pipe = self.redis.pipeline()
+        
+        # Remove Data
+        pipe.delete(ORDER_DATA_KEY.format(order_id=order_id))
+        
+        # Remove from Indexes (Try all potential keys if ticker known, else simple scan? Scan is slow)
+        # We assume ticker_id is provided usually.
         if ticker_id:
-            await asyncio.gather(
-                self.redis.zrem(LIMIT_KEY.format(ticker=ticker_id, side="buy"), order_id),
-                self.redis.zrem(LIMIT_KEY.format(ticker=ticker_id, side="sell"), order_id),
-            )
+            # We don't know the side/type easily without reading data first, 
+            # but reading adds latency. Just try removing from all 4 combinations.
+            # Limit Buy/Sell, Stop Buy/Sell
+            keys = [
+                LIMIT_KEY.format(ticker=ticker_id, side="buy"),
+                LIMIT_KEY.format(ticker=ticker_id, side="sell"),
+                STOP_KEY.format(ticker=ticker_id, side="buy"),
+                STOP_KEY.format(ticker=ticker_id, side="sell")
+            ]
+            for k in keys:
+                pipe.zrem(k, order_id)
         else:
-            # Fallback scan over keys
+            # Fallback: costly scan, or just leave it (it won't match if logic checks data).
+            # But we should clean up.
             async for key in self._iter_limit_keys():
-                await self.redis.zrem(key, order_id)
+                pipe.zrem(key, order_id)
+                
+        await pipe.execute()
 
-    async def fetch_candidates(self, ticker_id: str, side: OrderSide, current_price: float) -> List[str]:
-        key = LIMIT_KEY.format(ticker=ticker_id, side=side.value.lower())
-        if side == OrderSide.BUY:
-            # Trigger when target_price >= current_price
-            ids = await self.redis.zrangebyscore(key, current_price, "+inf")
-        else:
-            # SELL triggers when target_price <= current_price
-            ids = await self.redis.zrangebyscore(key, "-inf", current_price)
-        return ids or []
+    async def fetch_candidates(self, ticker_id: str, side: OrderSide, price: float, order_type_group: str = "LIMIT") -> List[str]:
+        """
+        Fetches candidate order IDs based on price trigger.
+        order_type_group: 'LIMIT' or 'STOP'
+        """
+        key_pattern = LIMIT_KEY if order_type_group == "LIMIT" else STOP_KEY
+        key = key_pattern.format(ticker=ticker_id, side=side.value.lower())
+        
+        # LIMIT BUY: target >= price -> range [price, +inf]
+        # LIMIT SELL: target <= price -> range [-inf, price]
+        
+        # STOP BUY (Stop Loss / Trailing Buy): Trigger when price >= stop_price -> range [-inf, price] ?? 
+        # Wait. Stop Buy (Short Cover): Trigger when Price goes UP to stop_price. 
+        #   Current Price 100. Stop Buy at 110. Trigger when Price >= 110.
+        #   So we look for orders with stop_price <= Current Price.
+        #   Range: [-inf, current_price]
+        
+        # STOP SELL (Long Exit): Trigger when Price goes DOWN to stop_price.
+        #   Current Price 100. Stop Sell at 90. Trigger when Price <= 90.
+        #   So we look for orders with stop_price >= Current Price.
+        #   Range: [current_price, +inf]
+        
+        # CAREFUL: Logic is reversed for Stop vs Limit.
+        
+        is_buy = (side == OrderSide.BUY)
+        
+        if order_type_group == "LIMIT":
+            if is_buy: # Limit Buy (Low Price favored? No, executes if Market Price <= Limit Price. But here we have Last Price.)
+                # Limit Buy at 100. Market Price 90. Match!
+                # Condition: Limit Price >= Market Price.
+                # Find orders with Score (Limit Price) >= Current Price.
+                return await self.redis.zrangebyscore(key, price, "+inf")
+            else: # Limit Sell
+                # Limit Sell at 100. Market Price 110. Match!
+                # Condition: Limit Price <= Market Price.
+                # Find orders with Score (Limit Price) <= Current Price.
+                return await self.redis.zrangebyscore(key, "-inf", price)
+                
+        elif order_type_group == "STOP":
+            if is_buy: # Stop Buy (Trigger when Price rises to Stop)
+                # Stop Buy at 110. Current Price 115. Trigger!
+                # Condition: Stop Price <= Current Price.
+                return await self.redis.zrangebyscore(key, "-inf", price)
+            else: # Stop Sell (Trigger when Price falls to Stop)
+                # Stop Sell at 90. Current Price 80. Trigger!
+                # Condition: Stop Price >= Current Price.
+                return await self.redis.zrangebyscore(key, price, "+inf")
+                
+        return []
 
-    async def hydrate_from_db(self, order_id: str) -> Optional[Order]:
+    async def hydrate_from_db(self, order_id: str) -> Optional[Dict[str, Any]]:
         async with AsyncSessionLocal() as db:
             stmt = select(Order).where(Order.id == order_id)
             order = (await db.execute(stmt)).scalars().first()
-            if order and order.type == OrderType.LIMIT and order.status == OrderStatus.PENDING:
-                await self.add_limit_order(order)
-                return order
+            if order and order.status == OrderStatus.PENDING:
+                await self.add_order(order)
+                return await self.get_order_data(order_id)
         return None
 
     async def hydrate_all_pending(self):
-        # Rebuild cache on startup so restart does not drop pending LIMITs
+        # Rebuild cache on startup
         async with AsyncSessionLocal() as db:
+            # Fetch all PENDING orders relevant for matching
             stmt = select(Order).where(
-                Order.type == OrderType.LIMIT,
-                Order.status == OrderStatus.PENDING
+                Order.status == OrderStatus.PENDING,
+                Order.type.in_([
+                    OrderType.LIMIT, 
+                    OrderType.STOP_LOSS, 
+                    OrderType.TAKE_PROFIT, 
+                    OrderType.STOP_LIMIT, 
+                    OrderType.TRAILING_STOP
+                ])
             )
             orders = (await db.execute(stmt)).scalars().all()
 
         if not orders:
             return
 
-        pipe = self.redis.pipeline(transaction=False)
+        # Use add_order logic but piped for speed? 
+        # add_order uses pipeline internally, but doing it in one massive pipe is better.
+        # However, complexity of replicating add_order logic here is high.
+        # Just loop for now, Redis is fast.
         for order in orders:
-            key = LIMIT_KEY.format(ticker=order.ticker_id, side=order.side.value.lower())
-            pipe.zadd(key, {str(order.id): float(order.target_price)})
-        await pipe.execute()
+            await self.add_order(order)
 
     async def _iter_limit_keys(self):
         cursor = "0"
         while cursor != 0:
-            cursor, keys = await self.redis.scan(cursor=cursor, match="oo:limit:*", count=50)
+            cursor, keys = await self.redis.scan(cursor=cursor, match="oo:*", count=100)
             for k in keys:
                 yield k

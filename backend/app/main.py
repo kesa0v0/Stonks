@@ -62,6 +62,7 @@ async def lifespan(app: FastAPI):
     yield
     
     # Shutdown logic
+    await bridge.stop()
     scheduler.shutdown()
     if settings.DEBUG:
         print("[lifespan] Shutdown complete")
@@ -217,6 +218,30 @@ class WSBridge:
                 q.get_nowait()
         except Exception:
             pass
+            
+    async def stop(self):
+        print("[WSBridge] Stopping...")
+        if self.task:
+            self.task.cancel()
+            try:
+                await self.task
+            except asyncio.CancelledError:
+                pass
+            self.task = None
+            
+        if self.flush_task:
+            self.flush_task.cancel()
+            try:
+                await self.flush_task
+            except asyncio.CancelledError:
+                pass
+            self.flush_task = None
+            
+        if self.pubsub:
+            await self.pubsub.close()
+        if self.r:
+            await self.r.aclose()
+        print("[WSBridge] Stopped")
 
 bridge = WSBridge(host=settings.REDIS_HOST, port=settings.REDIS_PORT)
 
