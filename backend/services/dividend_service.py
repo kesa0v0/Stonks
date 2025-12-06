@@ -73,7 +73,10 @@ async def process_dividend(db: AsyncSession, payer_user: User, pnl: Decimal):
     sub_balance(payer_wallet, total_dividend, WALLET_REASON_DIVIDEND)
     logger.info(f"Dividend collected from {payer_user.nickname}: {total_dividend} KRW")
 
-    # 5. 배당금 분배
+    # 5. 배당금 분배 (Bulk 처리를 위해 정보 수집)
+    collected_payouts = {} # user_id -> payout_amount
+    history_records = [] # List of DividendHistory objects
+
     for shareholder in shareholders:
         share_ratio = shareholder.quantity / total_shares
         payout = total_dividend * share_ratio
@@ -84,23 +87,40 @@ async def process_dividend(db: AsyncSession, payer_user: User, pnl: Decimal):
         if payout <= 0:
             continue
             
-        # 주주 지갑 입금
-        receiver_wallet_stmt = select(Wallet).where(Wallet.user_id == shareholder.user_id).with_for_update()
-        res = await db.execute(receiver_wallet_stmt)
-        receiver_wallet = res.scalars().first()
+        # 기존에 해당 주주에게 지급될 배당금이 있다면 합산
+        collected_payouts[shareholder.user_id] = collected_payouts.get(shareholder.user_id, Decimal(0)) + payout
         
-        if receiver_wallet:
-            add_balance(receiver_wallet, payout, WALLET_REASON_DIVIDEND)
+        history = DividendHistory(
+            payer_id=payer_user.id,
+            receiver_id=shareholder.user_id,
+            ticker_id=ticker_id,
+            amount=payout
+        )
+        history_records.append(history)
             
-            # 기록
-            history = DividendHistory(
-                payer_id=payer_user.id,
-                receiver_id=shareholder.user_id,
-                ticker_id=ticker_id,
-                amount=payout
-            )
-            db.add(history)
-            
+    # 6. Bulk update receiver wallets
+    if collected_payouts:
+        # Fetch all receiver wallets in one go and lock them
+        receiver_user_ids = [str(uid) for uid in collected_payouts.keys()] # Ensure user_ids are strings/UUIDs as in DB
+        receiver_wallets_stmt = select(Wallet).where(Wallet.user_id.in_(receiver_user_ids)).with_for_update()
+        receiver_wallets_res = await db.execute(receiver_wallets_stmt)
+        receiver_wallets = receiver_wallets_res.scalars().all()
+
+        # Create a dictionary for quick lookup of wallets by user_id
+        wallets_by_user_id = {str(w.user_id): w for w in receiver_wallets}
+
+        for user_id, payout_amount in collected_payouts.items():
+            wallet = wallets_by_user_id.get(str(user_id))
+            if wallet:
+                # add_balance directly modifies the wallet object in place
+                add_balance(wallet, payout_amount, WALLET_REASON_DIVIDEND)
+            else:
+                logger.error(f"Receiver wallet not found for user: {user_id}. Cannot distribute dividend.")
+
+    # 7. Bulk insert DividendHistory records
+    if history_records:
+        db.add_all(history_records)
+
     logger.info(f"Dividend distribution completed for {ticker_id}")
 
     # 이벤트 발행 (Human 채널용)

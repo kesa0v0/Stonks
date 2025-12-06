@@ -237,7 +237,8 @@ async def client(db_session: AsyncSession, test_user, mock_external_services):
                     if user2:
                         return user2
             except (JWTError, ValueError):
-                pass
+                from fastapi import HTTPException
+                raise HTTPException(status_code=401, detail="Could not validate credentials")
         result = await db_session.execute(select(User).where(User.id == test_user))
         return result.scalars().first()
     

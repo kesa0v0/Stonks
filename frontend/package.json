@@ -10,20 +10,20 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@hookform/resolvers": "^3.9.0",
     "@tanstack/react-query": "^5.62.8",
-    "decimal.js": "^10.4.3",
     "axios": "^1.13.2",
     "dayjs": "^1.11.19",
+    "decimal.js": "^10.4.3",
     "ky": "^1.7.1",
     "lightweight-charts": "^5.0.9",
     "lucide-react": "^0.554.0",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
+    "react-hook-form": "^7.53.0",
     "react-hot-toast": "^2.6.0",
     "react-router-dom": "^7.9.6",
-    "react-hook-form": "^7.53.0",
-    "zod": "^3.23.8",
-    "@hookform/resolvers": "^3.9.0"
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

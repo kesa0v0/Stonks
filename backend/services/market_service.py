@@ -11,6 +11,7 @@ from sqlalchemy import select, func, or_, desc, asc
 from sqlalchemy.orm import aliased
 import redis.asyncio as async_redis
 import aiohttp
+from decimal import Decimal # Added Decimal import
 
 from backend.models import Ticker, Candle, Order, User
 from backend.models.asset import MarketType
@@ -160,7 +161,7 @@ async def get_active_tickers(db: AsyncSession, redis_client: async_redis.Redis) 
             continue
         try:
             data = json.loads(raw)
-            price = float(data.get("price")) if data and data.get("price") is not None else None
+            price = Decimal(data.get("price")) if data and data.get("price") is not None else None
             price_map[tid] = price
         except Exception:
             price_map[tid] = None
@@ -180,8 +181,8 @@ async def get_active_tickers(db: AsyncSession, redis_client: async_redis.Redis) 
         t_res.volume = str(d_volume) if d_volume is not None else '0'
 
         try:
-            if rt_price is not None and prev_close not in (None, 0):
-                change_pct = (rt_price - float(prev_close)) / float(prev_close) * 100.0
+            if rt_price is not None and prev_close not in (None, Decimal(0)): # Check against Decimal 0
+                change_pct = (rt_price - prev_close) / prev_close * Decimal("100")
                 t_res.change_percent = f"{change_pct:.2f}"
         except Exception:
             pass
@@ -299,11 +300,11 @@ async def get_orderbook_data(db: AsyncSession, ticker_id: str, redis_client: asy
             if raw:
                 obj = json.loads(raw)
                 asks = [
-                    OrderBookEntry(price=float(x.get("price", 0)), quantity=float(x.get("quantity", 0)))
+                    OrderBookEntry(price=Decimal(x.get("price", "0")), quantity=Decimal(x.get("quantity", "0")))
                     for x in obj.get("asks", [])
                 ]
                 bids = [
-                    OrderBookEntry(price=float(x.get("price", 0)), quantity=float(x.get("quantity", 0)))
+                    OrderBookEntry(price=Decimal(x.get("price", "0")), quantity=Decimal(x.get("quantity", "0")))
                     for x in obj.get("bids", [])
                 ]
                 return OrderBookResponse(ticker_id=ticker_id, bids=bids, asks=asks)
@@ -335,9 +336,8 @@ async def get_orderbook_data(db: AsyncSession, ticker_id: str, redis_client: asy
     asks = []
     
     for side, price, quantity in rows:
-        # price나 quantity가 None일 경우 방어
-        p_val = float(price) if price is not None else 0.0
-        q_val = float(quantity) if quantity is not None else 0.0
+        p_val = price if price is not None else Decimal("0.0")
+        q_val = quantity if quantity is not None else Decimal("0.0")
         
         entry = OrderBookEntry(price=p_val, quantity=q_val)
         if side == OrderSide.BUY:
@@ -355,7 +355,7 @@ async def get_current_price_info(redis_client: async_redis.Redis, ticker_id: str
     price_decimal = await get_current_price(redis_client, ticker_id)
     if price_decimal is None:
         return None
-    return float(price_decimal)
+    return price_decimal
 
 async def publish_current_orderbook_snapshot(db: AsyncSession, redis_client: async_redis.Redis, ticker_id: str):
     """
@@ -384,18 +384,18 @@ async def publish_current_orderbook_snapshot(db: AsyncSession, redis_client: asy
     asks = []
     
     for side, price, quantity in rows:
-        p_val = float(price) if price is not None else 0.0
-        q_val = float(quantity) if quantity is not None else 0.0
+        p_val = price if price is not None else Decimal("0.0")
+        q_val = quantity if quantity is not None else Decimal("0.0")
         
-        entry = OrderBookEntry(price=str(p_val), quantity=str(q_val)) # Use DecimalStr
+        entry = OrderBookEntry(price=p_val, quantity=q_val) # Use DecimalStr
         if side == OrderSide.BUY:
             bids.append(entry)
         else:
             asks.append(entry)
             
     # 정렬: 매수(Bids)는 비싼 순(내림차순), 매도(Asks)는 싼 순(오름차순)
-    bids.sort(key=lambda x: float(x.price), reverse=True)
-    asks.sort(key=lambda x: float(x.price))
+    bids.sort(key=lambda x: Decimal(x.price), reverse=True)
+    asks.sort(key=lambda x: Decimal(x.price))
     
     orderbook_snapshot = OrderBookResponse(ticker_id=ticker_id, bids=bids, asks=asks)
 
