@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../api/client';
+import Decimal from 'decimal.js';
 import { toFixedString, REPORT_ROUNDING, formatWithThousands } from '../utils/numfmt';
 import DashboardLayout from '../components/DashboardLayout';
 import { SkeletonRow } from '../components/Skeleton';
@@ -121,7 +122,7 @@ export default function Leaderboard() {
                               <span className="text-white text-sm font-medium">{user.nickname}</span>
                             </div>
                           </td>
-                          <td className={`h-[72px] px-6 py-2 text-right text-sm font-bold ${getValueColor(activeTab, parseFloat(user.value))}`}>
+                          <td className={`h-[72px] px-6 py-2 text-right text-sm font-bold ${getValueColor(activeTab, user.value)}`}>
                             {formatValue(activeTab, user.value)}
                           </td>
                         </tr>
@@ -221,19 +222,23 @@ function getRankIcon(rank: number) {
   return null;
 }
 
-function getValueColor(type: string, value: number) {
+function getValueColor(type: string, value: string) {
   // 사이트 전역 규칙: +는 빨강(text-profit), -는 파랑(text-loss)
   if (type === 'loss') return 'text-loss';
   if (type === 'dividend') return 'text-green-400'; // Green for dividends
-  if (type === 'pnl') return value >= 0 ? 'text-profit' : 'text-loss';
+  
+  const num = Number(value); // Safe for basic sign check, though Decimal is better
+  if (type === 'pnl') return num >= 0 ? 'text-profit' : 'text-loss';
   return 'text-white';
 }
 
 function formatValue(type: string, value: string) {
-  const num = Number(value);
-  if (type === 'pnl' || type === 'loss' || type === 'dividend') return `${formatWithThousands(toFixedString(num, 0, 'ROUND_DOWN'))} KRW`;
-  if (type === 'volume' || type === 'night') return `${formatWithThousands(toFixedString(num, 0, 'ROUND_DOWN'))} 회`;
-  if (type === 'win_rate' || type === 'market_ratio') return `${toFixedString(num, 2, REPORT_ROUNDING)} %`;
-  if (type === 'profit_factor') return `${toFixedString(num, 2, REPORT_ROUNDING)}`;
-  return toFixedString(num, 2, REPORT_ROUNDING);
+  // value is DecimalStr (string)
+  const dec = new Decimal(value);
+  
+  if (type === 'pnl' || type === 'loss' || type === 'dividend') return `${formatWithThousands(toFixedString(dec, 0, 'ROUND_DOWN'))} KRW`;
+  if (type === 'volume' || type === 'night') return `${formatWithThousands(toFixedString(dec, 0, 'ROUND_DOWN'))} 회`;
+  if (type === 'win_rate' || type === 'market_ratio') return `${toFixedString(dec, 2, REPORT_ROUNDING)} %`;
+  if (type === 'profit_factor') return `${toFixedString(dec, 2, REPORT_ROUNDING)}`;
+  return toFixedString(dec, 2, REPORT_ROUNDING);
 }

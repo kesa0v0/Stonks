@@ -3,6 +3,7 @@ import { useOrderBook, orderBookStore } from '../store/orderBook';
 import { SkeletonRow } from './Skeleton';
 import { formatCurrencyDisplay, toFixedString } from '../utils/numfmt';
 import api from '../api/client';
+import Decimal from 'decimal.js';
 import type { OrderBookResponse } from '../interfaces';
 
 interface OrderBookWidgetProps {
@@ -51,7 +52,7 @@ const OrderBookWidget = memo(function OrderBookWidget({ tickerId, currency, real
                 <tr key={`ask-${i}`} className="hover:bg-[#182234] transition-colors relative">
                     <td className="text-loss py-1">{formatCurrencyDisplay(ask.price, currency, 'ROUND_DOWN')}</td>
                     <td className="text-right text-white/70">{toFixedString(ask.quantity, 4, 'ROUND_DOWN')}</td>
-                    <td className="text-right text-white/40">{formatCurrencyDisplay(Number(ask.price) * Number(ask.quantity), currency, 'ROUND_DOWN')}</td>
+                    <td className="text-right text-white/40">{formatCurrencyDisplay(new Decimal(ask.price).mul(new Decimal(ask.quantity)), currency, 'ROUND_DOWN')}</td>
                 </tr>
                 ))}
                 
@@ -67,7 +68,7 @@ const OrderBookWidget = memo(function OrderBookWidget({ tickerId, currency, real
                 <tr key={`bid-${i}`} className="hover:bg-[#2a1818] transition-colors relative">
                     <td className="text-profit py-1">{formatCurrencyDisplay(bid.price, currency, 'ROUND_DOWN')}</td>
                     <td className="text-right text-white/70">{toFixedString(bid.quantity, 4, 'ROUND_DOWN')}</td>
-                    <td className="text-right text-white/40">{formatCurrencyDisplay(Number(bid.price) * Number(bid.quantity), currency, 'ROUND_DOWN')}</td>
+                    <td className="text-right text-white/40">{formatCurrencyDisplay(new Decimal(bid.price).mul(new Decimal(bid.quantity)), currency, 'ROUND_DOWN')}</td>
                 </tr>
                 ))}
                 </>
