@@ -1,7 +1,10 @@
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, ConfigDict, EmailStr
 from uuid import UUID
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from pydantic import BaseModel, ConfigDict, EmailStr
 from backend.schemas.common import DecimalStr
+from backend.models import Ticker, User
 
 class UserCreate(BaseModel):
     email: EmailStr
@@ -32,3 +35,14 @@ class UserProfileResponse(BaseModel):
     profit_rate: Optional[DecimalStr] = None # 공개 여부에 따라 달라짐
     
     model_config = ConfigDict(from_attributes=True)
+
+
+async def to_user_response(user: User, db: AsyncSession) -> UserResponse:
+    """Build UserResponse with an explicit is_listed flag derived from ticker state."""
+    ticker_id = f"HUMAN-{user.id}"
+    stmt = select(Ticker).where(Ticker.id == ticker_id, Ticker.is_active == True)
+    result = await db.execute(stmt)
+    ticker = result.scalars().first()
+
+    base = UserResponse.model_validate(user, from_attributes=True)
+    return base.model_copy(update={"is_listed": bool(ticker)})

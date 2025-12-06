@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useWebSocket } from './useWebSocket';
 import { pricesStore } from '../store/prices';
 import { orderBookStore } from '../store/orderBook';
@@ -21,6 +22,7 @@ const formatPrice = (value: unknown) => {
 };
 
 export function useMarketDataStream() {
+  const queryClient = useQueryClient();
   // Buffer incoming websocket updates and flush in batches.
   const priceBufferRef = useRef<Map<string, number>>(new Map());
   const orderBookRefreshQueueRef = useRef<Set<string>>(new Set()); // Tickers to refresh order book for
@@ -160,6 +162,17 @@ export function useMarketDataStream() {
 
     if (!isMine) return;
 
+    // Wallet balance/portfolio changes: invalidate cached queries instead of polling
+    if (data.type === 'wallet_updated') {
+      queryClient.invalidateQueries({ queryKey: ['portfolio'] });
+      queryClient.invalidateQueries({ queryKey: ['openOrders'] });
+      if (userIdRef.current) {
+        queryClient.invalidateQueries({ queryKey: ['portfolio', userIdRef.current] });
+        queryClient.invalidateQueries({ queryKey: ['openOrders', userIdRef.current] });
+      }
+      return;
+    }
+
     // --- User-specific notifications ---
     if (data.type === 'order_created' || data.type === 'order_accepted') {
       pushNotification({
@@ -200,7 +213,7 @@ export function useMarketDataStream() {
         meta: data,
       });
     }
-  }, []);
+  }, [queryClient]);
 
   // Establish the single WebSocket connection
   useWebSocket(onMessage);
