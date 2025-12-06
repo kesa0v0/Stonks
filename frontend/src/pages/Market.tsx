@@ -17,6 +17,7 @@ import { usePrice } from '../store/prices';
 import { useOrderBook } from '../store/orderBook'; // Import useOrderBook
 import { useMeProfile } from '../hooks/useMeProfile'; // Import useMeProfile
 import { usePortfolio, portfolioStore } from '../store/portfolio'; // Import usePortfolio and store
+import { useWatchlist } from '../hooks/useWatchlist';
 
 // Isolated header stats to avoid rerendering the whole page on price updates
 function RealTimeHeaderStats({ tickerId, selectedTicker }: { tickerId: string; selectedTicker?: TickerResponse }) {
@@ -75,6 +76,8 @@ export default function Market() {
   const selectedTicker = useMemo(() => (tickersQ.data || []).find(t => t.id === tickerId), [tickersQ.data, tickerId]);
   const symbol = selectedTicker?.symbol ?? (tickerId.split('-').pop() || tickerId);
   const currency = selectedTicker?.currency ?? 'KRW';
+
+  const { isPinned, toggle, mutatingId } = useWatchlist();
 
   // Get order book from global store
   const orderBook = useOrderBook(tickerId);
@@ -194,7 +197,16 @@ export default function Market() {
               <p className="text-[#90a4cb] text-sm">{selectedTicker?.name ?? tickerId}</p>
             </div>
           </div>
-          <div className="flex gap-4">
+          <div className="flex gap-3 items-center">
+            <button
+              type="button"
+              onClick={() => toggle(tickerId)}
+              disabled={mutatingId === tickerId}
+              className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${isPinned(tickerId) ? 'border-[#0d59f2] bg-[#0d59f2]/10 text-white' : 'border-[#314368] bg-[#182234] text-white/80 hover:text-white hover:border-[#3b4f7a]'}`}
+            >
+              <span className="material-symbols-outlined text-base" style={{ fontVariationSettings: isPinned(tickerId) ? "'FILL' 1" : "'FILL' 0" }}>push_pin</span>
+              <span className="hidden sm:inline">{isPinned(tickerId) ? 'Unpin' : 'Pin'}</span>
+            </button>
             <RealTimeHeaderStats tickerId={tickerId} selectedTicker={selectedTicker} />
           </div>
         </header>

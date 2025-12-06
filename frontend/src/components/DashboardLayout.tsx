@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import api, { initializeAuth } from '../api/client';
 import NotificationCenter from './NotificationCenter';
+import WatchlistWidget from './WatchlistWidget';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -73,6 +74,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             <NavItem to="/portfolio" icon="pie_chart" label="Portfolio" active={isActive('/portfolio')} />
             <NavItem to="/human" icon="rocket_launch" label="Human ETF" active={isActive('/human')} />
           </nav>
+          <WatchlistWidget />
         </div>
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1">
