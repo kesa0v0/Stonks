@@ -48,23 +48,26 @@ export default function WatchlistWidget() {
             <Link
               key={ticker.id}
               to={`/market/${ticker.id}`}
-              className="group flex items-center justify-between rounded-lg px-2 py-2 hover:bg-[#131d32] transition"
+              className="group flex flex-col rounded-lg px-2 py-2 hover:bg-[#131d32] transition"
             >
-              <div className="flex flex-col">
-                <span className="text-sm font-semibold text-white">{ticker.name}</span>
-                <span className="text-[11px] text-white/50">{ticker.symbol}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-mono text-white">{formatPrice(price)}</span>
+              <div className="flex justify-between gap-2">
+                <div className="flex flex-col">
+                  <span className="text-sm font-semibold text-white">{ticker.name}</span>
+                  <span className="text-[11px] text-white/50 truncate max-w-[90px] block">{ticker.symbol}</span>
+                </div>
                 <button
                   type="button"
                   onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggle(ticker.id); }}
-                  className="p-1 rounded hover:bg-white/5 text-white/60 hover:text-white"
+                  className="p-1 rounded hover:bg-white/5 text-white/60 hover:text-white self-start"
                   aria-label={isPinned(ticker.id) ? 'Unpin' : 'Pin'}
                   disabled={mutatingId === ticker.id}
                 >
                   <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: isPinned(ticker.id) ? "'FILL' 1" : "'FILL' 0" }}>push_pin</span>
                 </button>
+              </div>
+              <div className="flex justify-between items-center gap-2 mt-1">
+                <span className="text-sm font-mono text-white">{formatPrice(price)}</span>
+                <span className="material-symbols-outlined text-[16px] text-white/30 group-hover:text-white/50" style={{ fontVariationSettings: "'FILL' 0" }}>chevron_right</span>
               </div>
             </Link>
           ))}
