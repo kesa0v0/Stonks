@@ -40,7 +40,8 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
     주문 실행 및 체결 로직 (Atomic Transaction)
     공매도(Short Selling) 및 스위칭 매매 지원
     """
-    quantity = Decimal(str(quantity))
+    original_requested_quantity = Decimal(str(quantity)) # Capture the initial requested quantity from the argument
+    quantity = original_requested_quantity # `quantity` variable will represent the amount to be executed in this call
     
     if quantity <= 0:
         logger.warning(f"Trade quantity must be positive: {quantity}")
@@ -124,50 +125,63 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
     from backend.services.market_service import get_orderbook_data
     
     execution_price = None
-    slippage_applied = False
-
+    filled_qty_from_ob = Decimal(0) # Quantity actually filled from the order book
+    
     try:
         orderbook = await get_orderbook_data(db, ticker_id, redis_client)
-        
-        # 매수(BUY) -> 매도 호가(Asks)를 갉아먹음
-        # 매도(SELL) -> 매수 호가(Bids)를 갉아먹음
         liquidity = orderbook.asks if trade_side == OrderSide.BUY else orderbook.bids
         
-        needed_qty = quantity
-        total_cost = Decimal(0)
-        filled_qty = Decimal(0)
+        needed_qty_from_order = quantity # The total quantity the user wants to buy/sell
+        total_cost_from_ob = Decimal(0)
         
-        # Liquidity iteration
         for entry in liquidity:
-            if needed_qty <= 0:
+            if needed_qty_from_order <= 0:
                 break
             
-            available = entry.quantity
-            matched = min(needed_qty, available)
+            available_in_level = entry.quantity
+            matched_in_level = min(needed_qty_from_order, available_in_level)
             
-            total_cost += matched * entry.price
-            filled_qty += matched
-            needed_qty -= matched
+            total_cost_from_ob += matched_in_level * entry.price
+            filled_qty_from_ob += matched_in_level
+            needed_qty_from_order -= matched_in_level
             
-        # 충분한 유동성이 있으면 VWAP 계산
-        if needed_qty <= 0 and filled_qty > 0:
-            execution_price = total_cost / filled_qty
-            slippage_applied = True
-            logger.info(f"Slippage Applied for {ticker_id}: {quantity} units @ {execution_price} (Original Orderbook Top)")
-        else:
-            logger.warning(f"Insufficient liquidity for {ticker_id} (Req: {quantity}, Found: {filled_qty}). Fallback to Last Price.")
+        if filled_qty_from_ob > 0: # If anything was filled from the order book
+            execution_price = total_cost_from_ob / filled_qty_from_ob
+            logger.info(f"Slippage Applied for {ticker_id}: {filled_qty_from_ob} units @ {execution_price} from Orderbook.")
+        
+        # If there's still a remaining quantity after checking order book, it means insufficient liquidity.
+        # The order can either be partially filled or rejected if nothing was filled.
+        if needed_qty_from_order > 0:
+            logger.warning(f"Insufficient liquidity for {ticker_id}. Requested: {quantity}, Filled from OB: {filled_qty_from_ob}. Remaining: {needed_qty_from_order}.")
             
-    except Exception as e:
-        logger.warning(f"Failed to calculate slippage for {ticker_id}: {e}. Fallback to Last Price.")
+            if filled_qty_from_ob == 0:
+                 # If absolutely nothing could be filled from orderbook, reject the order.
+                 logger.error(f"Market order {order_id} for {ticker_id} failed: No liquidity in order book.")
+                 return False
+            
+            # Adjust the 'quantity' variable for the rest of the trade logic to only what was filled from the order book.
+            # This makes it a partial fill.
+            quantity = filled_qty_from_ob
+            
+            # The order's `unfilled_quantity` will be updated later.
+            # We don't need to explicitly update `order.quantity` here, as the original order object `order`
+            # might not be created yet if it's a new market order (order is created later if not found).
+            # The `quantity` parameter passed to strategy.execute will be the filled amount.
 
-    # Fallback: 현재가 조회
+    except Exception as e:
+        logger.error(f"Error calculating slippage for {ticker_id}: {e}. Market order {order_id} for {ticker_id} failed due to order book access error.", exc_info=True)
+        return False # Fail if order book access fails.
+
+    # At this point, execution_price must be set if filled_qty_from_ob > 0.
+    # If filled_qty_from_ob was 0, the function would have returned False already.
     if execution_price is None:
-        execution_price = await get_current_price(redis_client, ticker_id)
+        logger.error(f"Market order {order_id} for {ticker_id} failed: No execution price could be determined after order book check.")
+        return False
     
     current_price = execution_price
     
     if current_price is None:
-        logger.error(f"Price not found for {ticker_id}")
+        logger.error(f"Price not found for {ticker_id} after order book processing. Market order {order_id} failed.")
         return False
         
     fee_rate = await get_trading_fee_rate(redis_client)
@@ -180,7 +194,7 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
         wallet = result.scalars().first()
 
         if not wallet:
-            logger.error(f"Wallet not found for user {user_id}. Trade failed.")
+            logger.error(f"Wallet not found for user {user_id}. Trade failed for order {order_id}.")
             return False
 
         # 3. 주문 조회 또는 생성
@@ -190,21 +204,25 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
 
         if not order:
             # Market 주문: DB에 없으므로 새로 생성
+            # `quantity` here is the `filled_qty_from_ob` (the amount actually executed in this call)
+            # `original_requested_quantity` is the total quantity the user initially requested.
             order = Order(
                 id=order_uuid,
                 user_id=user_uuid,
                 ticker_id=ticker_id,
                 side=trade_side,
-                quantity=quantity,
-                price=current_price,
+                quantity=original_requested_quantity, # Total requested quantity by user
+                price=current_price, # This is the VWAP from OB for the filled amount
                 type=OrderType.MARKET,
-                status=OrderStatus.PENDING,
-                unfilled_quantity=quantity
+                status=OrderStatus.PENDING, # Initially pending, even if partially filled.
+                unfilled_quantity=original_requested_quantity - quantity # Remaining to be filled (0 if fully filled from OB)
             )
             db.add(order)
         else:
-            # Limit 주문
-            order.price = current_price
+            # Existing order (e.g., a triggered LIMIT/STOP order that became MARKET)
+            order.price = current_price # Set execution price
+            # Reduce unfilled quantity by the amount actually filled from the order book (`quantity` variable)
+            order.unfilled_quantity -= quantity 
 
         # 4. 포트폴리오 조회 (Pessimistic Lock 적용)
         portfolio_stmt = select(Portfolio).where(
@@ -219,7 +237,7 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
             db.add(portfolio)
 
         # 5. 매매 로직 (Strategy Pattern)
-        trade_amount = current_price * quantity
+        trade_amount = current_price * quantity # Use the filled quantity for trade amount calculation
         fee = trade_amount * fee_rate
 
         ctx = TradeContext(
@@ -228,7 +246,7 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
             portfolio=portfolio,
             order=order,
             current_price=current_price,
-            quantity=quantity,
+            quantity=quantity, # Pass the filled quantity to the strategy
             trade_amount=trade_amount,
             fee=fee,
             fee_rate=fee_rate,
@@ -245,7 +263,7 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
 
         strategy_success = await strategy.execute(ctx)
         if not strategy_success:
-            logger.warning(f"Trade failed during strategy execution for user {user_id}")
+            logger.warning(f"Trade failed during strategy execution for user {user_id}. Order {order_id}.")
             return False
 
         # 6. 마무리 (0 근처 삭제)
@@ -262,12 +280,16 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
         )
 
         # 최종 커밋
-        order.status = OrderStatus.FILLED
-        order.unfilled_quantity = 0
-        order.filled_at = func.now()
+        # Update order status based on remaining unfilled quantity
+        if order.unfilled_quantity <= 0:
+            order.status = OrderStatus.FILLED
+            order.unfilled_quantity = 0 # Ensure it's exactly 0
+        else:
+            order.status = OrderStatus.PENDING # If partially filled, remain PENDING
+        order.filled_at = func.now() # Update filled_at on successful execution (partial or full)
         await db.commit()
         
-        logger.info(f"Trade Executed: {side} {quantity} {ticker_id} @ {current_price} (Fee: {fee}) for user {user_id}")
+        logger.info(f"Trade Executed: {side} {quantity} {ticker_id} @ {current_price} (Fee: {fee}) for user {user_id}. Order {order_id}. Remaining unfilled: {order.unfilled_quantity}")
 
         # Post-Trade Event Hook: 거래 이벤트 발행
         event = {
@@ -276,7 +298,7 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
             "order_id": str(order_id),
             "ticker_id": str(ticker_id),
             "side": str(side),
-            "quantity": float(quantity),
+            "quantity": float(quantity), # This is the executed quantity (filled from OB)
             "price": float(current_price),
             "fee": float(fee),
             "realized_pnl": float(order.realized_pnl) if hasattr(order, "realized_pnl") and order.realized_pnl is not None else None,
