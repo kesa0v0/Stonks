@@ -13,13 +13,18 @@ from backend.core.enums import OrderStatus, OrderSide, OrderType
 from backend.core.config import settings
 from backend.core.event_hook import publish_event
 from backend.services.ranking_service import update_user_persona
-from backend.services.dividend_service import process_dividend
 from backend.services.common.price import get_current_price
 from backend.services.common.config import get_trading_fee_rate
 from backend.services.common.wallet import add_balance, sub_balance
 from backend.core.constants import (
     WALLET_REASON_TRADE_BUY,
     WALLET_REASON_TRADE_SELL,
+)
+from backend.services.trade_strategies import (
+    TradeContext,
+    BuyStrategy,
+    SellStrategy,
+    ShortSellStrategy,
 )
 
 # 로깅 설정
@@ -167,115 +172,35 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
             portfolio = Portfolio(user_id=user_uuid, ticker_id=ticker_id, quantity=0, average_price=0)
             db.add(portfolio)
 
-        # 5. 매매 로직 (공매도/스위칭 포함)
+        # 5. 매매 로직 (Strategy Pattern)
         trade_amount = current_price * quantity
         fee = trade_amount * fee_rate
-        
-        current_qty = portfolio.quantity
-        
-        # [매수 (BUY)]
+
+        ctx = TradeContext(
+            db=db,
+            wallet=wallet,
+            portfolio=portfolio,
+            order=order,
+            current_price=current_price,
+            quantity=quantity,
+            trade_amount=trade_amount,
+            fee=fee,
+            fee_rate=fee_rate,
+            user_id=user_uuid,
+            ticker_id=ticker_id,
+        )
+
         if trade_side == OrderSide.BUY:
-            total_cost = trade_amount + fee # 수수료 포함 비용
-            
-            # 지갑에서 돈 차감 (수수료 포함)
-            if wallet.balance < total_cost:
-                order.status = OrderStatus.FAILED
-                order.fail_reason = f"매수 잔액이 부족합니다. (필요: {total_cost}, 보유: {wallet.balance})"
-                await db.commit()
-                logger.warning(f"Trade failed: Insufficient balance for user {user_id}")
-                return False
-            
-            sub_balance(wallet, total_cost, WALLET_REASON_TRADE_BUY)
-            
-            # [PnL 계산] 숏 포지션 상환 (Closing Short)
-            if current_qty < 0:
-                # 상환 수량 = min(절대값(보유숏), 주문수량)
-                closing_qty = min(abs(current_qty), quantity)
-                allocated_fee = fee * (closing_qty / quantity)
-                
-                # 공매도 수익 = (매도평단가 - 현재매수가) * 수량 - 수수료
-                pnl = (portfolio.average_price - current_price) * closing_qty - allocated_fee
-                order.realized_pnl = pnl
-            
-            # A. 롱 -> 롱 (불타기/물타기)
-            if current_qty >= 0:
-                prev_total_val = current_qty * portfolio.average_price
-                # 평단가에 수수료 녹임 (취득원가 상승)
-                new_total_val = prev_total_val + total_cost 
-                new_qty = current_qty + quantity
-                
-                # 수량이 0이면 평단가를 현재가로 (첫 진입)
-                # 수량이 있으면 가중평균
-                if new_qty > 0:
-                    portfolio.average_price = new_total_val / new_qty
-                    
-                portfolio.quantity = new_qty
-                
-            # B. 숏 -> ? (상환 or 스위칭)
-            else:
-                remaining_qty = current_qty + quantity
-                
-                if remaining_qty <= 0:
-                    # B-1. 숏 -> 숏/0 (상환)
-                    # 상환 시 평단가는 변하지 않음 (FIFO/LIFO 등 복잡한 로직 대신 단순 차감)
-                    portfolio.quantity = remaining_qty
-                else:
-                    # B-2. 숏 -> 롱 (스위칭)
-                    portfolio.quantity = remaining_qty
-                    portfolio.average_price = current_price
+            strategy = BuyStrategy()
+        elif trade_side == OrderSide.SELL and portfolio.quantity > 0:
+            strategy = SellStrategy()
+        else:
+            strategy = ShortSellStrategy()
 
-        # [매도 (SELL)]
-        elif trade_side == OrderSide.SELL:
-            net_income = trade_amount - fee # 수수료 차감 후 입금액
-            
-            # 지갑에 돈 입금
-            add_balance(wallet, net_income, WALLET_REASON_TRADE_SELL)
-            
-            # [PnL 계산] 롱 포지션 청산 (Closing Long)
-            if current_qty > 0:
-                closing_qty = min(current_qty, quantity)
-                allocated_fee = fee * (closing_qty / quantity)
-                
-                # 매수 수익 = (현재매도가 - 매수평단가) * 수량 - 수수료
-                pnl = (current_price - portfolio.average_price) * closing_qty - allocated_fee
-                order.realized_pnl = pnl
-                
-                # [배당 처리] HUMAN ETF 주주에게 배당
-                if pnl > 0:
-                    # 유저 정보 조회 (dividend_rate 확인)
-                    # 이미 wallet을 조회했지만 User 객체를 로드하지 않았을 수 있으므로 다시 조회하거나 joinedload 사용
-                    # 여기선 간단히 다시 조회
-                    user_stmt = select(User).where(User.id == user_uuid)
-                    user_res = await db.execute(user_stmt)
-                    current_user = user_res.scalars().first()
-                    
-                    if current_user and current_user.dividend_rate > 0:
-                        await process_dividend(db, current_user, pnl)
-
-            # A. 롱 -> ? (청산 or 스위칭)
-            if current_qty > 0:
-                remaining_qty = current_qty - quantity
-                
-                if remaining_qty >= 0:
-                    # A-1. 롱 -> 롱/0 (청산)
-                    portfolio.quantity = remaining_qty
-                else:
-                    # A-2. 롱 -> 숏 (스위칭)
-                    portfolio.quantity = remaining_qty
-                    portfolio.average_price = current_price
-            
-            # B. 숏 -> 숏 (추가 공매도)
-            else:
-                # 숏 물타기
-                prev_total_val = abs(current_qty) * portfolio.average_price
-                # 평단가에 수수료 녹임 (수취 금액이 줄었으니 평단가가 낮아져야 함 -> 불리해짐)
-                new_total_val = prev_total_val + net_income
-                new_qty_abs = abs(current_qty - quantity)
-                
-                if new_qty_abs > 0:
-                    portfolio.average_price = new_total_val / new_qty_abs
-                
-                portfolio.quantity -= quantity
+        strategy_success = await strategy.execute(ctx)
+        if not strategy_success:
+            logger.warning(f"Trade failed during strategy execution for user {user_id}")
+            return False
 
         # 6. 마무리 (0 근처 삭제)
         if abs(portfolio.quantity) <= Decimal("1e-8"):
