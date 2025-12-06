@@ -105,61 +105,60 @@ export const CandleChart = ({ tickerId, range = '1D', chartType = 'candle', last
     }).sort((a, b) => (a.time as number) - (b.time as number));
   }, [chartType]);
   
-  // Load Initial Data
-  const loadInitialData = useCallback(async () => {
-    if (!seriesRef.current) return;
-
-    setStatus('loading');
-    hasMoreHistory.current = true;
-    allDataRef.current = []; // Reset data for new range
-    
-    // Calculate 'after' timestamp based on KST (UTC+9)
-    const now = new Date();
-    // KST Offset: +9 hours
-    const KST_OFFSET = 9 * 60 * 60 * 1000;
-    const nowKst = new Date(now.getTime() + KST_OFFSET);
-    
-    let fromTime = new Date();
-    let limit = 15000;
-
-    switch (range) {
-        case '1D':
-            // Start of Today KST (00:00 KST)
-            // Calculate KST midnight using UTC components of the shifted KST date
-            const kstMidnight = new Date(Date.UTC(
-                nowKst.getUTCFullYear(), 
-                nowKst.getUTCMonth(), 
-                nowKst.getUTCDate(), 
-                0, 0, 0
-            ));
-            // Convert back to absolute time (UTC) by subtracting offset
-            fromTime = new Date(kstMidnight.getTime() - KST_OFFSET);
-            break;
-        case '1W':
-            fromTime.setDate(now.getDate() - 7);
-            break;
-        case '3M':
-            fromTime.setMonth(now.getMonth() - 3);
-            break;
-        case '1Y':
-            fromTime.setFullYear(now.getFullYear() - 1);
-            break;
-        case '5Y':
-            fromTime.setFullYear(now.getFullYear() - 5);
-            break;
-    }
-
-    try {
-      // console.log(`[CandleChart] Loading data for ${tickerId} (${range}) from ${fromTime.toISOString()}`);
+      // Load Initial Data
+    const loadInitialData = useCallback(async () => {
+      if (!seriesRef.current) return;
+  
+      setStatus('loading');
+      hasMoreHistory.current = true;
+      allDataRef.current = []; // Reset data for new range
       
-      const data = await api.get(`market/candles/${tickerId}`, {
-        searchParams: { 
-            interval, 
-            limit,
-            after: fromTime.toISOString() 
-        }
-      }).json<CandleData[]>();
-
+      // Calculate 'after' timestamp based on KST (UTC+9) for 1D range logic
+      const now = new Date();
+      
+      let fromTime = new Date(); // Initialize fromTime as current date
+      let limit = 15000;
+  
+      switch (range) {
+          case '1D':
+              // Start of Today KST (00:00 KST)
+              // KST Offset: +9 hours
+              const KST_OFFSET = 9 * 60 * 60 * 1000;
+              const nowKst = new Date(now.getTime() + KST_OFFSET);
+              const kstMidnight = new Date(Date.UTC(
+                  nowKst.getUTCFullYear(), 
+                  nowKst.getUTCMonth(), 
+                  nowKst.getUTCDate(), 
+                  0, 0, 0
+              ));
+              // Convert back to absolute time (UTC) by subtracting offset
+              fromTime = new Date(kstMidnight.getTime() - KST_OFFSET);
+              break;
+          case '1W':
+              // Subtract 7 days from `fromTime` itself
+              fromTime.setDate(fromTime.getDate() - 7);
+              break;
+          case '3M':
+              fromTime.setMonth(now.getMonth() - 3);
+              break;
+          case '1Y':
+              fromTime.setFullYear(now.getFullYear() - 1);
+              break;
+          case '5Y':
+              fromTime.setFullYear(now.getFullYear() - 5);
+              break;
+      }
+  
+      try {
+        // console.log(`[CandleChart] Loading data for ${tickerId} (${range}) from ${fromTime.toISOString()}`);
+        
+        const data = await api.get(`market/candles/${tickerId}`, {
+          searchParams: { 
+              interval, 
+              limit,
+              after: fromTime.toISOString() 
+          }
+        }).json<CandleData[]>();
       if (!seriesRef.current) return;
 
       if (data.length > 0) {
