@@ -1,44 +1,31 @@
-// frontend/src/store/openOrders.ts
-import { useSyncExternalStore } from 'react';
+import { create } from 'zustand';
 import type { OrderListItem } from '../interfaces';
 
-class OpenOrdersStore {
-  private orders: Map<string, OrderListItem[]> = new Map(); // Keyed by userId
-  private keyListeners: Map<string, Set<() => void>> = new Map();
-
-  subscribeKey = (key: string, listener: () => void) => {
-    let set = this.keyListeners.get(key);
-    if (!set) {
-      set = new Set();
-      this.keyListeners.set(key, set);
-    }
-    set.add(listener);
-    return () => set && set.delete(listener);
-  };
-
-  getSnapshotKey = (key: string) => this.orders.get(key);
-  
-  updateOpenOrders = (userId: string, openOrders: OrderListItem[]) => {
-    const prev = this.orders.get(userId);
-    // Deep compare to avoid unnecessary re-renders
-    if (JSON.stringify(prev) !== JSON.stringify(openOrders)) {
-      this.orders.set(userId, openOrders);
-      const set = this.keyListeners.get(userId);
-      if (set) {
-        for (const l of set) {
-          try { l(); } catch {}
-        }
-      }
-    }
-  };
+interface OpenOrdersState {
+  orders: Record<string, OrderListItem[]>;
+  updateOpenOrders: (userId: string, openOrders: OrderListItem[]) => void;
 }
 
-export const openOrdersStore = new OpenOrdersStore();
+export const useOpenOrdersStore = create<OpenOrdersState>((set) => ({
+  orders: {},
+  updateOpenOrders: (userId, openOrders) => set((state) => {
+    const prev = state.orders[userId];
+    // Deep compare check (simple JSON stringify for now, consistent with previous implementation)
+    if (JSON.stringify(prev) !== JSON.stringify(openOrders)) {
+      return {
+        orders: { ...state.orders, [userId]: openOrders }
+      };
+    }
+    return state;
+  }),
+}));
+
+export const openOrdersStore = {
+  updateOpenOrders: (userId: string, openOrders: OrderListItem[]) => 
+    useOpenOrdersStore.getState().updateOpenOrders(userId, openOrders),
+  getSnapshotKey: (userId: string) => useOpenOrdersStore.getState().orders[userId],
+};
 
 export function useOpenOrders(userId: string) {
-  return useSyncExternalStore(
-    (listener) => openOrdersStore.subscribeKey(userId, listener),
-    () => openOrdersStore.getSnapshotKey(userId),
-    () => openOrdersStore.getSnapshotKey(userId)
-  );
+  return useOpenOrdersStore((state) => state.orders[userId]);
 }

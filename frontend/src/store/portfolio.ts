@@ -1,44 +1,30 @@
-// frontend/src/store/portfolio.ts
-import { useSyncExternalStore } from 'react';
+import { create } from 'zustand';
 import type { Portfolio } from '../interfaces';
 
-class PortfolioStore {
-  private portfolios: Map<string, Portfolio | null> = new Map(); // Keyed by userId
-  private keyListeners: Map<string, Set<() => void>> = new Map();
-
-  subscribeKey = (key: string, listener: () => void) => {
-    let set = this.keyListeners.get(key);
-    if (!set) {
-      set = new Set();
-      this.keyListeners.set(key, set);
-    }
-    set.add(listener);
-    return () => set && set.delete(listener);
-  };
-
-  getSnapshotKey = (key: string) => this.portfolios.get(key);
-  
-  updatePortfolio = (userId: string, portfolio: Portfolio | null) => {
-    const prev = this.portfolios.get(userId);
-    // Deep compare to avoid unnecessary re-renders
-    if (JSON.stringify(prev) !== JSON.stringify(portfolio)) {
-      this.portfolios.set(userId, portfolio);
-      const set = this.keyListeners.get(userId);
-      if (set) {
-        for (const l of set) {
-          try { l(); } catch {}
-        }
-      }
-    }
-  };
+interface PortfolioState {
+  portfolios: Record<string, Portfolio | null>;
+  updatePortfolio: (userId: string, portfolio: Portfolio | null) => void;
 }
 
-export const portfolioStore = new PortfolioStore();
+export const usePortfolioStore = create<PortfolioState>((set) => ({
+  portfolios: {},
+  updatePortfolio: (userId, portfolio) => set((state) => {
+    const prev = state.portfolios[userId];
+    if (JSON.stringify(prev) !== JSON.stringify(portfolio)) {
+      return {
+        portfolios: { ...state.portfolios, [userId]: portfolio }
+      };
+    }
+    return state;
+  }),
+}));
+
+export const portfolioStore = {
+  updatePortfolio: (userId: string, portfolio: Portfolio | null) => 
+    usePortfolioStore.getState().updatePortfolio(userId, portfolio),
+  getSnapshotKey: (userId: string) => usePortfolioStore.getState().portfolios[userId],
+};
 
 export function usePortfolio(userId: string) {
-  return useSyncExternalStore(
-    (listener) => portfolioStore.subscribeKey(userId, listener),
-    () => portfolioStore.getSnapshotKey(userId),
-    () => portfolioStore.getSnapshotKey(userId)
-  );
+  return usePortfolioStore((state) => state.portfolios[userId]);
 }
