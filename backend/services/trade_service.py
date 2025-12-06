@@ -118,8 +118,54 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
 
         return True
 
-    # 1. 현재가 및 수수료율 조회
-    current_price = await get_current_price(redis_client, ticker_id)
+    # 1. 가격 결정 (Slippage 적용)
+    # 호가창(Orderbook)을 조회하여 주문 수량만큼 갉아먹었을 때의 평균 단가(VWAP)를 계산합니다.
+    # 호가창이 비어있거나 유동성이 부족하면 현재가(Last Price)로 Fallback 합니다.
+    from backend.services.market_service import get_orderbook_data
+    
+    execution_price = None
+    slippage_applied = False
+
+    try:
+        orderbook = await get_orderbook_data(db, ticker_id, redis_client)
+        
+        # 매수(BUY) -> 매도 호가(Asks)를 갉아먹음
+        # 매도(SELL) -> 매수 호가(Bids)를 갉아먹음
+        liquidity = orderbook.asks if trade_side == OrderSide.BUY else orderbook.bids
+        
+        needed_qty = quantity
+        total_cost = Decimal(0)
+        filled_qty = Decimal(0)
+        
+        # Liquidity iteration
+        for entry in liquidity:
+            if needed_qty <= 0:
+                break
+            
+            available = entry.quantity
+            matched = min(needed_qty, available)
+            
+            total_cost += matched * entry.price
+            filled_qty += matched
+            needed_qty -= matched
+            
+        # 충분한 유동성이 있으면 VWAP 계산
+        if needed_qty <= 0 and filled_qty > 0:
+            execution_price = total_cost / filled_qty
+            slippage_applied = True
+            logger.info(f"Slippage Applied for {ticker_id}: {quantity} units @ {execution_price} (Original Orderbook Top)")
+        else:
+            logger.warning(f"Insufficient liquidity for {ticker_id} (Req: {quantity}, Found: {filled_qty}). Fallback to Last Price.")
+            
+    except Exception as e:
+        logger.warning(f"Failed to calculate slippage for {ticker_id}: {e}. Fallback to Last Price.")
+
+    # Fallback: 현재가 조회
+    if execution_price is None:
+        execution_price = await get_current_price(redis_client, ticker_id)
+    
+    current_price = execution_price
+    
     if current_price is None:
         logger.error(f"Price not found for {ticker_id}")
         return False
