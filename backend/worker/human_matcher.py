@@ -163,10 +163,51 @@ async def process_ticker_match(ticker_id: str, redis_client: redis.Redis):
                 # No more matches possible
                 has_match = False
 
+class TickerMatchScheduler:
+    def __init__(self):
+        self.processing_tickers = set()
+        self.queued_tickers = set()
+        self._lock = asyncio.Lock() # Protect set access (though GIL makes simple set ops thread-safe, async context needs care)
+
+    async def trigger(self, ticker_id: str, redis_client: redis.Redis):
+        async with self._lock:
+            if ticker_id in self.processing_tickers:
+                self.queued_tickers.add(ticker_id)
+                return
+            self.processing_tickers.add(ticker_id)
+        
+        # Start worker without awaiting (fire and forget)
+        asyncio.create_task(self._process(ticker_id, redis_client))
+
+    async def _process(self, ticker_id: str, redis_client: redis.Redis):
+        try:
+            while True:
+                # Perform matching
+                await process_ticker_match(ticker_id, redis_client)
+                
+                # Check if we need to run again
+                async with self._lock:
+                    if ticker_id in self.queued_tickers:
+                        self.queued_tickers.remove(ticker_id)
+                        # Continue loop to process again
+                    else:
+                        self.processing_tickers.remove(ticker_id)
+                        break
+        except Exception as e:
+            logger.error(f"Scheduler Worker Error for {ticker_id}: {e}", exc_info=True)
+            # Ensure cleanup on error
+            async with self._lock:
+                if ticker_id in self.processing_tickers:
+                    self.processing_tickers.remove(ticker_id)
+                if ticker_id in self.queued_tickers:
+                    self.queued_tickers.remove(ticker_id)
+
 async def match_human_orders():
     # Redis connection
     redis_client = redis.Redis(host=settings.REDIS_HOST, port=settings.REDIS_PORT, decode_responses=True)
     pubsub = redis_client.pubsub()
+    
+    scheduler = TickerMatchScheduler()
     
     # Graceful Shutdown
     stop_event = asyncio.Event()
@@ -200,11 +241,8 @@ async def match_human_orders():
                 if (event_type in ["order_created", "order_accepted", "trade_executed"] and 
                     ticker_id and ticker_id.startswith("HUMAN-")):
                     
-                    # Trigger matching logic for this ticker
-                    # Note: In a high-scale system, this should be a background task or queued.
-                    # For now, awaiting ensures sequential consistency per event but might block.
-                    # Creating a task is better for concurrency.
-                    asyncio.create_task(process_ticker_match(ticker_id, redis_client))
+                    # Use Scheduler to ensure sequential processing per ticker
+                    await scheduler.trigger(ticker_id, redis_client)
                     
             except Exception as e:
                 logger.error(f"Event processing error: {e}")

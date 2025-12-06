@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc, func
+from sqlalchemy import select, desc, func, case, Numeric
 from datetime import datetime
 from decimal import Decimal
 import pytz
@@ -214,76 +214,78 @@ async def get_rankings_data(
         stmt = stmt.order_by(desc(UserPersona.total_fees_paid))
     elif ranking_type == "night":
         stmt = stmt.order_by(desc(UserPersona.night_trade_count))
-    elif ranking_type in ["win_rate", "profit_factor", "market_ratio"]:
-        # Python 정렬 필요한 타입들: 필터링만 적용
-        if ranking_type == "win_rate":
-            stmt = stmt.where(UserPersona.total_trade_count >= 10)
-        pass 
+    
+    elif ranking_type == "win_rate":
+        # Win Rate: (win_count / total_trade_count) * 100
+        # Filter: min 10 trades
+        stmt = stmt.where(UserPersona.total_trade_count >= 10)
+        win_rate_expr = case(
+            (UserPersona.total_trade_count > 0, 
+             func.cast(UserPersona.win_count, Numeric) * 100.0 / func.cast(UserPersona.total_trade_count, Numeric)),
+            else_=0
+        )
+        stmt = stmt.order_by(desc(win_rate_expr), desc(UserPersona.total_trade_count))
+
+    elif ranking_type == "profit_factor":
+        # Profit Factor: total_profit / total_loss
+        pf_expr = case(
+            (UserPersona.total_loss > 0, 
+             UserPersona.total_profit / UserPersona.total_loss),
+            else_=UserPersona.total_profit # If loss is 0, sort by profit
+        )
+        stmt = stmt.order_by(desc(pf_expr))
+
+    elif ranking_type == "market_ratio":
+        # Market Order Ratio: (market_order_count / total_trade_count) * 100
+        stmt = stmt.where(UserPersona.total_trade_count > 0)
+        mr_expr = case(
+            (UserPersona.total_trade_count > 0, 
+             func.cast(UserPersona.market_order_count, Numeric) * 100.0 / func.cast(UserPersona.total_trade_count, Numeric)),
+            else_=0
+        )
+        stmt = stmt.order_by(desc(mr_expr))
+    
     else:
-        # Router에서 유효성 검사를 했거나, 여기서 에러 발생 (하지만 보통 router에서 validation 함)
-        # 여기서는 빈 리스트 반환하거나 에러 발생
         return []
     
-    # 계산형 랭킹은 전체 가져와서 정렬 (limit 미적용)
-    if ranking_type not in ["win_rate", "profit_factor", "market_ratio"]:
-        stmt = stmt.limit(limit)
+    # DB-level Limit
+    stmt = stmt.limit(limit)
         
     result = await db.execute(stmt)
     rows = result.all()
     
     rankings = []
     
-    # --- 계산 및 정렬 로직 ---
-    if ranking_type == "win_rate":
-        temp_list = []
-        for persona, user in rows:
-            if persona.total_trade_count > 0:
-                rate = (persona.win_count / persona.total_trade_count) * 100
-                temp_list.append((rate, user.nickname, persona))
-        temp_list.sort(key=lambda x: (x[0], x[2].total_trade_count), reverse=True)
-        
-        for i, (rate, nickname, persona) in enumerate(temp_list[:limit]):
-            rankings.append(RankingEntry(rank=i+1, nickname=nickname, value=round(rate, 2), extra_info={"trade_count": persona.total_trade_count}))
+    for i, (persona, user) in enumerate(rows):
+        val = 0
+        extra = None
 
-    elif ranking_type == "profit_factor":
-        temp_list = []
-        for persona, user in rows:
-            # 손실이 0이면 수익 그대로, 아니면 수익/손실
+        if ranking_type == "pnl": val = float(persona.total_realized_pnl)
+        elif ranking_type == "loss": val = float(persona.total_loss)
+        elif ranking_type == "volume": val = float(persona.total_trade_count)
+        elif ranking_type == "fees": val = float(persona.total_fees_paid)
+        elif ranking_type == "night": val = float(persona.night_trade_count)
+        
+        elif ranking_type == "win_rate":
+            val = float(persona.win_count) / float(persona.total_trade_count) * 100 if persona.total_trade_count else 0
+            val = round(val, 2)
+            extra = {"trade_count": persona.total_trade_count}
+            
+        elif ranking_type == "profit_factor":
             loss = float(persona.total_loss)
             profit = float(persona.total_profit)
             if loss == 0:
-                factor = profit if profit > 0 else 0
+                val = profit
             else:
-                factor = profit / loss
-            temp_list.append((factor, user.nickname, profit, loss))
-        
-        temp_list.sort(key=lambda x: x[0], reverse=True)
-        
-        for i, (factor, nickname, p, l) in enumerate(temp_list[:limit]):
-            rankings.append(RankingEntry(rank=i+1, nickname=nickname, value=round(factor, 2), extra_info={"profit": p, "loss": l}))
-
-    elif ranking_type == "market_ratio":
-        temp_list = []
-        for persona, user in rows:
-            if persona.total_trade_count > 0:
-                ratio = (persona.market_order_count / persona.total_trade_count) * 100
-                temp_list.append((ratio, user.nickname, persona.total_trade_count))
-        
-        temp_list.sort(key=lambda x: x[0], reverse=True)
-        
-        for i, (ratio, nickname, count) in enumerate(temp_list[:limit]):
-            rankings.append(RankingEntry(rank=i+1, nickname=nickname, value=round(ratio, 2), extra_info={"trade_count": count}))
-
-    else:
-        # DB 정렬 완료된 경우
-        for i, (persona, user) in enumerate(rows):
-            val = 0
-            if ranking_type == "pnl": val = float(persona.total_realized_pnl)
-            elif ranking_type == "loss": val = float(persona.total_loss)
-            elif ranking_type == "volume": val = float(persona.total_trade_count)
-            elif ranking_type == "fees": val = float(persona.total_fees_paid)
-            elif ranking_type == "night": val = float(persona.night_trade_count)
+                val = profit / loss
+            val = round(val, 2)
+            extra = {"profit": profit, "loss": loss}
             
-            rankings.append(RankingEntry(rank=i+1, nickname=user.nickname, value=val))
+        elif ranking_type == "market_ratio":
+            val = float(persona.market_order_count) / float(persona.total_trade_count) * 100 if persona.total_trade_count else 0
+            val = round(val, 2)
+            extra = {"trade_count": persona.total_trade_count}
+
+        rankings.append(RankingEntry(rank=i+1, nickname=user.nickname, value=val, extra_info=extra))
             
     return rankings
