@@ -19,30 +19,25 @@ async def test_get_orderbook(client: AsyncClient, db_session, test_ticker, test_
         Order(
             id=uuid.uuid4(), user_id=user_id, ticker_id=ticker_id,
             side=OrderSide.BUY, type=OrderType.LIMIT, status=OrderStatus.PENDING,
-            price=Decimal("100.0"), quantity=Decimal("10.0"), unfilled_quantity=Decimal("10.0")
-        ),
+                            target_price=Decimal("100.0"), quantity=Decimal("10.0"), unfilled_quantity=Decimal("10.0")        ),
         Order(
             id=uuid.uuid4(), user_id=user_id, ticker_id=ticker_id,
             side=OrderSide.BUY, type=OrderType.LIMIT, status=OrderStatus.PENDING,
-            price=Decimal("100.0"), quantity=Decimal("5.0"), unfilled_quantity=Decimal("5.0")
-        ),
+                            target_price=Decimal("100.0"), quantity=Decimal("5.0"), unfilled_quantity=Decimal("5.0")        ),
         Order(
             id=uuid.uuid4(), user_id=user_id, ticker_id=ticker_id,
             side=OrderSide.BUY, type=OrderType.LIMIT, status=OrderStatus.PENDING,
-            price=Decimal("99.0"), quantity=Decimal("20.0"), unfilled_quantity=Decimal("20.0")
-        ),
+                            target_price=Decimal("99.0"), quantity=Decimal("20.0"), unfilled_quantity=Decimal("20.0")        ),
         
         # Asks (Sell) - Low to High
         Order(
             id=uuid.uuid4(), user_id=user_id, ticker_id=ticker_id,
             side=OrderSide.SELL, type=OrderType.LIMIT, status=OrderStatus.PENDING,
-            price=Decimal("101.0"), quantity=Decimal("8.0"), unfilled_quantity=Decimal("8.0")
-        ),
+                            target_price=Decimal("101.0"), quantity=Decimal("8.0"), unfilled_quantity=Decimal("8.0")        ),
         Order(
             id=uuid.uuid4(), user_id=user_id, ticker_id=ticker_id,
             side=OrderSide.SELL, type=OrderType.LIMIT, status=OrderStatus.PENDING,
-            price=Decimal("102.0"), quantity=Decimal("15.0"), unfilled_quantity=Decimal("15.0")
-        ),
+                            target_price=Decimal("102.0"), quantity=Decimal("15.0"), unfilled_quantity=Decimal("15.0")        ),
     ]
     
     db_session.add_all(orders)

@@ -266,7 +266,7 @@ async def place_order(
         await publish_event(redis, event, channel="trade_events")
 
         # Human ETF인 경우 호가창 스냅샷 발행
-        ticker_obj = await db.execute(select(Ticker).where(Ticker.id == order.ticker_id)).scalar_one_or_none()
+        ticker_obj = (await db.execute(select(Ticker).where(Ticker.id == order.ticker_id))).scalars().first()
         if ticker_obj and ticker_obj.market_type == MarketType.HUMAN:
             await publish_current_orderbook_snapshot(db, redis, order.ticker_id)
         
@@ -369,7 +369,7 @@ async def cancel_order_logic(
     await publish_event(redis, event, channel="trade_events")
 
     # Human ETF인 경우 호가창 스냅샷 발행
-    ticker_obj = await db.execute(select(Ticker).where(Ticker.id == order_obj.ticker_id)).scalar_one_or_none()
+    ticker_obj = (await db.execute(select(Ticker).where(Ticker.id == order_obj.ticker_id))).scalars().first()
     if ticker_obj and ticker_obj.market_type == MarketType.HUMAN:
         await publish_current_orderbook_snapshot(db, redis, order_obj.ticker_id)
 

@@ -55,7 +55,7 @@ async def test_bankrupt_ipo(client: AsyncClient, db_session):
     # 1. Create bankrupt user
     user_id = uuid.uuid4()
     user = User(id=user_id, email="bankrupt@t.com", hashed_password="pw", nickname="PoorGuy", is_active=True, is_bankrupt=True)
-    wallet = Wallet(user_id=user_id, balance=0) 
+    wallet = Wallet(user_id=user_id, balance=10_000_000) # Add balance to cover IPO fee
     db_session.add(user)
     db_session.add(wallet)
     await db_session.commit()
@@ -193,7 +193,7 @@ async def test_burn_shares(client: AsyncClient, db_session):
     # 1. Create bankrupt user
     user_id = uuid.uuid4()
     user = User(id=user_id, email="burn@t.com", hashed_password="pw", nickname="Burner", is_active=True, is_bankrupt=True)
-    wallet = Wallet(user_id=user_id, balance=0)
+    wallet = Wallet(user_id=user_id, balance=10_000_000) # Add balance to cover IPO fee
     db_session.add(user)
     db_session.add(wallet)
     await db_session.commit()

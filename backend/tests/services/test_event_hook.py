@@ -78,6 +78,13 @@ async def test_post_trade_event_hook(monkeypatch):
             self.ticker_id = ticker_id
             self.user_id = user_id
 
+    class DummyTicker:
+        def __init__(self, ticker_id):
+            self.id = ticker_id
+            from backend.models.asset import MarketType # Import MarketType locally to avoid circular deps
+            self.market_type = MarketType.US # Changed STOCK to US
+
+
     dummy_wallet = DummyWallet()
     dummy_order = DummyOrder()
     dummy_portfolio = DummyPortfolio(user_id, ticker_id)
@@ -97,6 +104,8 @@ async def test_post_trade_event_hook(monkeypatch):
                             return dummy_portfolio
                         elif "User" in stmt_str:
                             return dummy_user
+                        elif "Ticker" in stmt_str:
+                            return DummyTicker(ticker_id) # Return a dummy ticker
                         else:
                             return None
                 return DummyScalar()
