@@ -1,17 +1,19 @@
 # backend/models/order.py
 import uuid
-from sqlalchemy import Column, String, DateTime, ForeignKey, Enum, Numeric, Text
+from sqlalchemy import Column, String, DateTime, ForeignKey, Enum, Numeric, Text, event, DDL
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from backend.core.database import Base
 from backend.core.enums import OrderType, OrderSide, OrderStatus
-from sqlalchemy import event
 from backend.models.order_status_history import OrderStatusHistory
 
 
 class Order(Base):
     __tablename__ = "orders"
+    __table_args__ = (
+        {"postgresql_partition_by": "RANGE (created_at)"}
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
@@ -44,13 +46,19 @@ class Order(Base):
     fee = Column(Numeric(20, 8), default=0)
     fail_reason = Column(Text, nullable=True)
     
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), primary_key=True)
     filled_at = Column(DateTime(timezone=True), nullable=True)
     cancelled_at = Column(DateTime(timezone=True), nullable=True)
 
     user = relationship("User", back_populates="orders")
     ticker = relationship("Ticker")
 
+# Create default partition automatically
+event.listen(
+    Order.__table__,
+    "after_create",
+    DDL("CREATE TABLE IF NOT EXISTS orders_default PARTITION OF orders DEFAULT")
+)
 
 # Order Status audit hooks
 @event.listens_for(Order, "after_insert")

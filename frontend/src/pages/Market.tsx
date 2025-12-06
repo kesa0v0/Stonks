@@ -12,9 +12,9 @@ import { CandleChart } from '../components/CandleChart';
 import OpenOrders from '../components/OpenOrders';
 import OrderInputs from '../components/orders/OrderInputs';
 import ValidatedOrderForm from '../components/orders/ValidatedOrderForm';
+import OrderBookWidget from '../components/OrderBookWidget';
 import type { OrderBookResponse, TickerResponse, Portfolio } from '../interfaces';
 import { usePrice } from '../store/prices';
-import { useOrderBook } from '../store/orderBook'; // Import useOrderBook
 import { useMeProfile } from '../hooks/useMeProfile'; // Import useMeProfile
 import { usePortfolio, portfolioStore } from '../store/portfolio'; // Import usePortfolio and store
 import { useWatchlist } from '../hooks/useWatchlist';
@@ -79,9 +79,6 @@ export default function Market() {
 
   const { isPinned, toggle, mutatingId } = useWatchlist();
 
-  // Get order book from global store
-  const orderBook = useOrderBook(tickerId);
-  
   // Form States
   const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT' | 'STOP_LOSS' | 'TAKE_PROFIT' | 'STOP_LIMIT' | 'TRAILING_STOP'>('MARKET');
   const [price, setPrice] = useState<number | ''>(''); // Unit Price / Target Price
@@ -268,52 +265,7 @@ export default function Market() {
           <div className="col-span-12 lg:col-span-4 flex flex-col gap-6 h-full min-h-0">
             
             {/* Order Book */}
-            <div className="flex-1 rounded-xl border border-[#314368] bg-[#101623] p-4 flex flex-col min-h-0 max-h-[540px] overflow-hidden">
-              <h3 className="text-white font-bold mb-3 border-b border-[#314368] pb-2 flex-none">Order Book</h3>
-              <div className="flex-1 overflow-y-auto font-mono text-sm no-scrollbar">
-                <table className="w-full">
-                  <thead>
-                    <tr className="text-[#90a4cb] text-xs">
-                      <th className="text-left font-normal pb-2">Price</th>
-                      <th className="text-right font-normal pb-2">Amount</th>
-                      <th className="text-right font-normal pb-2">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {!orderBook ? (
-                        Array.from({ length: 16 }).map((_, i) => <SkeletonRow key={i} cols={3} />)
-                    ) : (
-                        <>
-                        {/* Asks (Sell Orders) - Blue (Loss) */}
-                        {orderBook?.asks.slice(0, 8).reverse().map((ask, i) => (
-                        <tr key={`ask-${i}`} className="hover:bg-[#182234] transition-colors relative">
-                            <td className="text-loss py-1">{formatCurrencyDisplay(ask.price, currency, 'ROUND_DOWN')}</td>
-                            <td className="text-right text-white/70">{toFixedString(ask.quantity, 4, 'ROUND_DOWN')}</td>
-                            <td className="text-right text-white/40">{formatCurrencyDisplay(Number(ask.price) * Number(ask.quantity), currency, 'ROUND_DOWN')}</td>
-                        </tr>
-                        ))}
-                        
-                        {/* Current Price Divider */}
-                        <tr className="border-y border-[#314368] bg-[#222f49]/50">
-                        <td colSpan={3} className="py-2 text-center text-lg font-bold text-white">
-                            {realTimePrice ? formatCurrencyDisplay(realTimePrice, currency, 'ROUND_DOWN') : '-'} <span className="text-xs text-[#90a4cb] font-normal">{currency}</span>
-                        </td>
-                        </tr>
-
-                        {/* Bids (Buy Orders) - Red (Profit) */}
-                        {orderBook?.bids.slice(0, 8).map((bid, i) => (
-                        <tr key={`bid-${i}`} className="hover:bg-[#2a1818] transition-colors relative">
-                            <td className="text-profit py-1">{formatCurrencyDisplay(bid.price, currency, 'ROUND_DOWN')}</td>
-                            <td className="text-right text-white/70">{toFixedString(bid.quantity, 4, 'ROUND_DOWN')}</td>
-                            <td className="text-right text-white/40">{formatCurrencyDisplay(Number(bid.price) * Number(bid.quantity), currency, 'ROUND_DOWN')}</td>
-                        </tr>
-                        ))}
-                        </>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <OrderBookWidget tickerId={tickerId} currency={currency} realTimePrice={realTimePrice} />
 
             {/* Trade Form */}
             <div className="flex-none h-auto rounded-xl border border-[#314368] bg-[#101623] p-4 flex flex-col">

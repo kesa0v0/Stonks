@@ -25,12 +25,14 @@ export function useMarketDataStream() {
   const queryClient = useQueryClient();
   // Buffer incoming websocket updates and flush in batches.
   const priceBufferRef = useRef<Map<string, number>>(new Map());
-  const orderBookRefreshQueueRef = useRef<Set<string>>(new Set()); // Tickers to refresh order book for
+  const orderBookSnapshotBufferRef = useRef<Map<string, OrderBookResponse>>(new Map()); // New buffer for OB snapshots
+  const orderBookRefreshQueueRef = useRef<Set<string>>(new Set()); // Tickers to refresh order book for (via API)
   const userRelatedRefreshQueueRef = useRef<Set<string>>(new Set()); // Queue for user-specific data refresh
   const userIdRef = useRef<string | null>(null); // To store current user's ID
 
   const priceTimerRef = useRef<number | null>(null);
-  const orderBookTimerRef = useRef<number | null>(null);
+  const orderBookSnapshotTimerRef = useRef<number | null>(null); // Timer for OB snapshots
+  const orderBookRefreshTimerRef = useRef<number | null>(null); // Timer for OB API refresh
   const userRefreshTimerRef = useRef<number | null>(null);
 
   // --- Flush Functions ---
@@ -40,6 +42,16 @@ export function useMarketDataStream() {
     const batch = new Map(buf);
     buf.clear();
     pricesStore.updateBatch(batch);
+  }, []);
+
+  const flushOrderBookSnapshots = useCallback(() => {
+    const buf = orderBookSnapshotBufferRef.current;
+    if (buf.size === 0) return;
+    
+    buf.forEach((data, tickerId) => {
+        orderBookStore.updateOrderBook(tickerId, data);
+    });
+    buf.clear();
   }, []);
 
   const flushOrderBookRefreshQueue = useCallback(async () => {
@@ -88,19 +100,22 @@ export function useMarketDataStream() {
   useEffect(() => {
     // Start timers for flushing buffers
     priceTimerRef.current = window.setInterval(flushPriceBuffer, 250);
-    orderBookTimerRef.current = window.setInterval(flushOrderBookRefreshQueue, 500);
+    orderBookSnapshotTimerRef.current = window.setInterval(flushOrderBookSnapshots, 250); // Throttle OB snapshots
+    orderBookRefreshTimerRef.current = window.setInterval(flushOrderBookRefreshQueue, 500);
     userRefreshTimerRef.current = window.setInterval(flushUserRelatedRefreshQueue, 750); // Slightly slower debounce for user-specific data
 
     // Cleanup timers
     return () => {
       if (priceTimerRef.current) window.clearInterval(priceTimerRef.current);
-      if (orderBookTimerRef.current) window.clearInterval(orderBookTimerRef.current);
+      if (orderBookSnapshotTimerRef.current) window.clearInterval(orderBookSnapshotTimerRef.current);
+      if (orderBookRefreshTimerRef.current) window.clearInterval(orderBookRefreshTimerRef.current);
       if (userRefreshTimerRef.current) window.clearInterval(userRefreshTimerRef.current);
-      flushPriceBuffer(); 
+      flushPriceBuffer();
+      flushOrderBookSnapshots();
       flushOrderBookRefreshQueue();
       flushUserRelatedRefreshQueue(); // Final flush on cleanup
     };
-  }, [flushPriceBuffer, flushOrderBookRefreshQueue, flushUserRelatedRefreshQueue]);
+  }, [flushPriceBuffer, flushOrderBookSnapshots, flushOrderBookRefreshQueue, flushUserRelatedRefreshQueue]);
 
   useEffect(() => {
     // Fetch current user ID on mount only if authenticated
@@ -143,8 +158,14 @@ export function useMarketDataStream() {
     // --- Order Book Updates & Trade Events ---
     // If it's a direct orderbook snapshot (e.g., from data_feeder for crypto)
     if (data.type === 'orderbook' && data.ticker_id && data.bids && data.asks) {
-      orderBookStore.updateOrderBook(data.ticker_id, data);
-      return; // Processed this message, no further action for orderbook needed
+      // Optimization: If we don't have data yet, update immediately (Fast Start)
+      // Otherwise buffer it to avoid rendering too often during high traffic
+      if (!orderBookStore.getSnapshotKey(data.ticker_id)) {
+          orderBookStore.updateOrderBook(data.ticker_id, data);
+      } else {
+          orderBookSnapshotBufferRef.current.set(String(data.ticker_id), data);
+      }
+      return; // Processed this message
     }
 
     // If it's a trade event that affects the order book, queue a refresh (for Human ETFs or when snapshot not available)

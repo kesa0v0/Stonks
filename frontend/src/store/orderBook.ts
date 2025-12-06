@@ -21,7 +21,7 @@ class OrderBookStore {
   
   updateOrderBook = (tickerId: string, orderBook: OrderBookResponse | null) => {
     const prev = this.orderBooks.get(tickerId);
-    if (JSON.stringify(prev) !== JSON.stringify(orderBook)) { // Deep compare for changes
+    if (prev !== orderBook) { 
       this.orderBooks.set(tickerId, orderBook);
       this.version++;
       const set = this.keyListeners.get(tickerId);
