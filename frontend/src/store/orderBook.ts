@@ -20,7 +20,26 @@ class OrderBookStore {
   getSnapshotKey = (key: string) => this.orderBooks.get(key);
   
   updateOrderBook = (tickerId: string, orderBook: OrderBookResponse | null) => {
+    if (!orderBook) {
+        this.orderBooks.delete(tickerId);
+        // Notify listeners
+        const set = this.keyListeners.get(tickerId);
+        if (set) for (const l of set) { try { l(); } catch {} }
+        return;
+    }
+
     const prev = this.orderBooks.get(tickerId);
+    
+    // Race Condition Protection:
+    // If we have a previous snapshot with a timestamp, and the new one also has a timestamp,
+    // ensure the new one is actually newer.
+    if (prev?.timestamp && orderBook.timestamp) {
+        if (orderBook.timestamp < prev.timestamp) {
+            console.warn(`[OrderBookStore] Ignoring stale update for ${tickerId}. Current: ${prev.timestamp}, New: ${orderBook.timestamp}`);
+            return;
+        }
+    }
+
     if (prev !== orderBook) { 
       this.orderBooks.set(tickerId, orderBook);
       this.version++;

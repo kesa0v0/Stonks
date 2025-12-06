@@ -121,6 +121,7 @@ export interface OrderBookResponse {
   ticker_id: string;
   bids: OrderBookEntry[];
   asks: OrderBookEntry[];
+  timestamp?: number; // Added for race condition handling
 }
 export interface OrderBookEntry {
   price: number;
