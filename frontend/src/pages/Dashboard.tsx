@@ -220,7 +220,6 @@ export default function Dashboard() {
                 <table className="w-full text-left">
                   <thead className="bg-[#182234]">
                     <tr>
-                      <th className="p-4 text-sm font-semibold text-white tracking-wider">Symbol</th>
                       <th className="p-4 text-sm font-semibold text-white tracking-wider">Name</th>
                       <th className="p-4 text-sm font-semibold text-white tracking-wider text-right">Price</th>
                       <th className="p-4 text-sm font-semibold text-white tracking-wider text-right">24h Change</th>
@@ -231,15 +230,19 @@ export default function Dashboard() {
                   </thead>
                   <tbody className="divide-y divide-[#314368]">
                     {tickersQ.isLoading ? (
-                        Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={7} />)
+                        Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={6} />)
                     ) : (
                       displayedTickers.slice(0, 50).map(t => {
                       const change = Number(t.change_percent || 0);
                       const isPositive = change >= 0;
                       return (
                         <tr key={t.id} className="hover:bg-[#182234]">
-                          <td className="p-4 text-white font-medium">{t.symbol}</td>
-                          <td className="p-4 text-gray-300">{t.name}</td>
+                          <td className="p-4 text-white font-medium">
+                            <div className="flex flex-col">
+                              <span className="text-white text-base font-semibold">{t.name}</span>
+                              <span className="text-[11px] text-white/50">{t.symbol}</span>
+                            </div>
+                          </td>
                           <td className="p-4 text-right text-white font-mono">
                             {t.current_price ? formatCurrencyDisplay(t.current_price, t.currency, 'ROUND_DOWN') : '-'} {t.currency}
                           </td>

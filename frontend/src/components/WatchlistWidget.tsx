@@ -51,8 +51,8 @@ export default function WatchlistWidget() {
               className="group flex items-center justify-between rounded-lg px-2 py-2 hover:bg-[#131d32] transition"
             >
               <div className="flex flex-col">
-                <span className="text-sm font-semibold text-white">{ticker.symbol}</span>
-                <span className="text-[11px] text-white/50">{ticker.name}</span>
+                <span className="text-sm font-semibold text-white">{ticker.name}</span>
+                <span className="text-[11px] text-white/50">{ticker.symbol}</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-sm font-mono text-white">{formatPrice(price)}</span>
