@@ -12,13 +12,19 @@ from backend.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-async def process_dividend(db: AsyncSession, payer_user: User, pnl: Decimal):
+async def process_dividend(db: AsyncSession, payer_user: User, pnl: Decimal, deduct_source: bool = True) -> Decimal:
     """
     수익 발생 시 배당금을 계산하여 주주들에게 분배합니다.
+    
+    :param db: DB Session
+    :param payer_user: 배당 주체 (Human ETF Issuer)
+    :param pnl: 실현 손익 (Realized PnL)
+    :param deduct_source: True면 지갑에서 차감(기존 방식), False면 차감하지 않음(Caller가 원천징수 처리)
+    :return: 총 배당 집행 금액 (Decimal)
     """
     # 1. 배당 조건 확인
     if pnl <= 0 or payer_user.dividend_rate <= 0:
-        return
+        return Decimal(0)
 
     # 2. 배당금 계산
     # dividend_rate는 Numeric(5,4) (예: 0.5000)
@@ -41,37 +47,43 @@ async def process_dividend(db: AsyncSession, payer_user: User, pnl: Decimal):
     
     if not shareholders:
         logger.info(f"No shareholders for {ticker_id}. Dividend skipped.")
-        return
+        return Decimal(0)
 
     # 유통 주식 수 계산
     total_shares = sum(s.quantity for s in shareholders)
     
     if total_shares <= 0:
-        return
+        return Decimal(0)
 
-    # 4. 배당금 징수 (Payer 지갑에서 차감)
-    # 이미 trade_service에서 net_income이 입금된 상태라고 가정하고 여기서 차감함.
-    # 주의: trade_service와 같은 트랜잭션 안에서 실행되어야 함.
-    payer_wallet_stmt = select(Wallet).where(Wallet.user_id == payer_user.id).with_for_update()
-    payer_wallet_res = await db.execute(payer_wallet_stmt)
-    payer_wallet = payer_wallet_res.scalars().first()
-    
-    if not payer_wallet:
-        logger.error(f"Payer wallet not found: {payer_user.id}")
-        return
+    # 4. 배당금 징수 (옵션)
+    if deduct_source:
+        # payer_wallet에서 차감하는 레거시/일반 모드
+        payer_wallet_stmt = select(Wallet).where(Wallet.user_id == payer_user.id).with_for_update()
+        payer_wallet_res = await db.execute(payer_wallet_stmt)
+        payer_wallet = payer_wallet_res.scalars().first()
+        
+        if not payer_wallet:
+            logger.error(f"Payer wallet not found: {payer_user.id}")
+            return Decimal(0)
 
-    # 잔액 체크 (혹시 모를 마이너스 방지)
-    if payer_wallet.balance < total_dividend:
-        # 잔액 부족 시 있는 만큼만 배당? 아니면 강제 마이너스?
-        # 일단 있는 만큼만 털어서 배당 (최대치 조정)
-        total_dividend = payer_wallet.balance
-        logger.warning(f"Payer {payer_user.id} has insufficient funds for full dividend. Adjusted to {total_dividend}")
-    
-    if total_dividend <= 0:
-        return
+        # 잔액 체크 (혹시 모를 마이너스 방지)
+        if payer_wallet.balance < total_dividend:
+            # 잔액 부족 시 있는 만큼만 배당
+            total_dividend = payer_wallet.balance
+            logger.warning(f"Payer {payer_user.id} has insufficient funds for full dividend. Adjusted to {total_dividend}")
+        
+        if total_dividend <= 0:
+            return Decimal(0)
 
-    sub_balance(payer_wallet, total_dividend, WALLET_REASON_DIVIDEND)
-    logger.info(f"Dividend collected from {payer_user.nickname}: {total_dividend} KRW")
+        sub_balance(payer_wallet, total_dividend, WALLET_REASON_DIVIDEND)
+        logger.info(f"Dividend collected from {payer_user.nickname}: {total_dividend} KRW")
+    else:
+        # 원천 징수 모드: Caller가 이미 Net Income에서 제했다고 가정하거나 제할 예정.
+        # 따라서 여기서는 '얼마나 배당할지'만 결정하고 실제 지갑 차감은 안 함.
+        # 단, 배당 금액이 유효한지는 확인
+        if total_dividend <= 0:
+            return Decimal(0)
+        logger.info(f"Dividend withholding logic active for {payer_user.nickname}: {total_dividend} KRW")
 
     # 5. 배당금 분배 (Bulk 처리를 위해 정보 수집)
     collected_payouts = {} # user_id -> payout_amount
@@ -137,3 +149,5 @@ async def process_dividend(db: AsyncSession, payer_user: User, pnl: Decimal):
         await redis_client.close()
     except Exception:
         pass
+        
+    return total_dividend
