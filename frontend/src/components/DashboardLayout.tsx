@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import api, { initializeAuth } from '../api/client';
+import NotificationCenter from './NotificationCenter';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -42,7 +43,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       {/* Sidebar */}
       <aside className="flex h-screen flex-col justify-between border-r border-r-[#314368] bg-[#101623] p-4 w-64 sticky top-0 shrink-0">
         <div className="flex flex-col gap-4">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
             {loadingMe ? (
               <>
                 <div className="size-10 rounded-full bg-[#182234] animate-pulse" />
@@ -60,6 +62,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 </div>
               </>
             )}
+            </div>
+            <NotificationCenter />
           </div>
           <nav className="flex flex-col gap-2 mt-4">
             {/* to 속성으로 경로 연결 */}

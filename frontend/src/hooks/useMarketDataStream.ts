@@ -4,8 +4,21 @@ import { pricesStore } from '../store/prices';
 import { orderBookStore } from '../store/orderBook';
 import { openOrdersStore } from '../store/openOrders'; // Import openOrdersStore
 import { portfolioStore } from '../store/portfolio';   // Import portfolioStore
+import { pushNotification } from '../store/notifications';
 import api, { getAccessToken, getRefreshToken } from '../api/client'; // Import getAccessToken, getRefreshToken
 import type { OrderBookResponse, MeProfile, Portfolio, OrderListItem } from '../interfaces'; // Import MeProfile, Portfolio, OrderListItem
+
+const formatQty = (value: unknown) => {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return String(value ?? '');
+  return num.toLocaleString('en-US', { maximumFractionDigits: 4, minimumFractionDigits: 0 });
+};
+
+const formatPrice = (value: unknown) => {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return String(value ?? '');
+  return num.toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 0 });
+};
 
 export function useMarketDataStream() {
   // Buffer incoming websocket updates and flush in batches.
@@ -119,6 +132,8 @@ export function useMarketDataStream() {
     // Handle both parsed object and string (safeguard)
     const data = typeof msg === 'string' ? JSON.parse(msg) : msg;
 
+    const isMine = userIdRef.current && data.user_id === userIdRef.current;
+
     // --- Price Updates ---
     if (data.type && (data.type === 'ticker' || data.type === 'price_updated') && data.ticker_id && typeof data.price === 'number') {
       priceBufferRef.current.set(String(data.ticker_id), Number(data.price));
@@ -141,6 +156,49 @@ export function useMarketDataStream() {
       if (userIdRef.current && data.user_id === userIdRef.current) {
         userRelatedRefreshQueueRef.current.add(userIdRef.current);
       }
+    }
+
+    if (!isMine) return;
+
+    // --- User-specific notifications ---
+    if (data.type === 'order_created' || data.type === 'order_accepted') {
+      pushNotification({
+        kind: 'order',
+        severity: 'info',
+        title: '주문 접수',
+        message: `${data.side || ''} ${formatQty(data.quantity)} ${data.ticker_id || ''}${data.price ? ` @ ${formatPrice(data.price)}` : ''}`.trim(),
+        tickerId: data.ticker_id,
+        meta: data,
+      });
+    } else if (data.type === 'order_cancelled') {
+      pushNotification({
+        kind: 'order',
+        severity: 'warning',
+        title: '주문 취소됨',
+        message: `${data.side || ''} ${formatQty(data.quantity)} ${data.ticker_id || ''}`.trim(),
+        tickerId: data.ticker_id,
+        meta: data,
+      });
+    } else if (data.type === 'trade_executed') {
+      const pnl = Number(data.realized_pnl);
+      const pnlStr = Number.isFinite(pnl) ? ` (PnL ${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)})` : '';
+      pushNotification({
+        kind: 'trade',
+        severity: 'success',
+        title: '체결 완료',
+        message: `${data.side || ''} ${formatQty(data.quantity)} ${data.ticker_id || ''} @ ${formatPrice(data.price)}${pnlStr}`.trim(),
+        tickerId: data.ticker_id,
+        meta: data,
+      });
+    } else if (data.type === 'liquidation') {
+      pushNotification({
+        kind: 'liquidation',
+        severity: 'error',
+        title: '강제 청산',
+        message: `증거금 부족으로 포지션이 청산되었습니다 (${data.ticker_id || ''})`,
+        tickerId: data.ticker_id,
+        meta: data,
+      });
     }
   }, []);
 
