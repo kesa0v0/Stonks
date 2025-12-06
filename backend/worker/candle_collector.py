@@ -174,6 +174,75 @@ async def fetch_historical_candles(exchange, ticker: Ticker, interval: str = '1d
             
     logger.info(f"✅ Finished history fetch for {symbol}. Total: {total_collected}")
 
+async def fill_data_gaps(exchange, ticker: Ticker, interval: str = '1m') -> bool:
+    """
+    서버 다운 등으로 발생한 데이터 공백(Gap)을 메웁니다.
+    마지막 캔들 시간부터 현재까지의 데이터를 조회하여 채워넣습니다.
+    반환값: 데이터가 있어서 갭 채우기를 시도했으면 True, 데이터가 아예 없으면 False
+    """
+    symbol = ticker.symbol
+    interval_seconds = 60 if interval == '1m' else 86400
+    
+    async with AsyncSessionLocal() as db:
+        # 1. 마지막 캔들 조회
+        stmt = select(func.max(Candle.timestamp)).where(
+            Candle.ticker_id == ticker.id,
+            Candle.interval == interval
+        )
+        result = await db.execute(stmt)
+        last_ts_dt = result.scalar()
+
+    if not last_ts_dt:
+        return False # 데이터 없음 -> Initial Seed 필요
+
+    # Ensure UTC
+    if last_ts_dt.tzinfo is None:
+        last_ts_dt = last_ts_dt.replace(tzinfo=timezone.utc)
+    
+    now_dt = datetime.now(timezone.utc)
+    # 갭이 너무 작으면 패스 (1.5 interval)
+    if (now_dt - last_ts_dt).total_seconds() < interval_seconds * 1.5:
+        return True
+
+    logger.info(f"✨ Filling gaps for {symbol} ({interval}). Last: {last_ts_dt} (Gap: {now_dt - last_ts_dt})")
+
+    # Backward fetch from NOW until last_ts_dt
+    current_to = now_dt
+    limit_per_req = 200
+    last_ts_ms = last_ts_dt.timestamp() * 1000
+
+    while True:
+        try:
+            params = {'to': current_to.strftime("%Y-%m-%d %H:%M:%S")}
+            ohlcvs = await exchange.fetch_ohlcv(symbol, timeframe=interval, limit=limit_per_req, params=params)
+            
+            if not ohlcvs:
+                break
+            
+            # Filter: only keep candles newer than last_ts_dt
+            new_ohlcvs = [o for o in ohlcvs if o[0] > last_ts_ms]
+            
+            if new_ohlcvs:
+                await save_candles_to_db(new_ohlcvs, ticker, interval)
+            
+            oldest_fetched_ts = ohlcvs[0][0]
+            
+            # If we reached or passed the last known db timestamp, we are done
+            if oldest_fetched_ts <= last_ts_ms:
+                break
+                
+            # Move cursor back
+            current_to = datetime.fromtimestamp(oldest_fetched_ts / 1000, tz=timezone.utc) - timedelta(seconds=1)
+            
+            # Rate Limit
+            await asyncio.sleep(0.1)
+            
+        except Exception as e:
+            logger.error(f"❌ Gap fill error for {symbol}: {e}")
+            break
+            
+    return True
+
 async def minute_collector_job():
     """매 분 실행되는 1분봉 수집 작업"""
     t0 = time.perf_counter()
@@ -235,8 +304,8 @@ async def daily_collector_job():
         await exchange.close()
 
 async def initial_seed():
-    """최초 실행 시 과거 데이터 적재"""
-    logger.info("🌱 Starting initial seed...")
+    """최초 실행 시 과거 데이터 적재 및 갭 필링"""
+    logger.info("🌱 Starting initial seed & gap filling...")
     exchange = ccxt.upbit()
     try:
         async with AsyncSessionLocal() as db:
@@ -253,10 +322,10 @@ async def initial_seed():
             logger.info("⚠️ No active UPBIT tickers found.")
             return
 
-        logger.info(f"🎯 Found {len(tickers)} tickers. Starting hydration...")
+        logger.info(f"🎯 Found {len(tickers)} tickers. Processing...")
 
         for ticker in tickers:
-            # 2. 일봉 충분 여부 먼저 확인하여, 충분하면 대량 히스토리 수집을 모두 건너뜀
+            # 일봉 충분 여부 확인 (전략 결정용)
             async with AsyncSessionLocal() as session:
                 daily_count_stmt = select(func.count()).select_from(Candle).where(
                     Candle.ticker_id == ticker.id,
@@ -267,44 +336,26 @@ async def initial_seed():
 
             skip_history_due_to_daily = existing_1d_count > 1000
 
-            # 1. 1분봉 7일치 (약 10,080개) - 초기 진입 시 차트용
-            async with AsyncSessionLocal() as session:
-                count_stmt = select(func.count()).select_from(Candle).where(
-                    Candle.ticker_id == ticker.id,
-                    Candle.interval == '1m'
-                )
-                res = await session.execute(count_stmt)
-                existing_1m_count = res.scalar() or 0
-
-            if skip_history_due_to_daily:
-                # 일봉 데이터가 충분하면 대량 히스토리 수집(fetch_historical_candles)을 모두 건너뜁니다.
-                logger.info(f"⏭️ Skipping history for {ticker.symbol} due to sufficient 1d candles ({existing_1d_count})")
-                # 대신 최신 1분봉만 소량 갱신하여 공백 방지
-                await fetch_and_store_candles(exchange, ticker, interval='1m', count=50)
-            else:
-                if existing_1m_count > 5000:
-                    logger.info(f"⏭️ Skipping 1m history for {ticker.symbol} (Found {existing_1m_count} candles)")
-                    # 최신 데이터만 살짝 갱신 (공백 방지)
+            # --- 1. 1분봉 처리 ---
+            gaps_filled_1m = await fill_data_gaps(exchange, ticker, '1m')
+            
+            if not gaps_filled_1m:
+                # 데이터가 없어서 갭 필링을 안/못함 -> 초기 시드 필요
+                if skip_history_due_to_daily:
+                    # 일봉이 충분하면 1분봉은 최근 200개만 가져옴 (초기화)
                     await fetch_and_store_candles(exchange, ticker, interval='1m', count=200)
                 else:
-                    # 7일치 수집 (pagination 함수 재사용)
+                    # 일봉도 부족하면 1분봉 7일치 가져옴
                     await fetch_historical_candles(exchange, ticker, interval='1m', days=7)
             
             await asyncio.sleep(0.1)
             
-            # 2. 일봉 5년치 (약 1800일) - 데이터가 부족할 때만 수집
-            if not skip_history_due_to_daily:
-                async with AsyncSessionLocal() as session:
-                    count_stmt = select(func.count()).select_from(Candle).where(
-                        Candle.ticker_id == ticker.id,
-                        Candle.interval == '1d'
-                    )
-                    res = await session.execute(count_stmt)
-                    existing_count = res.scalar() or 0
-                
-                if existing_count > 1000:
-                    logger.info(f"⏭️ Skipping 1d history for {ticker.symbol} (Found {existing_count} candles)")
-                else:
+            # --- 2. 일봉 처리 ---
+            gaps_filled_1d = await fill_data_gaps(exchange, ticker, '1d')
+            
+            if not gaps_filled_1d:
+                # 데이터가 없음
+                if existing_1d_count <= 1000:
                     await fetch_historical_candles(exchange, ticker, interval='1d', days=1825)
             
             await asyncio.sleep(0.1)
