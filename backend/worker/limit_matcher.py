@@ -17,7 +17,7 @@ async def match_orders():
     
     # 캐시 초기화
     cache = LimitOrderCache(redis_client)
-    await cache.hydrate_all_pending()
+    # Lazy Loading: No full hydration on startup.
     
     # Graceful Shutdown Setup
     stop_event = asyncio.Event()

@@ -8,7 +8,7 @@ from backend.models import Ticker, Candle, TickerSource
 
 # 설정
 DAYS_HISTORY = 30      # 일봉 생성 기간 (일)
-MINUTES_HISTORY = 1440 # 분봉 생성 기간 (분, 1440분 = 24시간)
+MINUTES_HISTORY = 11520 # 분봉 생성 기간 (분, 11520분 = 8일) -> 1W 차트 지원
 START_PRICE = 10000.0
 VOLATILITY_DAILY = 0.05 # 일봉 변동성 (5%)
 VOLATILITY_MINUTE = 0.005 # 분봉 변동성 (0.5%)

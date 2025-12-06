@@ -13,10 +13,12 @@ from backend.core.database import AsyncSessionLocal
 LIMIT_KEY = "oo:limit:{ticker}:{side}"       # Sorted Set (Score=Price, Member=OrderID)
 STOP_KEY = "oo:stop:{ticker}:{side}"         # Sorted Set (Score=StopPrice, Member=OrderID)
 ORDER_DATA_KEY = "oo:data:{order_id}"        # Hash (Field=Attribute, Value=Value)
+LOADED_TICKERS_KEY = "oo:loaded_tickers"     # Set (Member=TickerID)
 
 class LimitOrderCache:
     def __init__(self, redis_client: redis.Redis):
         self.redis = redis_client
+        self._local_loaded_tickers = set()
 
     async def store_order_data(self, order: Order):
         """Stores full order details in Redis Hash."""
@@ -106,18 +108,68 @@ class LimitOrderCache:
                 
         await pipe.execute()
 
+    async def ensure_ticker_loaded(self, ticker_id: str):
+        """
+        Lazy-loads pending orders for a specific ticker if not already loaded.
+        Uses a local cache + Redis Set + Redis Lock to prevent duplicate DB hits.
+        """
+        if ticker_id in self._local_loaded_tickers:
+            return
+
+        # Check Redis (in case another instance loaded it)
+        is_loaded = await self.redis.sismember(LOADED_TICKERS_KEY, ticker_id)
+        if is_loaded:
+            self._local_loaded_tickers.add(ticker_id)
+            return
+
+        # Needs loading. Acquire lock to coordinate.
+        lock_key = f"oo:lock:load:{ticker_id}"
+        # Use a short timeout (e.g., 5s) to avoid deadlocks if instance crashes
+        async with self.redis.lock(lock_key, timeout=5, blocking_timeout=2):
+            # Double-check inside lock
+            if await self.redis.sismember(LOADED_TICKERS_KEY, ticker_id):
+                self._local_loaded_tickers.add(ticker_id)
+                return
+            
+            # Load from DB
+            print(f"📥 Lazy Loading Orders for {ticker_id}...")
+            async with AsyncSessionLocal() as db:
+                stmt = select(Order).where(
+                    Order.ticker_id == ticker_id,
+                    Order.status == OrderStatus.PENDING,
+                    Order.type.in_([
+                        OrderType.LIMIT, 
+                        OrderType.STOP_LOSS, 
+                        OrderType.TAKE_PROFIT, 
+                        OrderType.STOP_LIMIT, 
+                        OrderType.TRAILING_STOP
+                    ])
+                )
+                orders = (await db.execute(stmt)).scalars().all()
+            
+            if orders:
+                for order in orders:
+                    await self.add_order(order)
+            
+            # Mark as loaded
+            await self.redis.sadd(LOADED_TICKERS_KEY, ticker_id)
+            self._local_loaded_tickers.add(ticker_id)
+
     async def fetch_candidates(self, ticker_id: str, side: OrderSide, price: float, order_type_group: str = "LIMIT") -> List[str]:
         """
         Fetches candidate order IDs based on price trigger.
         order_type_group: 'LIMIT' or 'STOP'
         """
+        # Ensure data is loaded for this ticker
+        await self.ensure_ticker_loaded(ticker_id)
+
         key_pattern = LIMIT_KEY if order_type_group == "LIMIT" else STOP_KEY
         key = key_pattern.format(ticker=ticker_id, side=side.value.lower())
         
         # LIMIT BUY: target >= price -> range [price, +inf]
         # LIMIT SELL: target <= price -> range [-inf, price]
         
-        # STOP BUY (Stop Loss / Trailing Buy): Trigger when price >= stop_price -> range [-inf, price] ?? 
+        # STOP BUY (Stop Loss / Trailing Buy): Trigger when Price goes UP to stop_price -> range [-inf, price] ?? 
         # Wait. Stop Buy (Short Cover): Trigger when Price goes UP to stop_price. 
         #   Current Price 100. Stop Buy at 110. Trigger when Price >= 110.
         #   So we look for orders with stop_price <= Current Price.
@@ -164,32 +216,6 @@ class LimitOrderCache:
                 await self.add_order(order)
                 return await self.get_order_data(order_id)
         return None
-
-    async def hydrate_all_pending(self):
-        # Rebuild cache on startup
-        async with AsyncSessionLocal() as db:
-            # Fetch all PENDING orders relevant for matching
-            stmt = select(Order).where(
-                Order.status == OrderStatus.PENDING,
-                Order.type.in_([
-                    OrderType.LIMIT, 
-                    OrderType.STOP_LOSS, 
-                    OrderType.TAKE_PROFIT, 
-                    OrderType.STOP_LIMIT, 
-                    OrderType.TRAILING_STOP
-                ])
-            )
-            orders = (await db.execute(stmt)).scalars().all()
-
-        if not orders:
-            return
-
-        # Use add_order logic but piped for speed? 
-        # add_order uses pipeline internally, but doing it in one massive pipe is better.
-        # However, complexity of replicating add_order logic here is high.
-        # Just loop for now, Redis is fast.
-        for order in orders:
-            await self.add_order(order)
 
     async def _iter_limit_keys(self):
         cursor = "0"
