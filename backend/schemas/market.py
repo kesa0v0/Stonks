@@ -63,6 +63,7 @@ class OrderBookResponse(BaseModel):
     ticker_id: str
     bids: List[OrderBookEntry] # 매수 잔량
     asks: List[OrderBookEntry] # 매도 잔량
+    timestamp: float # Unix Timestamp (seconds)
 
 class MoverResponse(BaseModel):
     ticker: TickerResponse

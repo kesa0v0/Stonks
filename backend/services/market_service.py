@@ -1,4 +1,5 @@
 from datetime import datetime, time
+import time as time_lib
 import json
 try:
     from zoneinfo import ZoneInfo
@@ -307,7 +308,9 @@ async def get_orderbook_data(db: AsyncSession, ticker_id: str, redis_client: asy
                     OrderBookEntry(price=Decimal(x.get("price", "0")), quantity=Decimal(x.get("quantity", "0")))
                     for x in obj.get("bids", [])
                 ]
-                return OrderBookResponse(ticker_id=ticker_id, bids=bids, asks=asks)
+                # Timestamp retrieval
+                ts = float(obj.get("timestamp", time_lib.time()))
+                return OrderBookResponse(ticker_id=ticker_id, bids=bids, asks=asks, timestamp=ts)
         except Exception:
             # Redis/JSON 문제 시 조용히 DB fallback
             pass
@@ -349,7 +352,7 @@ async def get_orderbook_data(db: AsyncSession, ticker_id: str, redis_client: asy
     bids.sort(key=lambda x: x.price, reverse=True)
     asks.sort(key=lambda x: x.price)
     
-    return OrderBookResponse(ticker_id=ticker_id, bids=bids, asks=asks)
+    return OrderBookResponse(ticker_id=ticker_id, bids=bids, asks=asks, timestamp=time_lib.time())
 
 async def get_current_price_info(redis_client: async_redis.Redis, ticker_id: str) -> Optional[float]:
     price_decimal = await get_current_price(redis_client, ticker_id)
@@ -397,7 +400,7 @@ async def publish_current_orderbook_snapshot(db: AsyncSession, redis_client: asy
     bids.sort(key=lambda x: Decimal(x.price), reverse=True)
     asks.sort(key=lambda x: Decimal(x.price))
     
-    orderbook_snapshot = OrderBookResponse(ticker_id=ticker_id, bids=bids, asks=asks)
+    orderbook_snapshot = OrderBookResponse(ticker_id=ticker_id, bids=bids, asks=asks, timestamp=time_lib.time())
 
     # Redis 발행
     await redis_client.publish("orderbook_updates", orderbook_snapshot.model_dump_json())
