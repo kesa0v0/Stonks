@@ -5,6 +5,7 @@ import uuid
 import logging
 import time
 from decimal import Decimal
+from typing import Tuple # Import Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from uuid import UUID
@@ -35,17 +36,19 @@ if not logger.handlers:
     handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(handler)
 
-async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_id: str, order_id: str, ticker_id: str, side: str, quantity: float):
+async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_id: str, order_id: str, ticker_id: str, side: str, quantity: float) -> Tuple[bool, str]:
     """
     주문 실행 및 체결 로직 (Atomic Transaction)
     공매도(Short Selling) 및 스위칭 매매 지원
+    Returns: (success, code)
+    Codes: OK, ORDER_NOT_FOUND, ORDER_NOT_PENDING, INVALID_INPUT, TICKER_NOT_FOUND, LIQUIDITY_ERROR, WALLET_NOT_FOUND, STRATEGY_ERROR, SYSTEM_ERROR
     """
     original_requested_quantity = Decimal(str(quantity)) # Capture the initial requested quantity from the argument
     quantity = original_requested_quantity # `quantity` variable will represent the amount to be executed in this call
     
     if quantity <= 0:
         logger.warning(f"Trade quantity must be positive: {quantity}")
-        return False
+        return False, "INVALID_INPUT"
 
     # UUID 유효성 검사
     try:
@@ -53,14 +56,14 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
         order_uuid = uuid.UUID(order_id)
     except ValueError:
         logger.error(f"Invalid UUID format: user={user_id}, order={order_id}")
-        return False
+        return False, "INVALID_INPUT"
     
     # 거래 방향 유효성 검사
     try:
         trade_side = OrderSide(side) 
     except ValueError:
         logger.error(f"Invalid Side: {side}")
-        return False
+        return False, "INVALID_INPUT"
 
     # Ticker 조회 및 MarketType 확인
     ticker_stmt = select(Ticker).where(Ticker.id == ticker_id)
@@ -68,7 +71,7 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
     
     if not ticker:
         logger.error(f"Ticker not found: {ticker_id}")
-        return False
+        return False, "TICKER_NOT_FOUND"
 
     # [Human ETF 특수 처리]
     # P2P 매칭이 필요한 Human ETF는 즉시 체결(Infinite Liquidity)하지 않고, 주문장에 등록만 함.
@@ -117,7 +120,7 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
         }
         await publish_event(redis_client, event, channel="trade_events")
 
-        return True
+        return True, "OK"
 
     # 1. 가격 결정 (Slippage 적용)
     # 호가창(Orderbook)을 조회하여 주문 수량만큼 갉아먹었을 때의 평균 단가(VWAP)를 계산합니다.
@@ -157,7 +160,7 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
             if filled_qty_from_ob == 0:
                  # If absolutely nothing could be filled from orderbook, reject the order.
                  logger.error(f"Market order {order_id} for {ticker_id} failed: No liquidity in order book.")
-                 return False
+                 return False, "LIQUIDITY_ERROR"
             
             # Adjust the 'quantity' variable for the rest of the trade logic to only what was filled from the order book.
             # This makes it a partial fill.
@@ -170,19 +173,19 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
 
     except Exception as e:
         logger.error(f"Error calculating slippage for {ticker_id}: {e}. Market order {order_id} for {ticker_id} failed due to order book access error.", exc_info=True)
-        return False # Fail if order book access fails.
+        return False, "SYSTEM_ERROR" # Fail if order book access fails.
 
     # At this point, execution_price must be set if filled_qty_from_ob > 0.
     # If filled_qty_from_ob was 0, the function would have returned False already.
     if execution_price is None:
         logger.error(f"Market order {order_id} for {ticker_id} failed: No execution price could be determined after order book check.")
-        return False
+        return False, "LIQUIDITY_ERROR"
     
     current_price = execution_price
     
     if current_price is None:
         logger.error(f"Price not found for {ticker_id} after order book processing. Market order {order_id} failed.")
-        return False
+        return False, "LIQUIDITY_ERROR"
         
     fee_rate = await get_trading_fee_rate(redis_client)
 
@@ -195,7 +198,7 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
 
         if not wallet:
             logger.error(f"Wallet not found for user {user_id}. Trade failed for order {order_id}.")
-            return False
+            return False, "WALLET_NOT_FOUND"
 
         # 3. 주문 조회 또는 생성
         order_stmt = select(Order).where(Order.id == order_uuid)
@@ -219,6 +222,12 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
             )
             db.add(order)
         else:
+            # Check if order is pending. If not, we cannot trade.
+            if order.status != OrderStatus.PENDING:
+                # This is the critical check for "Dual Write" sync.
+                logger.warning(f"Order {order_id} is not PENDING (Status: {order.status}). Skipping trade.")
+                return False, "ORDER_NOT_PENDING"
+
             # Existing order (e.g., a triggered LIMIT/STOP order that became MARKET)
             order.price = current_price # Set execution price
             # Reduce unfilled quantity by the amount actually filled from the order book (`quantity` variable)
@@ -264,7 +273,7 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
         strategy_success = await strategy.execute(ctx)
         if not strategy_success:
             logger.warning(f"Trade failed during strategy execution for user {user_id}. Order {order_id}.")
-            return False
+            return False, "STRATEGY_ERROR"
 
         # 6. 마무리 (0 근처 삭제)
         if abs(portfolio.quantity) <= Decimal("1e-8"):
@@ -305,7 +314,7 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
             "status": str(order.status)
         }
         await publish_event(redis_client, event, channel="trade_events")
-        return True
+        return True, "OK"
 
     except Exception as e:
         await db.rollback()
@@ -318,7 +327,7 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
                 await db.commit()
         except:
             pass # 실패 업데이트 중 에러는 무시
-        return False
+        return False, "SYSTEM_ERROR"
 
 async def execute_p2p_trade(
     db: AsyncSession,

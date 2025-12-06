@@ -154,7 +154,7 @@ async def match_orders():
 
                                     print(f"   >> Triggering {o_type.value} Order {order_id} ({o_side.value}) @ {current_price} (Trigger: {trigger_price})")
                                     
-                                    success = await execute_trade(
+                                    success, fail_code = await execute_trade(
                                         db=db,
                                         redis_client=redis_client,
                                         user_id=order_data["user_id"],
@@ -168,7 +168,12 @@ async def match_orders():
                                         print(f"   ✅ Order Executed!")
                                         await cache.remove_order(order_id, o_ticker)
                                     else:
-                                        print(f"   ❌ Execution Failed")
+                                        print(f"   ❌ Execution Failed: {fail_code}")
+                                        # Self-Healing: If order not found or not pending in DB, remove from Redis to prevent infinite retries.
+                                        if fail_code in ["ORDER_NOT_FOUND", "ORDER_NOT_PENDING", "TICKER_NOT_FOUND", "WALLET_NOT_FOUND", "INSUFFICIENT_BALANCE", "LIQUIDITY_ERROR", "INVALID_INPUT"]: 
+                                            # For permanent errors, we should clear the cache.
+                                            print(f"   🧹 Self-Healing: Removing phantom/invalid order {order_id} from cache.")
+                                            await cache.remove_order(order_id, o_ticker)
 
                         # --- Trailing Stop UPDATE Logic ---
                         # Keep DB Scan for safety (requires high_water_mark state)
