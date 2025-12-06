@@ -215,7 +215,7 @@ export default function Market() {
         <div className="flex-1 grid grid-cols-12 gap-6 min-h-0">
           
           {/* Left Column: Chart */}
-          <div className="col-span-12 lg:col-span-8 flex flex-col h-full">
+          <div className="col-span-12 lg:col-span-8 flex flex-col h-full min-h-0">
             <div className="flex-1 rounded-xl border border-[#314368] bg-[#101623] p-4 flex flex-col min-h-0">
               <div className="flex justify-between items-center mb-4 flex-none">
                 <h3 className="text-white font-bold">Price Chart</h3>
@@ -253,7 +253,7 @@ export default function Market() {
                 </div>
               </div>
               {/* Chart Area */}
-              <div className="flex-1 w-full bg-[#101623] rounded-lg overflow-hidden border border-[#314368]/30 relative">
+              <div className="flex-1 w-full bg-[#101623] rounded-lg overflow-hidden border border-[#314368]/30 relative min-h-[320px]">
                  <CandleChart 
                    tickerId={tickerId} 
                    range={timeRange} 
@@ -265,10 +265,10 @@ export default function Market() {
           </div>
 
           {/* Right Column: OrderBook & Trade Form */}
-          <div className="col-span-12 lg:col-span-4 flex flex-col gap-6 h-full">
+          <div className="col-span-12 lg:col-span-4 flex flex-col gap-6 h-full min-h-0">
             
             {/* Order Book */}
-            <div className="flex-1 rounded-xl border border-[#314368] bg-[#101623] p-4 flex flex-col min-h-0 overflow-hidden">
+            <div className="flex-1 rounded-xl border border-[#314368] bg-[#101623] p-4 flex flex-col min-h-0 max-h-[540px] overflow-hidden">
               <h3 className="text-white font-bold mb-3 border-b border-[#314368] pb-2 flex-none">Order Book</h3>
               <div className="flex-1 overflow-y-auto font-mono text-sm no-scrollbar">
                 <table className="w-full">
