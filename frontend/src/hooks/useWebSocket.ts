@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-export function useWebSocket(onMessage: (data: any) => void) {
+export function useWebSocket(onMessage: (data: any) => void, onOpen?: () => void) {
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -13,7 +13,10 @@ export function useWebSocket(onMessage: (data: any) => void) {
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
-      ws.onopen = () => { retry = 0; };
+      ws.onopen = () => { 
+          retry = 0;
+          if (onOpen) onOpen();
+      };
       ws.onmessage = ev => {
         try { onMessage(JSON.parse(ev.data)); } catch { /* ignore */ }
       };
@@ -51,5 +54,5 @@ export function useWebSocket(onMessage: (data: any) => void) {
         try { ws.close(); } catch {}
       }
     };
-  }, [onMessage]);
+  }, [onMessage, onOpen]);
 }

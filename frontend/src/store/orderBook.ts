@@ -19,6 +19,20 @@ class OrderBookStore {
 
   getSnapshotKey = (key: string) => this.orderBooks.get(key);
   
+  /**
+   * Returns list of ticker IDs that are currently being observed by components.
+   * Useful for refreshing data on reconnection.
+   */
+  getActiveKeys = () => {
+      const active: string[] = [];
+      for (const [key, listeners] of this.keyListeners.entries()) {
+          if (listeners.size > 0) {
+              active.push(key);
+          }
+      }
+      return active;
+  };
+  
   updateOrderBook = (tickerId: string, orderBook: OrderBookResponse | null) => {
     if (!orderBook) {
         this.orderBooks.delete(tickerId);

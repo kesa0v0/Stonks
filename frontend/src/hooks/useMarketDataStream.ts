@@ -235,8 +235,22 @@ export function useMarketDataStream() {
       });
     }
   }, [queryClient]);
+  
+  const handleReconnect = useCallback(() => {
+    console.log("WS Reconnected. Refreshing data...");
+    
+    // 1. Refresh User Data (if logged in)
+    if (userIdRef.current) {
+        userRelatedRefreshQueueRef.current.add(userIdRef.current);
+    }
+    
+    // 2. Refresh Active OrderBooks
+    const activeKeys = orderBookStore.getActiveKeys();
+    activeKeys.forEach(key => orderBookRefreshQueueRef.current.add(key));
+    
+  }, []);
 
   // Establish the single WebSocket connection
-  useWebSocket(onMessage);
+  useWebSocket(onMessage, handleReconnect);
 }
 
