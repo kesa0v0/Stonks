@@ -2,11 +2,19 @@
 import asyncio
 import json
 import signal
+import logging
 import aio_pika
 import redis.asyncio as async_redis
 from backend.core.config import settings
 from backend.core.database import AsyncSessionLocal
 from backend.services.trade_service import execute_trade
+
+# 로깅 설정
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 async def process_message(message: aio_pika.IncomingMessage):
     # 비동기 세션 생성
@@ -16,7 +24,7 @@ async def process_message(message: aio_pika.IncomingMessage):
             async with message.process():
                 # 1. 메시지 디코딩
                 body = json.loads(message.body.decode())
-                print(f"📩 Received Order: {body}")
+                logger.info(f"📩 Received Order: {body}")
                 
                 # 2. Redis 클라이언트 생성 (메시지 처리당 하나씩)
                 redis_client = async_redis.Redis(
@@ -26,7 +34,7 @@ async def process_message(message: aio_pika.IncomingMessage):
                 )
                 
                 # 3. 비즈니스 로직 실행 (비동기 함수이므로 await 사용)
-                success = await execute_trade(
+                success, code = await execute_trade(
                     db=db,
                     redis_client=redis_client,
                     user_id=body['user_id'], # 테스트용 UUID (주의: DB에 User가 먼저 있어야 함)
@@ -37,12 +45,12 @@ async def process_message(message: aio_pika.IncomingMessage):
                 )
                 
                 if success:
-                    print("🎉 Order Processed Successfully")
+                    logger.info("🎉 Order Processed Successfully")
                 else:
-                    print("⚠️ Order Failed logic")
+                    logger.warning(f"⚠️ Order Failed logic: {code}")
                     
         except Exception as e:
-            print(f"🔥 Critical Error processing order: {e}")
+            logger.error(f"🔥 Critical Error processing order: {e}", exc_info=True)
         finally:
             if redis_client:
                 await redis_client.close()
@@ -53,7 +61,7 @@ async def main():
     stop_event = asyncio.Event()
 
     def shutdown():
-        print("\n🛑 Received Shutdown Signal. Stopping Consumer...")
+        logger.info("\n🛑 Received Shutdown Signal. Stopping Consumer...")
         stop_event.set()
 
     # Signal Handling
@@ -76,7 +84,7 @@ async def main():
         # Prefetch count 1 to ensure fair dispatch and safe shutdown (don't buffer too many unacked messages)
         await channel.set_qos(prefetch_count=1)
 
-        print("🚀 Trade Worker Started! Waiting for orders... (Press CTRL+C to stop)")
+        logger.info("🚀 Trade Worker Started! Waiting for orders... (Press CTRL+C to stop)")
         
         # 메시지 소비 시작
         consumer_tag = await queue.consume(process_message)
@@ -84,7 +92,7 @@ async def main():
         # Wait for shutdown signal
         await stop_event.wait()
         
-        print("⏳ Closing Consumer and Connection...")
+        logger.info("⏳ Closing Consumer and Connection...")
         # Cancel consumer to stop receiving new messages
         await queue.cancel(consumer_tag)
         
@@ -92,7 +100,7 @@ async def main():
         # aio_pika's async with connection block handles graceful close, 
         # but explicit close helps ensure we don't kill mid-process.
         
-    print("👋 Trade Worker Stopped.")
+    logger.info("👋 Trade Worker Stopped.")
 
 if __name__ == "__main__":
     asyncio.run(main())

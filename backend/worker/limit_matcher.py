@@ -1,6 +1,7 @@
 import asyncio
 import json
 import signal
+import logging
 import redis.asyncio as redis
 from decimal import Decimal
 from sqlalchemy import select, or_
@@ -9,6 +10,13 @@ from backend.core.database import AsyncSessionLocal
 from backend.models import Order, OrderStatus, OrderSide, OrderType
 from backend.services.trade_service import execute_trade
 from backend.worker.order_cache import LimitOrderCache
+
+# 로깅 설정
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger("limit_matcher")
 
 async def match_orders():
     # Redis 연결
@@ -24,7 +32,7 @@ async def match_orders():
     stop_event = asyncio.Event()
 
     async def shutdown():
-        print("\n🛑 Received Shutdown Signal. Stopping Matcher...")
+        logger.info("\n🛑 Received Shutdown Signal. Stopping Matcher...")
         stop_event.set()
         # Unsubscribe and close to break the loops
         if price_pubsub:
@@ -43,7 +51,7 @@ async def match_orders():
     await price_pubsub.subscribe("market_updates")
     await event_pubsub.subscribe("trade_events")
 
-    print("⚖️ Order Matcher Started! Watching for Limit & Stop-Loss triggers... (Press CTRL+C to stop)")
+    logger.info("⚖️ Order Matcher Started! Watching for Limit & Stop-Loss triggers... (Press CTRL+C to stop)")
 
     async def handle_order_events():
         try:
@@ -67,7 +75,7 @@ async def match_orders():
         except (redis.ConnectionError, asyncio.CancelledError):
             pass # Expected on shutdown
         except Exception as e:
-            print(f"⚠️ Event Loop Error: {e}")
+            logger.warning(f"⚠️ Event Loop Error: {e}")
 
     async def handle_prices():
         try:
@@ -142,7 +150,7 @@ async def match_orders():
 
                                 if matched:
                                     if o_type == OrderType.STOP_LIMIT:
-                                        print(f"   >> Triggering STOP_LIMIT Order {order_id}. Converting to LIMIT at {order_data['target_price']}")
+                                        logger.info(f"   >> Triggering STOP_LIMIT Order {order_id}. Converting to LIMIT at {order_data['target_price']}")
                                         stmt = select(Order).where(Order.id == order_id)
                                         db_order = (await db.execute(stmt)).scalars().first()
                                         if db_order and db_order.status == OrderStatus.PENDING:
@@ -152,7 +160,7 @@ async def match_orders():
                                             await cache.add_order(db_order) 
                                         continue
 
-                                    print(f"   >> Triggering {o_type.value} Order {order_id} ({o_side.value}) @ {current_price} (Trigger: {trigger_price})")
+                                    logger.info(f"   >> Triggering {o_type.value} Order {order_id} ({o_side.value}) @ {current_price} (Trigger: {trigger_price})")
                                     
                                     success, fail_code = await execute_trade(
                                         db=db,
@@ -165,14 +173,14 @@ async def match_orders():
                                     )
                                     
                                     if success:
-                                        print(f"   ✅ Order Executed!")
+                                        logger.info(f"   ✅ Order Executed!")
                                         await cache.remove_order(order_id, o_ticker)
                                     else:
-                                        print(f"   ❌ Execution Failed: {fail_code}")
+                                        logger.warning(f"   ❌ Execution Failed: {fail_code}")
                                         # Self-Healing: If order not found or not pending in DB, remove from Redis to prevent infinite retries.
                                         if fail_code in ["ORDER_NOT_FOUND", "ORDER_NOT_PENDING", "TICKER_NOT_FOUND", "WALLET_NOT_FOUND", "INSUFFICIENT_BALANCE", "LIQUIDITY_ERROR", "INVALID_INPUT"]: 
                                             # For permanent errors, we should clear the cache.
-                                            print(f"   🧹 Self-Healing: Removing phantom/invalid order {order_id} from cache.")
+                                            logger.warning(f"   🧹 Self-Healing: Removing phantom/invalid order {order_id} from cache.")
                                             await cache.remove_order(order_id, o_ticker)
 
                         # --- Trailing Stop UPDATE Logic ---
@@ -199,7 +207,7 @@ async def match_orders():
 
                             new_stop = current_price - trailing_gap
                             if new_stop > stop_price:
-                                print(f"   >> Updating Trailing Stop Sell {order.id}: {order.stop_price} -> {new_stop}")
+                                logger.info(f"   >> Updating Trailing Stop Sell {order.id}: {order.stop_price} -> {new_stop}")
                                 order.stop_price = new_stop
                                 order.high_water_mark = current_price
                                 await db.commit()
@@ -225,21 +233,19 @@ async def match_orders():
                                 
                             new_stop = current_price + trailing_gap
                             if new_stop < stop_price:
-                                print(f"   >> Updating Trailing Stop Buy {order.id}: {order.stop_price} -> {new_stop}")
+                                logger.info(f"   >> Updating Trailing Stop Buy {order.id}: {order.stop_price} -> {new_stop}")
                                 order.stop_price = new_stop
                                 order.high_water_mark = current_price
                                 await db.commit()
                                 await cache.add_order(order)
 
                     except Exception as e:
-                        print(f"🔥 Matcher Error: {e}")
-                        import traceback
-                        traceback.print_exc()
+                        logger.error(f"🔥 Matcher Error: {e}", exc_info=True)
         except (redis.ConnectionError, asyncio.CancelledError):
             pass # Expected on shutdown
 
     await asyncio.gather(handle_prices(), handle_order_events())
-    print("👋 Matcher Stopped.")
+    logger.info("👋 Matcher Stopped.")
 
 if __name__ == "__main__":
     asyncio.run(match_orders())

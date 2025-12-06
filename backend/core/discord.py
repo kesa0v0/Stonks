@@ -1,5 +1,8 @@
 import httpx
+import logging
 from backend.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 async def send_discord_webhook(message: str, human_channel: bool = False):
     """
@@ -15,4 +18,4 @@ async def send_discord_webhook(message: str, human_channel: bool = False):
         async with httpx.AsyncClient(timeout=10) as client:
             await client.post(url, json=payload)
     except Exception as e:
-        print(f"Failed to send Discord webhook: {e}")
+        logger.error(f"Failed to send Discord webhook: {e}", exc_info=True)

@@ -1,11 +1,14 @@
 import asyncio
 import uuid
+import logging
 from sqlalchemy import select
 from backend.core.database import AsyncSessionLocal
 from backend.models import User, Wallet
 from backend.core.security import get_password_hash
 from decimal import Decimal
 from sqlalchemy import or_
+
+logger = logging.getLogger(__name__)
 
 async def create_test_user():
     USERS_TO_CREATE = [
@@ -57,7 +60,7 @@ async def create_test_user():
                     db.add(wallet)
 
                     await db.commit()
-                    print(f"✅ Created user: {email} with password '{password}' and balance {initial_balance}")
+                    logger.info(f"✅ Created user: {email} with password '{password}' and balance {initial_balance}")
                 else: # 유저가 이미 있다면 비밀번호 및 지갑 업데이트
                     user.hashed_password = get_password_hash(password)
                     user.nickname = nickname
@@ -67,16 +70,16 @@ async def create_test_user():
                     if not wallet:
                         wallet = Wallet(user_id=user.id, balance=initial_balance)
                         db.add(wallet)
-                        print(f"✅ Created missing wallet for user {email} with balance {initial_balance}")
+                        logger.info(f"✅ Created missing wallet for user {email} with balance {initial_balance}")
                     else:
                         wallet.balance = initial_balance # 기존 유저도 밸런스 초기화
-                        print(f"✅ Reset user {email} wallet balance to {initial_balance}")
+                        logger.info(f"✅ Reset user {email} wallet balance to {initial_balance}")
 
                     await db.commit()
-                    print(f"✅ Updated user: {email} password to '{password}' and nickname to '{nickname}'")
+                    logger.info(f"✅ Updated user: {email} password to '{password}' and nickname to '{nickname}'")
                 
         except Exception as e:
-            print(f"Error: {e}")
+            logger.error(f"Error: {e}", exc_info=True)
             await db.rollback()
 
 if __name__ == "__main__":

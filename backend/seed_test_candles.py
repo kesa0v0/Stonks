@@ -1,10 +1,13 @@
 import asyncio
 import random
 from datetime import datetime, timedelta, timezone
+import logging
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from backend.core.database import AsyncSessionLocal
 from backend.models import Ticker, Candle, TickerSource
+
+logger = logging.getLogger(__name__)
 
 # 설정
 DAYS_HISTORY = 30      # 일봉 생성 기간 (일)
@@ -50,7 +53,7 @@ async def generate_random_candles(ticker_id, interval, start_time, count, volati
     return candles, price
 
 async def seed_test_candles():
-    print("🌱 Seeding TEST candles...")
+    logger.info("🌱 Seeding TEST candles...")
     
     async with AsyncSessionLocal() as db:
         # 1. TEST 티커 조회
@@ -59,13 +62,13 @@ async def seed_test_candles():
         tickers = result.scalars().all()
         
         if not tickers:
-            print("⚠️ No tickers with source=TEST found.")
+            logger.warning("⚠️ No tickers with source=TEST found.")
             return
 
-        print(f"🎯 Found {len(tickers)} TEST tickers.")
+        logger.info(f"🎯 Found {len(tickers)} TEST tickers.")
 
         for ticker in tickers:
-            print(f"   - Generating candles for {ticker.symbol}...")
+            logger.info(f"   - Generating candles for {ticker.symbol}...")
             
             # 기준 시간 (UTC)
             now = datetime.now(timezone.utc)
@@ -104,10 +107,10 @@ async def seed_test_candles():
                 )
                 await db.execute(stmt)
             
-            print(f"     ✅ Inserted {len(all_candles)} candles.")
+            logger.info(f"     ✅ Inserted {len(all_candles)} candles.")
             
         await db.commit()
-        print("🎉 Done!")
+        logger.info("🎉 Done!")
 
 if __name__ == "__main__":
     asyncio.run(seed_test_candles())

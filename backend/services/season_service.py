@@ -5,8 +5,11 @@ from backend.models.ranking import UserPersona
 from backend.models.user import User, Wallet
 from decimal import Decimal
 from datetime import datetime
+import logging
 from backend.services.common.wallet import add_balance
 from backend.core.constants import WALLET_REASON_SEASON_REWARD
+
+logger = logging.getLogger(__name__)
 
 async def get_active_season(db: AsyncSession) -> Season:
     """
@@ -74,7 +77,7 @@ async def reward_top_players(db: AsyncSession, season: Season):
         # 2. 상금 지급
         add_balance(wallet, reward['money'], WALLET_REASON_SEASON_REWARD)
         
-        print(f"Reward: User {user.nickname} gets {reward['badge']} badge and {reward['money']} KRW")
+        logger.info(f"Reward: User {user.nickname} gets {reward['badge']} badge and {reward['money']} KRW")
 
 async def end_current_season(db: AsyncSession):
     """

@@ -2,6 +2,7 @@
 import asyncio
 import json
 import redis.asyncio as redis
+import logging
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from contextlib import asynccontextmanager
 from fastapi.openapi.utils import get_openapi
@@ -21,6 +22,13 @@ from backend.core.exceptions import StonksError
 from backend.app.exception_handlers import stonks_exception_handler, general_exception_handler
 from prometheus_fastapi_instrumentator import Instrumentator
 from backend.worker.maintenance import perform_db_backup, cleanup_old_candles
+
+# 로깅 설정
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger("main")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -44,19 +52,19 @@ async def lifespan(app: FastAPI):
             scheduler.add_job(cleanup_old_candles, CronTrigger(day_of_week='sun', hour=4, minute=0))
             
             scheduler.start()
-            print("[lifespan] Scheduler started for maintenance tasks")
+            logger.info("[lifespan] Scheduler started for maintenance tasks")
 
         # 3. 초기 데이터 시딩 (개발 환경)
         if settings.DEBUG:
             try:
                 tasks = [create_test_user(), init_tickers()]
                 await asyncio.gather(*tasks)
-                print("[lifespan] Dev seed completed (test user, tickers)")
+                logger.info("[lifespan] Dev seed completed (test user, tickers)")
             except Exception as se:
-                print(f"[lifespan] Dev seed failed: {se}")
+                logger.error(f"[lifespan] Dev seed failed: {se}")
                 
     except Exception as e:
-        print(f"[lifespan] Startup failure: {e}")
+        logger.error(f"[lifespan] Startup failure: {e}", exc_info=True)
     
     # Yield control to allow application to serve
     yield
@@ -65,7 +73,7 @@ async def lifespan(app: FastAPI):
     await bridge.stop()
     scheduler.shutdown()
     if settings.DEBUG:
-        print("[lifespan] Shutdown complete")
+        logger.info("[lifespan] Shutdown complete")
 
 # API Docs 태그 순서 정의
 tags_metadata = [
@@ -147,7 +155,7 @@ class WSBridge:
                         # Fallback: if not coalescable, broadcast immediately
                         await self._broadcast_now(data)
             except Exception as e:
-                print(f"❌ WSBridge loop error: {e}")
+                logger.error(f"❌ WSBridge loop error: {e}")
             finally:
                 try:
                     if self.pubsub:
@@ -180,7 +188,7 @@ class WSBridge:
                     for data in payloads:
                         await self._broadcast_now(data)
             except Exception as e:
-                print(f"❌ WSBridge flush error: {e}")
+                logger.error(f"❌ WSBridge flush error: {e}")
 
         self.flush_task = asyncio.create_task(_flush_loop())
 
@@ -220,7 +228,7 @@ class WSBridge:
             pass
             
     async def stop(self):
-        print("[WSBridge] Stopping...")
+        logger.info("[WSBridge] Stopping...")
         if self.task:
             self.task.cancel()
             try:
@@ -241,7 +249,7 @@ class WSBridge:
             await self.pubsub.close()
         if self.r:
             await self.r.aclose()
-        print("[WSBridge] Stopped")
+        logger.info("[WSBridge] Stopped")
 
 bridge = WSBridge(host=settings.REDIS_HOST, port=settings.REDIS_PORT)
 
@@ -285,7 +293,7 @@ def read_root():
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    print("🟢 Client Connected to WebSocket")
+    logger.info("🟢 Client Connected to WebSocket")
 
     # Ensure bridge running
     await bridge.start()
@@ -314,9 +322,9 @@ async def websocket_endpoint(websocket: WebSocket):
             except Exception:
                 break
     except WebSocketDisconnect:
-        print("🔴 Client Disconnected")
+        logger.info("🔴 Client Disconnected")
     except Exception as e:
-        print(f"❌ WebSocket Error: {e}")
+        logger.warning(f"❌ WebSocket Error: {e}")
     finally:
         try:
             if ka_task:

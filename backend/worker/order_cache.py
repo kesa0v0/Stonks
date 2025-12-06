@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from decimal import Decimal
 from typing import List, Optional, Dict, Any
 from uuid import UUID
@@ -8,6 +9,8 @@ import redis.asyncio as redis
 from sqlalchemy import select
 from backend.models import Order, OrderStatus, OrderSide, OrderType
 from backend.core.database import AsyncSessionLocal
+
+logger = logging.getLogger(__name__)
 
 # Redis Key Patterns
 LIMIT_KEY = "oo:limit:{ticker}:{side}"       # Sorted Set (Score=Price, Member=OrderID)
@@ -132,7 +135,7 @@ class LimitOrderCache:
                 return
             
             # Load from DB
-            print(f"📥 Lazy Loading Orders for {ticker_id}...")
+            logger.info(f"📥 Lazy Loading Orders for {ticker_id}...")
             async with AsyncSessionLocal() as db:
                 stmt = select(Order).where(
                     Order.ticker_id == ticker_id,

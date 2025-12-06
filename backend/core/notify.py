@@ -1,6 +1,9 @@
 import httpx
 from backend.core.config import settings
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 async def send_ntfy_notification(message: str, title: str = "Stonks Alert", priority: str = "default"):
     """
@@ -23,7 +26,7 @@ async def send_ntfy_notification(message: str, title: str = "Stonks Alert", prio
         async with httpx.AsyncClient() as client:
             await client.post(url, data=message.encode("utf-8"), headers=headers)
     except Exception as e:
-        print(f"Failed to send ntfy notification: {e}")
+        logger.error(f"Failed to send ntfy notification: {e}", exc_info=True)
 
 def send_ntfy_sync(message: str, title: str = "Stonks Alert", priority: str = "default"):
     """

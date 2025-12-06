@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from uuid import UUID
 import redis.asyncio as async_redis 
+import logging
 
 from backend.core.database import get_db
 from backend.repository.user import user_repo
@@ -23,6 +24,8 @@ try:
     from zoneinfo import ZoneInfo
 except ImportError:
     from backports.zoneinfo import ZoneInfo
+
+logger = logging.getLogger(__name__)
 
 # OAuth2 스키마 정의 (토큰 발급 URL 지정)
 # 프론트엔드에서 로그인 요청을 보낼 주소와 일치해야 함
@@ -45,13 +48,13 @@ async def get_current_user(
                 headers={"WWW-Authenticate": "Bearer"},
             )
     except async_redis.RedisError as e: 
-        print(f"DEBUG: RedisError caught in deps: {e}") # DEBUG PRINT
+        logger.warning(f"RedisError caught in deps: {e}")
         pass 
     except Exception as e:
         # HTTPException은 여기서 잡히면 안됨 (위에서 raise한 것)
         if isinstance(e, HTTPException):
             raise e
-        print(f"DEBUG: Unexpected Error in deps: {e}") # DEBUG PRINT
+        logger.error(f"Unexpected Error in deps: {e}", exc_info=True)
         raise e
 
     try:
@@ -187,7 +190,7 @@ async def get_current_user_by_api_key(
                     await db.commit()
             except Exception as e:
                 # DB 업데이트 실패는 API 호출을 막으면 안 됨 (Logging only)
-                print(f"Failed to update api key usage: {e}")
+                logger.warning(f"Failed to update api key usage: {e}")
                 pass
 
             user_result = await db.execute(select(User).where(User.id == candidate.user_id))

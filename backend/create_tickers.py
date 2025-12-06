@@ -1,8 +1,11 @@
 # backend/create_tickers.py
 import asyncio
+import logging
 from sqlalchemy import select
 from backend.core.database import AsyncSessionLocal
 from backend.models import Ticker, MarketType, Currency, TickerSource
+
+logger = logging.getLogger(__name__)
 
 # 등록할 종목 리스트
 INITIAL_TICKERS = [
@@ -38,7 +41,7 @@ INITIAL_TICKERS = [
 ]
 
 async def init_tickers():
-    print("🚀 Initializing Tickers...")
+    logger.info("🚀 Initializing Tickers...")
     async with AsyncSessionLocal() as db:
         try:
             for item in INITIAL_TICKERS:
@@ -55,21 +58,21 @@ async def init_tickers():
                         source=item.get("source", TickerSource.UPBIT)
                     )
                     db.add(ticker)
-                    print(f"✅ Added: {item['name']} ({item['id']})")
+                    logger.info(f"✅ Added: {item['name']} ({item['id']})")
                 else:
                     # Update source if provided and different
                     desired_source = item.get("source")
                     if desired_source and existing.source != desired_source:
                         existing.source = desired_source
-                        print(f"🔧 Updated source for {item['name']} -> {desired_source.value}")
+                        logger.info(f"🔧 Updated source for {item['name']} -> {desired_source.value}")
                     else:
-                        print(f"ℹ️ Already exists: {item['name']}")
+                        logger.info(f"ℹ️ Already exists: {item['name']}")
             
             await db.commit()
-            print("🎉 Ticker initialization complete!")
+            logger.info("🎉 Ticker initialization complete!")
 
         except Exception as e:
-            print(f"❌ Error: {e}")
+            logger.error(f"❌ Error: {e}", exc_info=True)
             await db.rollback()
 
 if __name__ == "__main__":

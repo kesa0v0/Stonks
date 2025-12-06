@@ -15,6 +15,15 @@ import time
 
 from backend.core.event_hook import publish_event
 from backend.core.config import settings
+
+# 로깅 설정
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger("data_feeder")
+
+# APScheduler 로그 레벨 조정
 logging.getLogger('apscheduler.executors.default').setLevel(logging.ERROR)
 logging.getLogger('apscheduler.scheduler').setLevel(logging.ERROR)
 
@@ -40,9 +49,9 @@ async def init_resources():
     try:
         # Warm up markets to avoid symbol resolution issues
         await exchange.load_markets()
-        print("✅ Upbit markets loaded")
+        logger.info("✅ Upbit markets loaded")
     except Exception as e:
-        print(f"⚠️ load_markets failed: {e}")
+        logger.warning(f"⚠️ load_markets failed: {e}")
 
 async def fetch_tickers_job():
     """
@@ -50,7 +59,7 @@ async def fetch_tickers_job():
     """
     try:
         if exchange is None or redis_client is None:
-            print("⚠️ Resources not ready for fetch_tickers_job")
+            logger.warning("⚠️ Resources not ready for fetch_tickers_job")
             return
         symbols = list(TARGET_TICKERS.keys())
         # 전체 실행시간 측정 (요청+발행 포함)
@@ -60,14 +69,14 @@ async def fetch_tickers_job():
             tickers = await exchange.fetch_tickers(symbols)
         except Exception as e:
             # Fallback: fetch individually to avoid total failure
-            print(f"⚠️ fetch_tickers failed, falling back per symbol: {e}")
+            logger.warning(f"⚠️ fetch_tickers failed, falling back per symbol: {e}")
             tickers = {}
             for s in symbols:
                 try:
                     t = await exchange.fetch_ticker(s)
                     tickers[s] = t
                 except Exception as se:
-                    print(f"⚠️ fetch_ticker({s}) error: {se}")
+                    logger.warning(f"⚠️ fetch_ticker({s}) error: {se}")
         
         for symbol, ticker in tickers.items():
             ticker_id = TARGET_TICKERS[symbol]
@@ -87,7 +96,7 @@ async def fetch_tickers_job():
                         price = None
             if price is None:
                 # Skip if still no price
-                print(f"⚠️ No price for {symbol}, skipping")
+                logger.warning(f"⚠️ No price for {symbol}, skipping")
                 continue
             
             data = {
@@ -112,10 +121,10 @@ async def fetch_tickers_job():
 
         elapsed = time.perf_counter() - t0
         if elapsed > 0.8:
-            print(f"⏱️ fetch_tickers_job slow run: {elapsed:.3f}s; consider reducing symbols or raising interval")
+            logger.warning(f"⏱️ fetch_tickers_job slow run: {elapsed:.3f}s; consider reducing symbols or raising interval")
 
     except Exception as e:
-        print(f"❌ Fetch Tickers Error: {e}")
+        logger.error(f"❌ Fetch Tickers Error: {e}", exc_info=True)
         # Attempt to recreate exchange on hard failures
         try:
             if exchange:
@@ -125,9 +134,9 @@ async def fetch_tickers_job():
         try:
             await asyncio.sleep(1)
             await init_resources()
-            print("🔁 Exchange reinitialized after error")
+            logger.info("🔁 Exchange reinitialized after error")
         except Exception as re:
-            print(f"❌ Failed to reinitialize exchange: {re}")
+            logger.error(f"❌ Failed to reinitialize exchange: {re}")
 
 async def fetch_orderbooks_job():
     """
@@ -135,7 +144,7 @@ async def fetch_orderbooks_job():
     """
     try:
         if exchange is None or redis_client is None:
-            print("⚠️ Resources not ready for fetch_orderbooks_job")
+            logger.warning("⚠️ Resources not ready for fetch_orderbooks_job")
             return
 
         t0 = time.perf_counter()
@@ -157,7 +166,7 @@ async def fetch_orderbooks_job():
                 await rc.set(f"orderbook:{ticker_id}", json.dumps(data))
                 await rc.publish("orderbook_updates", json.dumps(data))
             except Exception as sub_e:
-                print(f"⚠️ Fetch Orderbook Error ({symbol}): {sub_e}")
+                logger.warning(f"⚠️ Fetch Orderbook Error ({symbol}): {sub_e}")
 
         tasks = [_fetch_one(symbol, ticker_id) for symbol, ticker_id in TARGET_TICKERS.items()]
         if tasks:
@@ -165,10 +174,10 @@ async def fetch_orderbooks_job():
 
         elapsed = time.perf_counter() - t0
         if elapsed > 0.9:
-            print(f"⏱️ fetch_orderbooks_job slow run: {elapsed:.3f}s; consider seconds=2 or reducing symbols")
+            logger.warning(f"⏱️ fetch_orderbooks_job slow run: {elapsed:.3f}s; consider seconds=2 or reducing symbols")
 
     except Exception as e:
-        print(f"❌ Fetch Orderbooks Job Error: {e}")
+        logger.error(f"❌ Fetch Orderbooks Job Error: {e}", exc_info=True)
 
 async def market_feeder_job():
     """Single consolidated job: tickers every 1s, orderbooks every 2s with time budget."""
@@ -182,12 +191,12 @@ async def market_feeder_job():
             try:
                 await fetch_orderbooks_job()
             except Exception as e:
-                print(f"⚠️ market_feeder_job orderbooks error: {e}")
+                logger.warning(f"⚠️ market_feeder_job orderbooks error: {e}")
         else:
-            print(f"ℹ️ Skipping orderbooks this tick to keep schedule (elapsed={elapsed_after_tickers:.3f}s)")
+            logger.info(f"ℹ️ Skipping orderbooks this tick to keep schedule (elapsed={elapsed_after_tickers:.3f}s)")
     total = time.perf_counter() - start
     if total > budget:
-        print(f"⏱️ market_feeder_job slow run: {total:.3f}s; consider raising interval or reducing work")
+        logger.warning(f"⏱️ market_feeder_job slow run: {total:.3f}s; consider raising interval or reducing work")
     tick_counter = (tick_counter + 1) % 1000000
 
 async def main():
@@ -208,17 +217,17 @@ async def main():
                 pass
 
         if event.code == EVENT_JOB_MISSED:
-            print(
+            logger.warning(
                 f"⏰ JOB MISSED id={getattr(event, 'job_id', '?')} sched={scheduled}Z | now={now.isoformat()}Z{delay_str}. "
                 "Likely causes: long-running job, process busy, or clock skew."
             )
         elif event.code == EVENT_JOB_MAX_INSTANCES:
-            print(
+            logger.warning(
                 f"🚦 JOB SKIPPED (max_instances) id={getattr(event, 'job_id', '?')} sched={scheduled}Z | now={now.isoformat()}Z{delay_str}. "
                 "Consider increasing max_instances or reducing job duration."
             )
         elif event.code == EVENT_JOB_ERROR:
-            print(
+            logger.error(
                 f"💥 JOB ERROR id={getattr(event, 'job_id', '?')} sched={scheduled}Z | now={now.isoformat()}Z{delay_str} | "
                 f"exc={getattr(event, 'exception', None)}"
             )
@@ -240,14 +249,14 @@ async def main():
     )
     scheduler.start()
     
-    print("🚀 Data Feeder Started with APScheduler (1s interval)")
+    logger.info("🚀 Data Feeder Started with APScheduler (1s interval)")
     
     try:
         # 메인 루프 유지 (스케줄러가 백그라운드에서 동작)
         while True:
             await asyncio.sleep(1000)
     except (KeyboardInterrupt, asyncio.CancelledError):
-        print("🛑 Worker stopping...")
+        logger.info("🛑 Worker stopping...")
     finally:
         if exchange:
             await exchange.close()

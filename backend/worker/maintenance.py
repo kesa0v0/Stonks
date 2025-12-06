@@ -8,13 +8,16 @@ from sqlalchemy import text
 from backend.core.database import AsyncSessionLocal
 from backend.core.config import settings
 from backend.core.notify import send_ntfy_notification
+import logging
+
+logger = logging.getLogger(__name__)
 
 async def perform_db_backup():
     """
     PostgreSQL 데이터베이스를 덤프하고 MinIO(S3)에 업로드합니다.
     """
     if not settings.S3_ENDPOINT_URL:
-        print("[Backup] S3 configuration missing. Skipping backup.")
+        logger.info("[Backup] S3 configuration missing. Skipping backup.")
         return
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -53,7 +56,7 @@ async def perform_db_backup():
             dbname
         ]
         
-        print(f"[Backup] Starting pg_dump for {dbname}...")
+        logger.info(f"[Backup] Starting pg_dump for {dbname}...")
         # subprocess.run은 동기 함수이므로, 메인 루프를 막지 않으려면 executor 등에서 실행해야 하지만,
         # 백업은 드물게 돌므로 일단 간단히 처리. (혹은 run_in_executor 사용)
         process = await asyncio.to_thread(
@@ -63,7 +66,7 @@ async def perform_db_backup():
         if process.returncode != 0:
             raise Exception(f"pg_dump failed: {process.stderr}")
         
-        print(f"[Backup] Dump created at {file_path}. Uploading to S3...")
+        logger.info(f"[Backup] Dump created at {file_path}. Uploading to S3...")
 
         # 2. S3(MinIO) 업로드
         s3 = boto3.client(
@@ -80,7 +83,7 @@ async def perform_db_backup():
             s3.create_bucket(Bucket=settings.S3_BUCKET_NAME)
         
         s3.upload_file(file_path, settings.S3_BUCKET_NAME, f"db_backups/{filename}")
-        print(f"[Backup] Successfully uploaded to {settings.S3_BUCKET_NAME}/db_backups/{filename}")
+        logger.info(f"[Backup] Successfully uploaded to {settings.S3_BUCKET_NAME}/db_backups/{filename}")
         
         # 3. 임시 파일 삭제
         os.remove(file_path)
@@ -89,7 +92,7 @@ async def perform_db_backup():
 
     except Exception as e:
         error_msg = f"Backup failed: {str(e)}"
-        print(f"❌ {error_msg}")
+        logger.error(f"❌ {error_msg}", exc_info=True)
         await send_ntfy_notification(error_msg, title="Backup Failed", priority="high")
         # 임시 파일 정리
         if os.path.exists(file_path):
@@ -101,7 +104,7 @@ async def cleanup_old_candles():
     설정된 보존 기간(CANDLE_RETENTION_DAYS) 이전 데이터 삭제.
     """
     days = settings.CANDLE_RETENTION_DAYS
-    print(f"[Cleanup] Starting cleanup for candles older than {days} days...")
+    logger.info(f"[Cleanup] Starting cleanup for candles older than {days} days...")
     
     try:
         async with AsyncSessionLocal() as session:
@@ -115,11 +118,11 @@ async def cleanup_old_candles():
             await session.commit()
             
             deleted_count = result.rowcount
-            print(f"[Cleanup] Deleted {deleted_count} old 1m candles.")
+            logger.info(f"[Cleanup] Deleted {deleted_count} old 1m candles.")
             
             if deleted_count > 0:
                  await send_ntfy_notification(f"🧹 Cleaned up {deleted_count} old candles.", title="Maintenance Report")
             
     except Exception as e:
-        print(f"[Cleanup] Failed: {e}")
+        logger.error(f"[Cleanup] Failed: {e}", exc_info=True)
         await send_ntfy_notification(f"Cleanup failed: {e}", title="Maintenance Error", priority="high")
