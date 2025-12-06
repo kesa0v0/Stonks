@@ -3,6 +3,7 @@ import api from '../api/client';
 import { toFixedString, REPORT_ROUNDING, formatWithThousands } from '../utils/numfmt';
 import DashboardLayout from '../components/DashboardLayout';
 import { SkeletonRow } from '../components/Skeleton';
+import Avatar from '../components/Avatar';
 import type { RankingEntry, HallOfFameResponse } from '../interfaces';
 
 // API client prefix is configured via VITE_API_BASE_URL
@@ -51,10 +52,6 @@ export default function Leaderboard() {
     };
     fetchRankings();
   }, [activeTab]);
-
-  // 아바타 생성기 (닉네임 기반 랜덤 이미지)
-  const getAvatarUrl = (seed: string) => 
-    `https://api.dicebear.com/7.x/pixel-art/svg?seed=${seed}`;
 
   return (
     <DashboardLayout>
@@ -115,10 +112,12 @@ export default function Leaderboard() {
                           </td>
                           <td className="h-[72px] px-6 py-2">
                             <div className="flex items-center gap-3">
-                              <div 
-                                className="bg-center bg-no-repeat bg-cover rounded-full w-10 h-10 border border-[#314368]" 
-                                style={{ backgroundImage: `url("${getAvatarUrl(user.nickname)}")` }}
-                              ></div>
+                              <Avatar
+                                seed={user.nickname}
+                                size={40}
+                                alt={user.nickname}
+                                className="border border-[#314368]"
+                              />
                               <span className="text-white text-sm font-medium">{user.nickname}</span>
                             </div>
                           </td>
@@ -193,7 +192,7 @@ const BadgeCard = ({ title, user, desc, color }: { title: string, user?: Ranking
   <div className="relative group flex flex-col items-center text-center gap-2 p-3 rounded-lg hover:bg-[#222f49] transition-all">
     <div className={`w-16 h-16 rounded-full bg-[#101623] flex items-center justify-center border border-[#314368] ${user ? 'group-hover:border-white/50' : 'opacity-50'}`}>
       {user ? (
-        <img src={`https://api.dicebear.com/7.x/pixel-art/svg?seed=${user.nickname}`} alt={user.nickname} className="w-full h-full rounded-full" />
+        <Avatar seed={user.nickname} size={64} alt={user.nickname} />
       ) : (
         <span className={`material-symbols-outlined text-3xl text-gray-600`}>lock</span>
       )}

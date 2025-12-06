@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import api from '../api/client';
 import DashboardLayout from '../components/DashboardLayout';
 import Skeleton from '../components/Skeleton';
+import Avatar from '../components/Avatar';
 import { CandleChart } from '../components/CandleChart';
 import { toFixedString, REPORT_ROUNDING, formatWithThousands } from '../utils/numfmt';
 
@@ -150,9 +151,9 @@ function NotListedView({ profile, onSuccess }: { profile: MeProfile | null, onSu
     return (
         <div className="flex flex-col items-center justify-center min-h-[60vh] gap-8 text-center p-4">
             <div className="max-w-2xl space-y-4">
-                <div className="w-24 h-24 mx-auto rounded-full border-4 border-gray-600 bg-cover bg-center opacity-50 grayscale"
-                    style={{ backgroundImage: `url("https://api.dicebear.com/7.x/pixel-art/svg?seed=${profile?.nickname}")` }}
-                ></div>
+                                <div className="w-24 h-24 mx-auto rounded-full border-4 border-gray-600 opacity-50 grayscale overflow-hidden">
+                                    <Avatar seed={profile?.nickname} size={96} alt={profile?.nickname || 'avatar'} className="w-full h-full" />
+                                </div>
                 <h1 className="text-white text-4xl font-bold">You are Private</h1>
                 <p className="text-[#90a4cb] text-lg">
                     Your value is hidden from the world. Launch your IPO (Initial Public Offering) to trade yourself as an ETF.
@@ -364,10 +365,9 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
             </div>
           ) : (
             <>
-              <div 
-                className="w-24 h-24 rounded-full border-4 border-[#0d59f2] bg-cover bg-center shadow-[0_0_15px_rgba(13,89,242,0.3)]"
-                style={{ backgroundImage: `url("https://api.dicebear.com/7.x/pixel-art/svg?seed=${profile!.nickname}")` }}
-              ></div>
+                            <div className="w-24 h-24 rounded-full border-4 border-[#0d59f2] shadow-[0_0_15px_rgba(13,89,242,0.3)] overflow-hidden">
+                                <Avatar seed={profile!.nickname} size={96} alt={profile!.nickname} className="w-full h-full" />
+                            </div>
               <div>
                 <h1 className="text-white text-3xl font-bold font-mono tracking-tighter">
                   {profile!.nickname} <span className="text-[#0d59f2] text-xl">ETF</span>

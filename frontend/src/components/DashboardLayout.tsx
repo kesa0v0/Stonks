@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import api, { initializeAuth } from '../api/client';
 import NotificationCenter from './NotificationCenter';
+import { resolveAvatarUrl, buildIdenticon } from '../utils/avatar';
 import WatchlistWidget from './WatchlistWidget';
 
 interface DashboardLayoutProps {
@@ -11,9 +12,8 @@ interface DashboardLayoutProps {
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const location = useLocation();
-  const [me, setMe] = useState<{ nickname: string } | null>(null);
+  const [me, setMe] = useState<{ nickname: string; id?: string; avatar_url?: string; discord_user_id?: string; discord_avatar?: string; discriminator?: string } | null>(null);
   const [loadingMe, setLoadingMe] = useState(true);
-  const getAvatarUrl = (seed: string) => `https://api.dicebear.com/7.x/identicon/svg?seed=${seed}`;
 
   // 현재 경로와 일치하면 active 처리
   const isActive = (path: string) => {
@@ -56,7 +56,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               </>
             ) : (
               <>
-                <div className="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10" style={{ backgroundImage: `url("${getAvatarUrl(me?.nickname || 'admin')}")` }}></div>
+                <img
+                  src={resolveAvatarUrl(me || undefined)}
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).src = buildIdenticon(me?.id || me?.nickname || 'anon'); }}
+                  alt={me?.nickname || 'avatar'}
+                  className="bg-center bg-no-repeat bg-cover rounded-full size-10"
+                />
                 <div className="flex flex-col">
                   <h1 className="text-white text-base font-medium leading-normal">{me?.nickname || 'CyberTrader'}</h1>
                   <p className="text-[#90a4cb] text-sm font-normal leading-normal">Terminal v2.0</p>

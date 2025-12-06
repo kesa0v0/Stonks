@@ -103,6 +103,10 @@ export interface TickerResponse {
 export interface MeProfile {
   id: string;
   nickname: string;
+  avatar_url?: string;
+  discord_user_id?: string;
+  discord_avatar?: string;
+  discriminator?: string;
 }
 
 export interface MoverResponse {
