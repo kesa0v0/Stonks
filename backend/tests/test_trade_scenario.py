@@ -42,7 +42,7 @@ class TestShortSellingScenario:
                 side="SELL",
                 quantity=Decimal("1.0") # Use Decimal
             )
-            assert result is True
+            assert result[0] is True
             
             # 검증
             res = await db_session.execute(select(Portfolio))
@@ -151,7 +151,7 @@ class TestBalanceValidation:
             )
             
             # 3. 결과 검증
-            assert result is False, "잔고 부족으로 매수 주문이 실패해야 합니다."
+            assert result[0] is False, "잔고 부족으로 매수 주문이 실패해야 합니다."
             
             # 별도 트랜잭션으로 처리된 실패 상태 확인
             # (execute_trade가 실패 시 별도 commit을 하므로 조회 가능해야 함)

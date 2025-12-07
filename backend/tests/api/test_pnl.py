@@ -39,7 +39,7 @@ async def test_pnl_calculation_long_close(db_session: AsyncSession, mock_externa
         side=OrderSide.BUY.value,
         quantity=buy_qty
     )
-    assert success is True
+    assert success[0] is True
     
     # Verify Portfolio
     result = await db_session.execute(select(Portfolio).where(Portfolio.user_id == user_id))
@@ -62,7 +62,7 @@ async def test_pnl_calculation_long_close(db_session: AsyncSession, mock_externa
         side=OrderSide.SELL.value,
         quantity=sell_qty
     )
-    assert success is True
+    assert success[0] is True
     
     # 4. Verify Order Realized PnL
     result = await db_session.execute(select(Order).where(Order.id == uuid.UUID(sell_order_id)))

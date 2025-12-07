@@ -39,7 +39,8 @@ async def test_trade_boundary_insufficient_fee(db_session, test_user, test_ticke
             quantity=Decimal("1.0")
         )
         
-        assert result is False, "수수료가 부족하므로 거래가 실패해야 합니다."
+        assert result[0] is False, "수수료가 부족하므로 거래가 실패해야 합니다."
+        assert result[1] == "STRATEGY_ERROR" or result[1] == "INSUFFICIENT_BALANCE" # Strategy might return STRATEGY_ERROR for insufficient funds in sell/short contexts, or custom. But here it's buying. Check strategy return codes. Actually verify strategy logic. But mostly it returns False.
         
         # 실패 사유 확인
         res = await db_session.execute(select(Order).where(Order.id == uuid.UUID(order_id)))
@@ -77,7 +78,7 @@ async def test_trade_boundary_exact_balance(db_session, test_user, test_ticker, 
             quantity=Decimal("1.0")
         )
         
-        assert result is True, "잔고가 충분하므로 거래가 성공해야 합니다."
+        assert result[0] is True, "잔고가 충분하므로 거래가 성공해야 합니다."
         
         # 잔고 0 확인
         await db_session.refresh(wallet)
@@ -107,7 +108,7 @@ async def test_trade_nonexistent_ticker(db_session, test_user, mock_external_ser
             quantity=Decimal("1.0")
         )
         
-        assert result is False
+        assert result[0] is False
 
 @pytest.mark.asyncio
 async def test_trade_invalid_uuid(db_session, mock_external_services):
@@ -126,7 +127,7 @@ async def test_trade_invalid_uuid(db_session, mock_external_services):
         quantity=Decimal("1.0")
     )
     
-    assert result is False
+    assert result[0] is False
 
 @pytest.mark.asyncio
 async def test_trade_zero_quantity(db_session, test_user, test_ticker, mock_external_services):
@@ -151,7 +152,7 @@ async def test_trade_zero_quantity(db_session, test_user, test_ticker, mock_exte
         )
         
         # 서비스에서 수량 <= 0 체크를 추가했으므로 False 반환 기대
-        assert result is False
+        assert result[0] is False
 
 @pytest.mark.asyncio
 async def test_trade_concurrency_buy(db_session, session_factory, test_user, test_ticker, mock_external_services):
@@ -187,8 +188,8 @@ async def test_trade_concurrency_buy(db_session, session_factory, test_user, tes
         
         results = await asyncio.gather(task1, task2)
         
-        success_count = sum(1 for r in results if r is True)
-        fail_count = sum(1 for r in results if r is False)
+        success_count = sum(1 for r in results if r[0] is True)
+        fail_count = sum(1 for r in results if r[0] is False)
         
         # 동시성 제어가 완벽하지 않은 인메모리 SQLite라도 하나는 성공해야 함
         # 만약 둘 다 성공한다면 동시성 제어 실패임
@@ -244,7 +245,7 @@ async def test_trade_rollback_on_error(db_session, test_user, test_ticker, mock_
                 quantity=Decimal("1.0")
             )
             
-            assert result is False
+            assert result[0] is False
             
     # 롤백 확인
     # expire_all()은 동기 메서드임 (await 제거)

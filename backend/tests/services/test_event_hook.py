@@ -53,6 +53,13 @@ async def test_post_trade_event_hook(monkeypatch):
     monkeypatch.setattr("backend.services.trade_service.update_user_persona", AsyncMock())
     monkeypatch.setattr("backend.services.trade_service.func", AsyncMock())
 
+    class DummyOrderBook:
+        def __init__(self):
+            self.asks = []
+            self.bids = []
+    
+    monkeypatch.setattr("backend.services.market_service.get_orderbook_data", AsyncMock(return_value=DummyOrderBook()))
+
     # 더미 모델 객체 생성
     from backend.core.enums import OrderStatus, OrderType, OrderSide
 
@@ -114,7 +121,7 @@ async def test_post_trade_event_hook(monkeypatch):
 
     # execute_trade 실행
     result = await execute_trade(db, redis_client, user_id, order_id, ticker_id, side, quantity)
-    assert result is True
+    assert result[0] is True
 
     # 이벤트가 정상적으로 발행됐는지 확인
     assert len(redis_client.published) == 1
@@ -125,4 +132,4 @@ async def test_post_trade_event_hook(monkeypatch):
     assert event["user_id"] == user_id
     assert event["ticker_id"] == ticker_id
     assert event["side"] == side
-    assert event["quantity"] == float(quantity)
+    assert float(event["quantity"]) == float(quantity)

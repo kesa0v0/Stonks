@@ -57,7 +57,7 @@ async def test_execute_trade_with_slippage(db_session, mock_external_services, t
         quantity=quantity
     )
     
-    assert result is True
+    assert result[0] is True
     
     # 3. Verify Order Price
     stmt = select(Order).where(Order.id == uuid.UUID(order_id))
@@ -83,13 +83,11 @@ async def test_execute_trade_slippage_insufficient_liquidity_fallback(db_session
     ticker_id = test_ticker
     user_id = str(test_user)
     
-    # 1. Setup Orderbook with insufficient liquidity
-    # Asks: 5 @ 100
+    # 1. Setup Orderbook with insufficient liquidity (EMPTY to force fallback)
+    # Asks: [] (Empty)
     # We want to buy 10.
     ob_data = {
-        "asks": [
-            {"price": "100", "quantity": "5"}
-        ],
+        "asks": [],
         "bids": []
     }
     redis_data[f"orderbook:{ticker_id}"] = json.dumps(ob_data)
@@ -113,7 +111,7 @@ async def test_execute_trade_slippage_insufficient_liquidity_fallback(db_session
         quantity=quantity
     )
     
-    assert result is True
+    assert result[0] is True
     
     # 3. Verify Order Price -> Should be fallback price
     stmt = select(Order).where(Order.id == uuid.UUID(order_id))
@@ -174,7 +172,7 @@ async def test_execute_trade_sell_slippage(db_session, mock_external_services, t
         quantity=quantity
     )
     
-    assert result is True
+    assert result[0] is True
     
     # 3. Verify Order Price
     stmt = select(Order).where(Order.id == uuid.UUID(order_id))

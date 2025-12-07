@@ -162,7 +162,7 @@ async def test_dividend_distribution(client: AsyncClient, db_session, mock_exter
         side=OrderSide.SELL.value,
         quantity=1.0
     )
-    assert success is True
+    assert success[0] is True
     
     # 5. Verify Dividend Distribution
     await db_session.refresh(issuer_wallet)

@@ -158,13 +158,20 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
             logger.warning(f"Insufficient liquidity for {ticker_id}. Requested: {quantity}, Filled from OB: {filled_qty_from_ob}. Remaining: {needed_qty_from_order}.")
             
             if filled_qty_from_ob == 0:
-                 # If absolutely nothing could be filled from orderbook, reject the order.
-                 logger.error(f"Market order {order_id} for {ticker_id} failed: No liquidity in order book.")
-                 return False, "LIQUIDITY_ERROR"
-            
-            # Adjust the 'quantity' variable for the rest of the trade logic to only what was filled from the order book.
-            # This makes it a partial fill.
-            quantity = filled_qty_from_ob
+                # Try fallback to current price
+                fallback_price = await get_current_price(redis_client, ticker_id)
+                if fallback_price:
+                    execution_price = fallback_price
+                    quantity = original_requested_quantity # Restore full quantity as we are using infinite liquidity fallback
+                    logger.info(f"Fallback to current price {fallback_price} for {ticker_id}. OB was empty.")
+                else:
+                    # If absolutely nothing could be filled from orderbook, reject the order.
+                    logger.error(f"Market order {order_id} for {ticker_id} failed: No liquidity in order book and no current price.")
+                    return False, "LIQUIDITY_ERROR"
+            else:
+                # Adjust the 'quantity' variable for the rest of the trade logic to only what was filled from the order book.
+                # This makes it a partial fill.
+                quantity = filled_qty_from_ob
             
             # The order's `unfilled_quantity` will be updated later.
             # We don't need to explicitly update `order.quantity` here, as the original order object `order`
