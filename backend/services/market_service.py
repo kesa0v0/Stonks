@@ -33,18 +33,18 @@ def get_market_status_by_type(market_type: str, now: datetime) -> MarketState:
         return MarketState.OPEN # 24/7 for Human ETFs
 
     if market_type == "KRX":
-        # KST 기준
-        kst = ZoneInfo("Asia/Seoul")
-        now_kst = now.astimezone(kst)
+        # UTC 기준 (KRX 09:00 ~ 15:30 KST = 00:00 ~ 06:30 UTC)
+        utc_tz = ZoneInfo("UTC")
+        now_utc = now.astimezone(utc_tz)
         
         # 주말 체크 (월=0, 일=6)
-        if now_kst.weekday() >= 5:
+        if now_utc.weekday() >= 5:
             return MarketState.CLOSED
             
-        # 시간 체크 (09:00 ~ 15:30)
-        current_time = now_kst.time()
-        market_open = time(9, 0)
-        market_close = time(15, 30)
+        # 시간 체크 (00:00 ~ 06:30 UTC)
+        current_time = now_utc.time()
+        market_open = time(0, 0)
+        market_close = time(6, 30)
         
         if market_open <= current_time < market_close:
             return MarketState.OPEN

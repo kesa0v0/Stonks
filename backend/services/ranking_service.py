@@ -64,13 +64,11 @@ async def update_user_persona(
         
     persona.total_fees_paid += fee
     
-    # 2. 시간대 체크 (한국 시간 기준 새벽 2시~5시 = 미국 주식 좀비)
-    # 현재 시간을 KST로 변환
+    # 2. 시간대 체크 (UTC 17:00 ~ 20:00 = KST 02:00 ~ 05:00 = 미국 주식 좀비)
+    # 현재 시간을 UTC로 변환
     now_utc = datetime.now(pytz.utc)
-    kst = pytz.timezone('Asia/Seoul')
-    now_kst = now_utc.astimezone(kst)
     
-    if 2 <= now_kst.hour < 5:
+    if 17 <= now_utc.hour < 20:
         persona.night_trade_count += 1
         
     # 3. PnL 반영 (실현 손익이 있는 경우 = 청산 시)
