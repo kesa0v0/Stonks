@@ -7,6 +7,7 @@ import Avatar from '../components/Avatar';
 import { CandleChart } from '../components/CandleChart';
 import { toFixedString, REPORT_ROUNDING, formatWithThousands } from '../utils/numfmt';
 import Decimal from 'decimal.js';
+import ConfirmationModal from '../components/ConfirmationModal'; // Added import
 
 const DEFAULT_PROPOSAL_END = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 16); // one day later
 
@@ -115,10 +116,14 @@ function NotListedView({ profile, onSuccess }: { profile: MeProfile | null, onSu
     const [quantity, setQuantity] = useState<string>('1000');
     const [dividendRate, setDividendRate] = useState<number>(10); // %
     const [isLoading, setIsLoading] = useState(false);
+    const [showIpoConfirmation, setShowIpoConfirmation] = useState(false); // State for modal visibility
 
-    const handleIpo = async () => {
-        if (!confirm(`Are you sure you want to IPO? \n\nListing Fee: 10,000,000 KRW will be deducted.\nInitial Dividend Rate: ${dividendRate}%`)) return;
-        
+    const handleIpoConfirmation = () => {
+      setShowIpoConfirmation(true);
+    };
+
+    const confirmIpo = async () => {
+        setShowIpoConfirmation(false); // Close modal
         setIsLoading(true);
         try {
             await api.post('human/ipo', {
@@ -131,11 +136,6 @@ function NotListedView({ profile, onSuccess }: { profile: MeProfile | null, onSu
             onSuccess();
         } catch (err: unknown) {
             console.error("IPO Failed", err);
-            // The global error handler in api/client might be showing a toast as well.
-            // But here we want to show a specific message if possible.
-            // Let's assume if we handle it here, we might duplicate.
-            // However, the issue is likely the double handling within this catch block or upstream.
-            // Let's simplify this catch block.
               type ErrWithResponse = { response?: Response };
               const resp = (err as ErrWithResponse).response;
               if (resp) {
@@ -149,62 +149,75 @@ function NotListedView({ profile, onSuccess }: { profile: MeProfile | null, onSu
         }
     };
 
+    const cancelIpo = () => {
+      setShowIpoConfirmation(false); // Close modal
+    };
+
     return (
-        <div className="flex flex-col items-center justify-center min-h-[60vh] gap-8 text-center p-4">
-            <div className="max-w-2xl space-y-4">
-                                <div className="w-24 h-24 mx-auto rounded-full border-4 border-gray-600 opacity-50 grayscale overflow-hidden">
-                                    <Avatar seed={profile?.nickname} size={96} alt={profile?.nickname || 'avatar'} className="w-full h-full" />
-                                </div>
-                <h1 className="text-white text-4xl font-bold">You are Private</h1>
-                <p className="text-[#90a4cb] text-lg">
-                    Your value is hidden from the world. Launch your IPO (Initial Public Offering) to trade yourself as an ETF.
-                </p>
-            </div>
-
-            <div className="w-full max-w-md bg-[#101623] border border-[#314368] rounded-xl p-8 flex flex-col gap-6">
-                <h2 className="text-white text-xl font-bold border-b border-[#314368] pb-4">IPO Application</h2>
-                
-                <div className="space-y-4 text-left">
-                    <div>
-                        <label className="text-[#90a4cb] text-sm block mb-1">Issuance Quantity</label>
-                        <input 
-                            type="number" 
-                            value={quantity}
-                            onChange={e => setQuantity(e.target.value)}
-                            className="w-full bg-[#182234] text-white border border-[#314368] rounded-lg px-4 py-2 focus:ring-1 focus:ring-[#0d59f2]"
-                        />
-                        <p className="text-xs text-[#90a4cb] mt-1">Initial shares to be issued to your wallet.</p>
-                    </div>
-
-                    <div>
-                        <label className="text-[#90a4cb] text-sm block mb-1">Initial Dividend Rate: <span className="text-white font-bold">{dividendRate}%</span></label>
-                        <input 
-                            type="range" 
-                            min="10" max="100" step="1"
-                            value={dividendRate}
-                            onChange={e => setDividendRate(parseInt(e.target.value))}
-                            className="w-full h-2 bg-[#222f49] rounded-lg appearance-none cursor-pointer accent-[#0d59f2]"
-                        />
-                        <p className="text-xs text-[#90a4cb] mt-1">Percentage of your future PnL distributed to shareholders (Min 10%).</p>
-                    </div>
-
-                    <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
-                        <div className="flex justify-between items-center text-sm">
-                            <span className="text-red-400 font-bold">Listing Fee</span>
-                            <span className="text-white font-mono font-bold">10,000,000 KRW</span>
-                        </div>
-                    </div>
+        <>
+            <div className="flex flex-col items-center justify-center min-h-[60vh] gap-8 text-center p-4">
+                <div className="max-w-2xl space-y-4">
+                                    <div className="w-24 h-24 mx-auto rounded-full border-4 border-gray-600 opacity-50 grayscale overflow-hidden">
+                                        <Avatar seed={profile?.nickname} size={96} alt={profile?.nickname || 'avatar'} className="w-full h-full" />
+                                    </div>
+                    <h1 className="text-white text-4xl font-bold">You are Private</h1>
+                    <p className="text-[#90a4cb] text-lg">
+                        Your value is hidden from the world. Launch your IPO (Initial Public Offering) to trade yourself as an ETF.
+                    </p>
                 </div>
 
-                <button 
-                    onClick={handleIpo}
-                    disabled={isLoading}
-                    className="w-full py-3 rounded-lg bg-[#0d59f2] hover:bg-[#0d59f2]/90 text-white font-bold text-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                    {isLoading ? 'Processing...' : 'Launch IPO'}
-                </button>
+                <div className="w-full max-w-md bg-[#101623] border border-[#314368] rounded-xl p-8 flex flex-col gap-6">
+                    <h2 className="text-white text-xl font-bold border-b border-[#314368] pb-4">IPO Application</h2>
+                    
+                    <div className="space-y-4 text-left">
+                        <div>
+                            <label className="text-[#90a4cb] text-sm block mb-1">Issuance Quantity</label>
+                            <input 
+                                type="number" 
+                                value={quantity}
+                                onChange={e => setQuantity(e.target.value)}
+                                className="w-full bg-[#182234] text-white border border-[#314368] rounded-lg px-4 py-2 focus:ring-1 focus:ring-[#0d59f2]"
+                            />
+                            <p className="text-xs text-[#90a4cb] mt-1">Initial shares to be issued to your wallet.</p>
+                        </div>
+
+                        <div>
+                            <label className="text-[#90a4cb] text-sm block mb-1">Initial Dividend Rate: <span className="text-white font-bold">{dividendRate}%</span></label>
+                            <input 
+                                type="range" 
+                                min="10" max="100" step="1"
+                                value={dividendRate}
+                                onChange={e => setDividendRate(parseInt(e.target.value))}
+                                className="w-full h-2 bg-[#222f49] rounded-lg appearance-none cursor-pointer accent-[#0d59f2]"
+                            />
+                            <p className="text-xs text-[#90a4cb] mt-1">Percentage of your future PnL distributed to shareholders (Min 10%).</p>
+                        </div>
+
+                        <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+                            <div className="flex justify-between items-center text-sm">
+                                <span className="text-red-400 font-bold">Listing Fee</span>
+                                <span className="text-white font-mono font-bold">10,000,000 KRW</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button 
+                        onClick={handleIpoConfirmation}
+                        disabled={isLoading}
+                        className="w-full py-3 rounded-lg bg-[#0d59f2] hover:bg-[#0d59f2]/90 text-white font-bold text-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {isLoading ? 'Processing...' : 'Launch IPO'}
+                    </button>
+                </div>
             </div>
-        </div>
+            <ConfirmationModal
+                isOpen={showIpoConfirmation}
+                onClose={cancelIpo}
+                onConfirm={confirmIpo}
+                title="Confirm IPO"
+                message={`Are you sure you want to IPO? \n\nListing Fee: 10,000,000 KRW will be deducted.\nInitial Dividend Rate: ${dividendRate}%`}
+            />
+        </>
     );
 }
 
