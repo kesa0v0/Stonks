@@ -13,6 +13,10 @@ from datetime import datetime, timezone, timedelta
 import logging
 import time
 
+from sqlalchemy import select # New import
+from backend.core.database import AsyncSessionLocal # New import
+from backend.models.asset import Ticker # New import (Ticker model is in asset.py)
+
 from backend.core.event_hook import publish_event
 from backend.core.config import settings
 
@@ -27,19 +31,25 @@ logger = logging.getLogger("data_feeder")
 logging.getLogger('apscheduler.executors.default').setLevel(logging.ERROR)
 logging.getLogger('apscheduler.scheduler').setLevel(logging.ERROR)
 
-# 수집할 대상 목록
-TARGET_TICKERS = {
-    "BTC/KRW": "CRYPTO-COIN-BTC",
-    "ETH/KRW": "CRYPTO-COIN-ETH",
-    "DOGE/KRW": "CRYPTO-COIN-DOGE",
-}
+# 수집할 대상 목록 (초기화)
+TARGET_TICKERS = {} # Will be populated dynamically
 
 exchange = None
 redis_client = None
 tick_counter = 0
 
+async def get_active_tickers_from_db() -> dict:
+    """Fetches active tickers from the database and returns them in a symbol:ticker_id map."""
+    active_tickers = {}
+    async with AsyncSessionLocal() as db:
+        stmt = select(Ticker).where(Ticker.is_active == True)
+        tickers = (await db.execute(stmt)).scalars().all()
+        for ticker in tickers:
+            active_tickers[ticker.symbol] = ticker.id
+    return active_tickers
+
 async def init_resources():
-    global exchange, redis_client
+    global exchange, redis_client, TARGET_TICKERS
     exchange = ccxt_async.upbit({'enableRateLimit': True, 'timeout': 10000})
     redis_client = redis.Redis(
         host=settings.REDIS_HOST, 
@@ -53,6 +63,13 @@ async def init_resources():
     except Exception as e:
         logger.warning(f"⚠️ load_markets failed: {e}")
 
+    # Dynamically load active tickers
+    TARGET_TICKERS = await get_active_tickers_from_db()
+    if not TARGET_TICKERS:
+        logger.error("❌ No active tickers found in DB. Data feeder will not fetch any data.")
+    else:
+        logger.info(f"Loaded {len(TARGET_TICKERS)} active tickers from DB: {list(TARGET_TICKERS.keys())}")
+
 async def fetch_tickers_job():
     """
     주기적으로 실행될 작업: 시세 조회 및 Redis 발행
@@ -61,6 +78,12 @@ async def fetch_tickers_job():
         if exchange is None or redis_client is None:
             logger.warning("⚠️ Resources not ready for fetch_tickers_job")
             return
+        
+        # Check if TARGET_TICKERS was populated
+        if not TARGET_TICKERS:
+            logger.warning("⚠️ No TARGET_TICKERS defined. Skipping fetch_tickers_job.")
+            return
+
         symbols = list(TARGET_TICKERS.keys())
         # 전체 실행시간 측정 (요청+발행 포함)
         t0 = time.perf_counter()
@@ -145,6 +168,11 @@ async def fetch_orderbooks_job():
     try:
         if exchange is None or redis_client is None:
             logger.warning("⚠️ Resources not ready for fetch_orderbooks_job")
+            return
+        
+        # Check if TARGET_TICKERS was populated
+        if not TARGET_TICKERS:
+            logger.warning("⚠️ No TARGET_TICKERS defined. Skipping fetch_orderbooks_job.")
             return
 
         t0 = time.perf_counter()
