@@ -244,7 +244,22 @@ async def match_orders():
         except (redis.ConnectionError, asyncio.CancelledError):
             pass # Expected on shutdown
 
-    await asyncio.gather(handle_prices(), handle_order_events())
+    async def periodic_reconcile():
+        logger.info("🛠️ Periodic Reconciler Started.")
+        while not stop_event.is_set():
+            try:
+                await cache.reconcile()
+            except Exception as e:
+                logger.error(f"⚠️ Reconcile Error: {e}")
+            
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=300)
+            except asyncio.TimeoutError:
+                continue
+            except asyncio.CancelledError:
+                break
+
+    await asyncio.gather(handle_prices(), handle_order_events(), periodic_reconcile())
     logger.info("👋 Matcher Stopped.")
 
 if __name__ == "__main__":

@@ -158,6 +158,73 @@ class LimitOrderCache:
             await self.redis.sadd(LOADED_TICKERS_KEY, ticker_id)
             self._local_loaded_tickers.add(ticker_id)
 
+    async def get_cached_orders_for_ticker(self, ticker_id: str) -> set:
+        """Retrieves all order IDs currently in Redis for a given ticker."""
+        keys = [
+            LIMIT_KEY.format(ticker=ticker_id, side="buy"),
+            LIMIT_KEY.format(ticker=ticker_id, side="sell"),
+            STOP_KEY.format(ticker=ticker_id, side="buy"),
+            STOP_KEY.format(ticker=ticker_id, side="sell")
+        ]
+        orders = set()
+        for k in keys:
+            # zrange 0 -1 returns list of members
+            res = await self.redis.zrange(k, 0, -1)
+            orders.update(res)
+        return orders
+
+    async def reconcile(self):
+        """
+        Synchronizes Redis cache with DB.
+        - Loads missing PENDING orders.
+        - Removes stale/orphaned orders.
+        """
+        logger.info("🔄 Starting Order Cache Reconciliation...")
+        try:
+            async with AsyncSessionLocal() as db:
+                # 1. Active tickers in DB
+                result = await db.execute(select(Order.ticker_id).where(Order.status == OrderStatus.PENDING).distinct())
+                db_tickers = set(result.scalars().all())
+                
+                # 2. Active tickers in Redis
+                loaded_tickers = await self.redis.smembers(LOADED_TICKERS_KEY)
+                all_tickers = db_tickers.union(loaded_tickers)
+                
+                for ticker_id in all_tickers:
+                    # DB Orders
+                    stmt = select(Order).where(Order.ticker_id == ticker_id, Order.status == OrderStatus.PENDING)
+                    db_orders = (await db.execute(stmt)).scalars().all()
+                    db_order_map = {str(o.id): o for o in db_orders}
+                    db_ids = set(db_order_map.keys())
+                    
+                    # Redis Orders
+                    cached_ids = await self.get_cached_orders_for_ticker(ticker_id)
+                    
+                    # Diff
+                    to_add = db_ids - cached_ids
+                    to_remove = cached_ids - db_ids
+                    
+                    if to_add or to_remove:
+                        logger.info(f"   Mismatch for {ticker_id}: +{len(to_add)} / -{len(to_remove)}")
+                    
+                    # Action
+                    for oid in to_remove:
+                        await self.remove_order(oid, ticker_id)
+                        
+                    for oid in to_add:
+                        await self.add_order(db_order_map[oid])
+                        
+                    # If DB has pending orders but Redis didn't know about this ticker, mark loaded
+                    if db_ids:
+                        await self.redis.sadd(LOADED_TICKERS_KEY, ticker_id)
+                    else:
+                        # If no pending orders, keep Redis clean
+                        await self.redis.srem(LOADED_TICKERS_KEY, ticker_id)
+
+            logger.info("✅ Reconciliation Complete.")
+        except Exception as e:
+            logger.error(f"❌ Reconciliation Failed: {e}", exc_info=True)
+
     async def fetch_candidates(self, ticker_id: str, side: OrderSide, price: float, order_type_group: str = "LIMIT") -> List[str]:
         """
         Fetches candidate order IDs based on price trigger.
