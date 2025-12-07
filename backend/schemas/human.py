@@ -7,7 +7,7 @@ from datetime import datetime
 class IpoCreate(BaseModel):
     quantity: Decimal = Field(..., gt=0, description="발행 주식 수")
     initial_price: Decimal = Field(0, ge=0, description="초기 희망 가격 (평단가로 설정됨)")
-    dividend_rate: Decimal = Field(..., ge=0, le=1, description="배당률 (0.0 ~ 1.0)")
+    dividend_rate: Decimal = Field(..., ge=0, le=0.8, description="배당률 (0.0 ~ 0.8)")
 
 class BurnCreate(BaseModel):
     quantity: Decimal = Field(..., gt=0, description="소각할 주식 수")
@@ -34,7 +34,7 @@ class IssuerDividendStats(BaseModel):
     cumulative_paid_amount: DecimalStr # 누적 배당 지급액
 
 class UpdateDividendRate(BaseModel):
-    dividend_rate: Decimal = Field(..., ge=0, le=1, description="배당률 (0.0 ~ 1.0)")
+    dividend_rate: Decimal = Field(..., ge=0, le=0.8, description="배당률 (0.0 ~ 0.8)")
 
 class HumanCorporateValueResponse(BaseModel):
     current_price: Optional[DecimalStr] = None

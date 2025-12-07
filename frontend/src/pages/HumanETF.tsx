@@ -182,15 +182,14 @@ function NotListedView({ profile, onSuccess }: { profile: MeProfile | null, onSu
                         </div>
 
                         <div>
-                            <label className="text-[#90a4cb] text-sm block mb-1">Initial Dividend Rate: <span className="text-white font-bold">{dividendRate}%</span></label>
-                            <input 
-                                type="range" 
-                                min="10" max="100" step="1"
-                                value={dividendRate}
-                                onChange={e => setDividendRate(parseInt(e.target.value))}
-                                className="w-full h-2 bg-[#222f49] rounded-lg appearance-none cursor-pointer accent-[#0d59f2]"
-                            />
-                            <p className="text-xs text-[#90a4cb] mt-1">Percentage of your future PnL distributed to shareholders (Min 10%).</p>
+                                                    <label className="text-[#90a4cb] text-sm block mb-1">Initial Dividend Rate: <span className="text-white font-bold">{dividendRate}%</span></label>
+                                                    <input 
+                                                        type="range" 
+                                                        min="10" max="80" step="1"
+                                                        value={dividendRate}
+                                                        onChange={e => setDividendRate(parseInt(e.target.value))}
+                                                        className="w-full h-2 bg-[#222f49] rounded-lg appearance-none cursor-pointer accent-[#0d59f2]"
+                                                    />                            <p className="text-xs text-[#90a4cb] mt-1">Percentage of your future PnL distributed to shareholders (Min 10%).</p>
                         </div>
 
                         <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
@@ -618,7 +617,7 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
              <input 
                 type="range" 
                 min={profile?.is_bankrupt ? "50" : "10"} 
-                max="100" 
+                max="80" 
                 step="1"
                 value={sliderValue}
                 onChange={(e) => setSliderValue(parseInt(e.target.value))}
@@ -626,7 +625,7 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
              />
              <div className="flex justify-between text-xs text-[#90a4cb]">
                 <span>{profile?.is_bankrupt ? "50%" : "10%"}</span>
-                <span>100%</span>
+                <span>80%</span>
              </div>
              <div className="text-center text-white font-bold text-sm">
                 Target: {sliderValue}%
