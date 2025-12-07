@@ -12,6 +12,7 @@ from backend.models import (
     VoteProposalType,
     Ticker,
     Portfolio,
+    User,
 )
 from backend.schemas.vote import VoteProposalCreate, VoteCastRequest, ProposalDetail, ProposalTally
 
@@ -150,6 +151,8 @@ async def tally_proposal(db: AsyncSession, proposal_id) -> ProposalTally:
     return ProposalTally(yes=str(yes), no=str(no))
 
 
+from backend.core.exceptions import InvalidDividendRateError # Added import
+
 async def settle_proposal(db: AsyncSession, proposal_id):
     proposal = await get_proposal(db, proposal_id)
     now = _utcnow()
@@ -161,7 +164,49 @@ async def settle_proposal(db: AsyncSession, proposal_id):
     tally = await tally_proposal(db, proposal_id)
     yes = Decimal(str(tally.yes))
     no = Decimal(str(tally.no))
-    proposal.status = VoteProposalStatus.PASSED if yes > no else VoteProposalStatus.REJECTED
+    
+    if yes > no:
+        # Optimistically set to PASSED, but revert to REJECTED if execution fails
+        proposal.status = VoteProposalStatus.PASSED
+        
+        try:
+            # --- Execution Logic ---
+            if proposal.vote_type == VoteProposalType.DIVIDEND_CHANGE:
+                if proposal.target_value:
+                    from backend.schemas.human import UpdateDividendRate
+                    from backend.services.human_service import update_dividend_rate
+                    # Parse target value
+                    new_rate = Decimal(proposal.target_value)
+                    await update_dividend_rate(db, proposal.proposer_id, UpdateDividendRate(dividend_rate=new_rate))
+
+            elif proposal.vote_type == VoteProposalType.FORCED_DELISTING:
+                # Deactivate Ticker
+                ticker_res = await db.execute(select(Ticker).where(Ticker.id == proposal.ticker_id))
+                ticker = ticker_res.scalars().first()
+                if ticker:
+                    ticker.is_active = False
+
+            elif proposal.vote_type == VoteProposalType.IMPEACHMENT:
+                # Deactivate User (Ban)
+                user_res = await db.execute(select(User).where(User.id == proposal.proposer_id))
+                user = user_res.scalars().first()
+                if user:
+                    user.is_active = False
+        
+        except Exception as e:
+            # Execution failed (e.g. InvalidDividendRateError)
+            # Mark as REJECTED (System Veto)
+            proposal.status = VoteProposalStatus.REJECTED
+            # Append error to description for transparency
+            error_msg = f" [System Veto: Execution failed - {str(e)}]"
+            if proposal.description:
+                proposal.description += error_msg
+            else:
+                proposal.description = error_msg.strip()
+            
+    else:
+        proposal.status = VoteProposalStatus.REJECTED
+        
     proposal.updated_at = now
     await db.commit()
     await db.refresh(proposal)

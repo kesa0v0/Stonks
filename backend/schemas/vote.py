@@ -7,6 +7,7 @@ from uuid import UUID
 
 from backend.schemas.common import DecimalStr
 from backend.models.vote import VoteProposalType, VoteProposalStatus
+from backend.core import constants # New import
 
 
 def _ensure_tz(dt: Optional[datetime]) -> datetime:
@@ -50,6 +51,25 @@ class VoteProposalCreate(BaseModel):
         v = _ensure_tz(v)
         if v <= start:
             raise ValueError("end_at must be after start_at")
+        return v
+
+    @validator("target_value", pre=True, always=True)
+    def validate_target_value_by_type(cls, v, values):
+        vote_type = values.get("vote_type")
+        if vote_type == VoteProposalType.DIVIDEND_CHANGE:
+            if v is None:
+                raise ValueError("target_value is required for DIVIDEND_CHANGE proposals")
+            try:
+                rate = Decimal(v)
+                min_rate = Decimal(str(constants.HUMAN_DIVIDEND_RATE_NORMAL_MIN))
+                max_rate = Decimal(str(constants.HUMAN_DIVIDEND_RATE_MAX))
+                if not (min_rate <= rate <= max_rate):
+                    raise ValueError(f"Dividend rate must be between {min_rate*100}% and {max_rate*100}%")
+            except Exception:
+                raise ValueError("target_value for DIVIDEND_CHANGE must be a valid decimal string")
+        elif vote_type in [VoteProposalType.FORCED_DELISTING, VoteProposalType.IMPEACHMENT]:
+            if v is not None:
+                raise ValueError(f"target_value should not be set for {vote_type.value} proposals")
         return v
 
 class VoteProposalOut(BaseModel):

@@ -810,6 +810,17 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
                                     }
                                 };
 
+                                const handleSettle = async () => {
+                                    try {
+                                        await api.post(`votes/proposals/${p.id}/settle`);
+                                        toast.success('Proposal settled');
+                                        await refreshProposals();
+                                    } catch (err) {
+                                        console.error('Settle failed', err);
+                                        toast.error('Failed to settle');
+                                    }
+                                };
+
                                 return (
                                     <tr key={p.id} className="hover:bg-[#182234]">
                                         <td className="p-3 text-white">
@@ -827,6 +838,8 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
                                                     <button onClick={() => handleVoteClick(false)} className="px-3 py-1 text-xs rounded bg-[#ef4444] text-white hover:bg-[#dc2626]">Vote No</button>
                                                     {myVoteQty.gt(0) && <button onClick={handleUnvote} className="px-3 py-1 text-xs rounded border border-[#314368] text-[#90a4cb] hover:bg-[#182234]">Unvote</button>}
                                                 </div>
+                                            ) : p.status === 'PENDING' ? (
+                                                <button onClick={handleSettle} className="px-3 py-1 text-xs rounded bg-yellow-600 text-white hover:bg-yellow-500">Settle</button>
                                             ) : (
                                                 <span className="text-xs text-[#90a4cb]">Closed</span>
                                             )}
