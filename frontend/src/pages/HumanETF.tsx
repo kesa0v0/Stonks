@@ -526,11 +526,11 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
             </div>
         </div>
         
-        {/* Dividend Pain Dashboard */}
+        {/* Dividend Dashboard */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Stats Card */}
             <div className="flex flex-col p-6 border border-[#314368] bg-[#101623] rounded-xl gap-4">
-                <h2 className="text-white text-lg font-bold">Dividend Pain Dashboard</h2>
+                <h2 className="text-white text-lg font-bold">Dividend Dashboard</h2>
                 {isDividendDataLoading ? (
                     <div className="space-y-4">
                         <Skeleton className="h-8 w-3/4" />
@@ -815,6 +815,9 @@ function ListedDashboard({ profile, setProfile }: { profile: MeProfile | null, s
                                         await api.post(`votes/proposals/${p.id}/settle`);
                                         toast.success('Proposal settled');
                                         await refreshProposals();
+                                        // Refresh stats as settle might have changed dividend rate
+                                        const updatedDividendStats = await api.get('human/dividend/stats').json<IssuerDividendStats>();
+                                        setDividendStats(updatedDividendStats);
                                     } catch (err) {
                                         console.error('Settle failed', err);
                                         toast.error('Failed to settle');
