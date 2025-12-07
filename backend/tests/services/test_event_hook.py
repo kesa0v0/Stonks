@@ -132,4 +132,4 @@ async def test_post_trade_event_hook(monkeypatch):
     assert event["user_id"] == user_id
     assert event["ticker_id"] == ticker_id
     assert event["side"] == side
-    assert float(event["quantity"]) == float(quantity)
+    assert Decimal(event["quantity"]) == quantity
