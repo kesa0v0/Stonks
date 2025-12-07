@@ -28,6 +28,7 @@ from backend.core.config import settings
 from backend.core.event_hook import publish_event
 from backend.services.market_service import publish_current_orderbook_snapshot # Import the new helper
 from backend.worker.order_cache import LimitOrderCache # Import Cache
+from backend.core.audit import publish_audit_log # Added import
 
 ORDER_COUNTER = Counter('stonks_orders_created_total', 'Total orders created', ['side', 'type'])
 
@@ -253,6 +254,15 @@ async def place_order(
         db.add(new_order)
         await db.commit() # 비동기 커밋
 
+        # Audit Log: Order Status
+        await publish_audit_log("order_status_history", {
+            "order_id": str(order_id),
+            "user_id": str(user_uuid),
+            "prev_status": None,
+            "new_status": str(OrderStatus.PENDING),
+            "reason": "order_placed"
+        })
+
         # [NEW] Redis Cache에 즉시 등록
         cache = LimitOrderCache(redis)
         await cache.add_order(new_order)
@@ -359,6 +369,15 @@ async def cancel_order_logic(
     order_obj.fail_reason = "Cancelled by user"
     order_obj.cancelled_at = datetime.now(timezone.utc)
     await db.commit()
+
+    # Audit Log: Order Status
+    await publish_audit_log("order_status_history", {
+        "order_id": str(order_id),
+        "user_id": str(user_uuid),
+        "prev_status": str(OrderStatus.PENDING),
+        "new_status": str(OrderStatus.CANCELLED),
+        "reason": "user_cancelled"
+    })
 
     # [NEW] Redis Cache에서 즉시 제거
     cache = LimitOrderCache(redis)

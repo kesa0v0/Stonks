@@ -123,6 +123,32 @@ services:
       postgres:
         condition: service_healthy
 
+  # 6-1. Audit Worker (비동기 로그 적재)
+  audit_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: dev-audit-worker
+    command: python -m backend.worker.audit_consumer
+    volumes:
+      - ./backend:/app/backend
+    env_file:
+      - ./.env
+    environment:
+      - DATABASE_URL=postgresql://devuser:devpass@postgres:5432/dev_db
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_USER=guest
+      - RABBITMQ_PASS=guest
+      - DEBUG=True
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
   worker_matcher:
     build:
       context: ./backend

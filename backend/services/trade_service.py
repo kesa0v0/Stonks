@@ -27,6 +27,7 @@ from backend.services.trade_strategies import (
     SellStrategy,
     ShortSellStrategy,
 )
+from backend.core.audit import publish_audit_log # Added import
 
 # 로깅 설정
 logger = logging.getLogger(__name__)
@@ -251,6 +252,10 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
         if not portfolio:
             portfolio = Portfolio(user_id=user_uuid, ticker_id=ticker_id, quantity=0, average_price=0)
             db.add(portfolio)
+            
+        # Capture state for audit
+        prev_pf_qty = portfolio.quantity
+        prev_pf_avg = portfolio.average_price
 
         # 5. 매매 로직 (Strategy Pattern)
         trade_amount = current_price * quantity # Use the filled quantity for trade amount calculation
@@ -306,6 +311,28 @@ async def execute_trade(db: AsyncSession, redis_client: async_redis.Redis, user_
         await db.commit()
         
         logger.info(f"Trade Executed: {side} {quantity} {ticker_id} @ {current_price} (Fee: {fee}) for user {user_id}. Order {order_id}. Remaining unfilled: {order.unfilled_quantity}")
+
+        # Audit Logging (Async)
+        try:
+            await publish_audit_log("portfolio_history", {
+                "user_id": str(user_uuid),
+                "ticker_id": ticker_id,
+                "action": "update", 
+                "prev_quantity": str(prev_pf_qty),
+                "new_quantity": str(portfolio.quantity),
+                "prev_average_price": str(prev_pf_avg),
+                "new_average_price": str(portfolio.average_price),
+                "reason": "trade"
+            })
+            await publish_audit_log("order_status_history", {
+                "order_id": str(order_id),
+                "user_id": str(user_uuid),
+                "prev_status": "PENDING",
+                "new_status": str(order.status),
+                "reason": "trade_execution"
+            })
+        except Exception as e:
+            logger.error(f"Audit log error: {e}")
 
         # Post-Trade Event Hook: 거래 이벤트 발행
         event = {
