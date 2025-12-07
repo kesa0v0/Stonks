@@ -72,7 +72,7 @@ async def process_ticker_match(ticker_id: str, redis_client: redis.Redis):
             orders_stmt = select(Order).where(
                 Order.ticker_id == ticker_id,
                 Order.status == OrderStatus.PENDING
-            ).order_by(Order.created_at.asc())
+            ).order_by(Order.created_at.asc()).with_for_update(skip_locked=True)
             
             orders = (await db.execute(orders_stmt)).scalars().all()
             
