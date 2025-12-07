@@ -14,8 +14,8 @@ FROM nginx:alpine
 # (Vite를 쓰면 보통 dist, CRA는 build 폴더입니다. 확인 필요!)
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Nginx 설정 파일이 필요하면 복사 (선택사항)
-# COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Nginx 설정 파일 복사 (SPA 라우팅 지원)
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

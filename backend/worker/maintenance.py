@@ -2,7 +2,8 @@ import os
 import subprocess
 import boto3
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
+import calendar
 from botocore.exceptions import ClientError
 from sqlalchemy import text
 from backend.core.database import AsyncSessionLocal
@@ -97,6 +98,70 @@ async def perform_db_backup():
         # 임시 파일 정리
         if os.path.exists(file_path):
             os.remove(file_path)
+
+async def create_partition_if_not_exists(session, table_name: str, year: int, month: int):
+    """
+    특정 연/월에 대한 파티션 테이블을 생성합니다.
+    이미 존재하면 무시합니다.
+    """
+    partition_name = f"{table_name}_y{year}m{month:02d}"
+    
+    # 해당 월의 시작일과 다음 달 시작일 계산
+    start_date = datetime(year, month, 1)
+    # 다음 달 계산 (12월이면 내년 1월로)
+    if month == 12:
+        end_date = datetime(year + 1, 1, 1)
+    else:
+        end_date = datetime(year, month + 1, 1)
+        
+    start_str = start_date.strftime("%Y-%m-%d")
+    end_str = end_date.strftime("%Y-%m-%d")
+
+    logger.info(f"[Partition] Checking partition {partition_name} ({start_str} ~ {end_str})...")
+    
+    # IF NOT EXISTS 구문으로 파티션 생성
+    sql = text(f"""
+        CREATE TABLE IF NOT EXISTS {partition_name}
+        PARTITION OF {table_name}
+        FOR VALUES FROM ('{start_str}') TO ('{end_str}');
+    """)
+    
+    try:
+        await session.execute(sql)
+        # 인덱스 등은 부모 테이블 설정을 따라감 (PostgreSQL 11+)
+    except Exception as e:
+        logger.error(f"[Partition] Failed to create {partition_name}: {e}")
+        raise e
+
+async def maintain_partitions():
+    """
+    Candle, Order 테이블의 파티션을 관리합니다.
+    - 현재 월과 다음 달 파티션을 미리 생성합니다.
+    """
+    logger.info("[Partition] Starting partition maintenance...")
+    now = datetime.now()
+    
+    target_dates = [
+        now, # 이번 달
+        now + timedelta(days=32) # 다음 달 (넉넉히 32일 뒤)
+    ]
+    
+    tables = ["candles", "orders"]
+    
+    try:
+        async with AsyncSessionLocal() as session:
+            for d in target_dates:
+                year = d.year
+                month = d.month
+                for table in tables:
+                    await create_partition_if_not_exists(session, table, year, month)
+            
+            await session.commit()
+            logger.info("[Partition] Partition maintenance completed successfully.")
+
+    except Exception as e:
+        logger.error(f"[Partition] Maintenance failed: {e}", exc_info=True)
+        await send_ntfy_notification(f"Partition maintenance failed: {e}", title="Partition Error", priority="high")
 
 async def cleanup_old_candles():
     """
