@@ -26,13 +26,11 @@ export function useMarketDataStream() {
   // Buffer incoming websocket updates and flush in batches.
   const priceBufferRef = useRef<Map<string, number>>(new Map());
   const orderBookSnapshotBufferRef = useRef<Map<string, OrderBookResponse>>(new Map()); // New buffer for OB snapshots
-  const orderBookRefreshQueueRef = useRef<Set<string>>(new Set()); // Tickers to refresh order book for (via API)
   const userRelatedRefreshQueueRef = useRef<Set<string>>(new Set()); // Queue for user-specific data refresh
   const userIdRef = useRef<string | null>(null); // To store current user's ID
 
   const priceTimerRef = useRef<number | null>(null);
   const orderBookSnapshotTimerRef = useRef<number | null>(null); // Timer for OB snapshots
-  const orderBookRefreshTimerRef = useRef<number | null>(null); // Timer for OB API refresh
   const userRefreshTimerRef = useRef<number | null>(null);
 
   // --- Flush Functions ---
@@ -52,23 +50,6 @@ export function useMarketDataStream() {
         orderBookStore.updateOrderBook(tickerId, data);
     });
     buf.clear();
-  }, []);
-
-  const flushOrderBookRefreshQueue = useCallback(async () => {
-    const queue = orderBookRefreshQueueRef.current;
-    if (queue.size === 0) return;
-    
-    const tickersToRefresh = new Set(queue); // Process a copy
-    queue.clear();
-
-    for (const tickerId of tickersToRefresh) {
-      try {
-        const data = await api.get(`market/orderbook/${tickerId}`).json<OrderBookResponse>();
-        orderBookStore.updateOrderBook(tickerId, data);
-      } catch (err) {
-        console.error(`Failed to refresh orderbook for ${tickerId}`, err);
-      }
-    }
   }, []);
 
   const flushUserRelatedRefreshQueue = useCallback(async () => {
@@ -101,21 +82,18 @@ export function useMarketDataStream() {
     // Start timers for flushing buffers
     priceTimerRef.current = window.setInterval(flushPriceBuffer, 250);
     orderBookSnapshotTimerRef.current = window.setInterval(flushOrderBookSnapshots, 250); // Throttle OB snapshots
-    orderBookRefreshTimerRef.current = window.setInterval(flushOrderBookRefreshQueue, 500);
     userRefreshTimerRef.current = window.setInterval(flushUserRelatedRefreshQueue, 750); // Slightly slower debounce for user-specific data
 
     // Cleanup timers
     return () => {
       if (priceTimerRef.current) window.clearInterval(priceTimerRef.current);
       if (orderBookSnapshotTimerRef.current) window.clearInterval(orderBookSnapshotTimerRef.current);
-      if (orderBookRefreshTimerRef.current) window.clearInterval(orderBookRefreshTimerRef.current);
       if (userRefreshTimerRef.current) window.clearInterval(userRefreshTimerRef.current);
       flushPriceBuffer();
       flushOrderBookSnapshots();
-      flushOrderBookRefreshQueue();
       flushUserRelatedRefreshQueue(); // Final flush on cleanup
     };
-  }, [flushPriceBuffer, flushOrderBookSnapshots, flushOrderBookRefreshQueue, flushUserRelatedRefreshQueue]);
+  }, [flushPriceBuffer, flushOrderBookSnapshots, flushUserRelatedRefreshQueue]);
 
   useEffect(() => {
     // Fetch current user ID on mount only if authenticated
@@ -168,12 +146,13 @@ export function useMarketDataStream() {
       return; // Processed this message
     }
 
-    // If it's a trade event that affects the order book, queue a refresh (for Human ETFs or when snapshot not available)
+    // If it's a trade event
     if (
       data.ticker_id && 
       ['order_created', 'trade_executed', 'order_accepted', 'order_updated', 'order_cancelled'].includes(data.type) // Trade events
     ) {
-      orderBookRefreshQueueRef.current.add(data.ticker_id);
+      // Note: We no longer fetch the full order book on every trade event to reduce server load.
+      // We rely on the WebSocket to stream 'orderbook' snapshots or the store to be eventually consistent via periodic snapshots from backend if applicable.
       
       // Also trigger refresh for user-specific data if the event is for the current user
       if (userIdRef.current && data.user_id === userIdRef.current) {
@@ -246,7 +225,12 @@ export function useMarketDataStream() {
     
     // 2. Refresh Active OrderBooks
     const activeKeys = orderBookStore.getActiveKeys();
-    activeKeys.forEach(key => orderBookRefreshQueueRef.current.add(key));
+    activeKeys.forEach(tickerId => {
+      // Directly fetch snapshot on reconnect
+      api.get(`market/orderbook/${tickerId}`).json<OrderBookResponse>()
+        .then(data => orderBookStore.updateOrderBook(tickerId, data))
+        .catch(err => console.error(`Failed to refresh orderbook for ${tickerId}`, err));
+    });
     
   }, []);
 
