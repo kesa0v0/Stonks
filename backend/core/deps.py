@@ -48,8 +48,11 @@ async def get_current_user(
                 headers={"WWW-Authenticate": "Bearer"},
             )
     except async_redis.RedisError as e: 
-        logger.warning(f"RedisError caught in deps: {e}")
-        pass 
+        logger.error(f"RedisError caught in deps during blacklist check: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication check failed due to server error"
+        ) 
     except Exception as e:
         # HTTPException은 여기서 잡히면 안됨 (위에서 raise한 것)
         if isinstance(e, HTTPException):
