@@ -141,7 +141,7 @@ async def get_current_admin_user(
     """
     관리자 권한을 가진 사용자만 반환합니다.
     """
-    if current_user.email != settings.ADMIN_EMAIL:
+    if not current_user.is_superuser:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="The user doesn't have enough privileges"

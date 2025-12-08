@@ -14,6 +14,7 @@ class User(Base):
     hashed_password = Column(String(200), nullable=True)  # Nullable for OAuth users
     nickname = Column(String(50), nullable=False)
     is_active = Column(Boolean, default=True)
+    is_superuser = Column(Boolean, default=False, nullable=False) # 관리자 여부
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     badges = Column(JSON, default=[], nullable=False) # [{"title": "S1 Winner", "date": ...}]

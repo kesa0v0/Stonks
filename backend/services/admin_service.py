@@ -52,12 +52,6 @@ async def set_admin_test_price(redis_client: async_redis.Redis, update: PriceUpd
     """
     [관리자용] 특정 코인의 가격을 강제로 변경하고 이벤트를 발생시킵니다.
     """
-    if settings.ENVIRONMENT == "production":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="This function is disabled in production environment."
-        )
-
     price_data = {
         "ticker_id": update.ticker_id,
         "price": update.price,

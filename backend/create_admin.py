@@ -33,7 +33,8 @@ async def create_admin_user():
                     id=uuid.uuid4(),
                     email=email,
                     hashed_password=hashed_pwd,
-                    nickname=nickname
+                    nickname=nickname,
+                    is_superuser=True
                 )
                 db.add(user)
                 
@@ -44,8 +45,9 @@ async def create_admin_user():
                 await db.commit()
                 logger.info("✅ Admin user created successfully.")
             else:
-                logger.info(f"Admin user {email} already exists. Updating password.")
+                logger.info(f"Admin user {email} already exists. Updating password and ensuring superuser status.")
                 user.hashed_password = get_password_hash(password)
+                user.is_superuser = True
                 await db.commit()
                 logger.info("✅ Admin password updated.")
                 
